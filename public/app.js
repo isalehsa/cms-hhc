@@ -3,10 +3,14 @@ const state = {
   user: null,
   token: localStorage.getItem("chcc_token") || null,
   meta: { departments: [], risk_levels: [], applicability: [], ai_enabled: false },
-  view: "list", // list | detail
+  view: "list", // list | detail | library
   regulations: [],
   current: null,
+  library: [],
   filters: { applicability: "", risk: "", department: "", search: "" },
+  libFilters: { regulation: "", applicability: "", risk: "", department: "", search: "" },
+  openLinks: null, // معرف المادة المفتوح لوحة روابطها
+  relatedCache: {},
   pollTimer: null,
 };
 
@@ -84,6 +88,32 @@ async function doLogin() {
   }
 }
 
+// ---------- التنقل ----------
+function navHtml(active) {
+  return `
+    <nav class="tabs">
+      <button class="tab ${active === "list" ? "active" : ""}" data-nav="list">📋 الأنظمة واللوائح</button>
+      <button class="tab ${active === "library" ? "active" : ""}" data-nav="library">📚 مكتبة الالتزام</button>
+    </nav>`;
+}
+
+function bindNav() {
+  app.querySelectorAll("[data-nav]").forEach((btn) => {
+    btn.onclick = async () => {
+      clearTimeout(state.pollTimer);
+      if (btn.dataset.nav === "library") {
+        state.view = "library";
+        await loadLibrary();
+        renderLibrary();
+      } else {
+        state.view = "list";
+        await loadRegulations();
+        renderList();
+      }
+    };
+  });
+}
+
 // ---------- قائمة الأنظمة ----------
 async function loadRegulations() {
   const data = await api("/api/regulations");
@@ -146,12 +176,14 @@ function renderList() {
     .join("");
 
   app.innerHTML = `
+    ${navHtml("list")}
     ${addForm}
     <section class="card">
       <h2>الأنظمة واللوائح المسجلة (${state.regulations.length})</h2>
       ${rows || '<p class="muted">لا توجد أنظمة مسجلة بعد.</p>'}
     </section>`;
 
+  bindNav();
   if (isManager()) {
     $("#add-reg-btn")?.addEventListener("click", addRegulation);
     $("#reg-file")?.addEventListener("change", extractFromFile);
@@ -203,8 +235,14 @@ async function extractFromFile() {
     if (!nameField.value.trim()) {
       nameField.value = file.name.replace(/\.(pdf|docx)$/i, "");
     }
-    status.textContent = `✔ استُخرج ${data.chars.toLocaleString("ar")} حرفاً من ${file.name}`;
-    toast("تم استخراج النص — راجعه ثم اضغط «إضافة وتحليل»");
+    status.textContent = data.ocr
+      ? `✔ ${data.note || "استُخرج النص بتقنية OCR"} (${data.chars.toLocaleString("ar")} حرفاً)`
+      : `✔ استُخرج ${data.chars.toLocaleString("ar")} حرفاً من ${file.name}`;
+    toast(
+      data.ocr
+        ? "استُخرج النص بالتعرف الضوئي (OCR) — دقّق النص جيداً قبل التحليل"
+        : "تم استخراج النص — راجعه ثم اضغط «إضافة وتحليل»"
+    );
   } catch (err) {
     status.textContent = "";
     input.value = "";
@@ -236,6 +274,99 @@ async function addRegulation() {
   }
 }
 
+// ---------- مكتبة الالتزام ----------
+async function loadLibrary() {
+  const data = await api("/api/library");
+  state.library = data.articles;
+  if (!state.regulations.length) await loadRegulations();
+}
+
+function filteredLibrary() {
+  const f = state.libFilters;
+  return state.library.filter((a) => {
+    if (f.regulation && a.regulation_id !== f.regulation) return false;
+    if (f.applicability && a.applicability !== f.applicability) return false;
+    if (f.risk && a.risk_level !== f.risk) return false;
+    if (f.department && a.owning_department !== f.department) return false;
+    if (f.search && !`${a.regulation_name} ${a.number} ${a.title} ${a.text}`.includes(f.search))
+      return false;
+    return true;
+  });
+}
+
+function renderLibrary() {
+  const arts = filteredLibrary();
+  const counts = {
+    total: state.library.length,
+    applies: state.library.filter((a) => a.applicability === "تنطبق").length,
+    high: state.library.filter((a) => a.risk_level === "عالي" && a.applicability === "تنطبق").length,
+    linked: state.library.filter((a) => a.links?.length).length,
+  };
+
+  const rows = arts
+    .map(
+      (a) => `
+      <tr>
+        <td><span class="reg-link" data-goreg="${a.regulation_id}">${esc(a.regulation_name)}</span></td>
+        <td><strong>${esc(a.number)}</strong></td>
+        <td>
+          <strong>${esc(a.title)}</strong>
+          <div class="article-text muted" style="max-height:70px">${esc(a.text)}</div>
+        </td>
+        <td><span class="badge ${a.applicability === "تنطبق" ? "applies" : "not-applies"}">${esc(a.applicability)}</span></td>
+        <td>${riskBadge(a.risk_level)}</td>
+        <td>${esc(a.owning_department)}</td>
+        <td>${(a.links || [])
+          .map((l) => {
+            const name = state.regulations.find((r) => r.id === l.regulation_id)?.name || "؟";
+            return `<span class="badge status" title="${esc(name)}">🔗 ${esc(name)} — ${esc(l.number)}</span>`;
+          })
+          .join("<br/>") || '<span class="muted">—</span>'}</td>
+      </tr>`
+    )
+    .join("");
+
+  app.innerHTML = `
+    ${navHtml("library")}
+    <section class="card">
+      <div class="row" style="justify-content:space-between">
+        <h2>📚 مكتبة الالتزام — السجل الموحد لجميع المواد والبنود</h2>
+        <a class="btn-link" href="/api/library/export.xlsx" download><button class="secondary small">⬇ تصدير Excel (المكتبة كاملة)</button></a>
+      </div>
+      <div class="stats">
+        <div class="stat"><div class="num">${state.regulations.length}</div><div class="lbl">الأنظمة واللوائح</div></div>
+        <div class="stat"><div class="num">${counts.total}</div><div class="lbl">إجمالي المواد والبنود</div></div>
+        <div class="stat"><div class="num">${counts.applies}</div><div class="lbl">تنطبق</div></div>
+        <div class="stat"><div class="num">${counts.high}</div><div class="lbl">خطر عالٍ (منطبقة)</div></div>
+        <div class="stat"><div class="num">${counts.linked}</div><div class="lbl">مواد مرتبطة بأنظمة أخرى</div></div>
+      </div>
+      <div class="row filters">
+        <input type="text" id="lf-search" class="grow" placeholder="بحث في جميع الأنظمة…" value="${esc(state.libFilters.search)}" />
+        <select id="lf-reg"><option value="">كل الأنظمة</option>${state.regulations.map((r) => `<option value="${r.id}" ${state.libFilters.regulation === r.id ? "selected" : ""}>${esc(r.name)}</option>`).join("")}</select>
+        <select id="lf-app"><option value="">كل حالات الانطباق</option>${state.meta.applicability.map((o) => `<option ${state.libFilters.applicability === o ? "selected" : ""}>${esc(o)}</option>`).join("")}</select>
+        <select id="lf-risk"><option value="">كل درجات الخطر</option>${state.meta.risk_levels.map((o) => `<option ${state.libFilters.risk === o ? "selected" : ""}>${esc(o)}</option>`).join("")}</select>
+        <select id="lf-dept"><option value="">كل الإدارات</option>${state.meta.departments.map((o) => `<option ${state.libFilters.department === o ? "selected" : ""}>${esc(o)}</option>`).join("")}</select>
+      </div>
+      <div style="overflow-x:auto">
+        <table>
+          <thead><tr><th>النظام</th><th>المادة/البند</th><th>النص</th><th>الانطباق</th><th>الخطر</th><th>الإدارة المالكة</th><th>الروابط</th></tr></thead>
+          <tbody>${rows || '<tr><td colspan="7" class="muted">لا توجد مواد مطابقة</td></tr>'}</tbody>
+        </table>
+      </div>
+      <p class="muted">عدد النتائج: ${arts.length}</p>
+    </section>`;
+
+  bindNav();
+  $("#lf-search").addEventListener("input", (e) => { state.libFilters.search = e.target.value; renderLibrary(); });
+  $("#lf-reg").onchange = (e) => { state.libFilters.regulation = e.target.value; renderLibrary(); };
+  $("#lf-app").onchange = (e) => { state.libFilters.applicability = e.target.value; renderLibrary(); };
+  $("#lf-risk").onchange = (e) => { state.libFilters.risk = e.target.value; renderLibrary(); };
+  $("#lf-dept").onchange = (e) => { state.libFilters.department = e.target.value; renderLibrary(); };
+  app.querySelectorAll("[data-goreg]").forEach((el) => {
+    el.onclick = () => openRegulation(el.dataset.goreg);
+  });
+}
+
 // ---------- تفاصيل النظام ----------
 function schedulePoll(fn) {
   clearTimeout(state.pollTimer);
@@ -245,6 +376,9 @@ function schedulePoll(fn) {
 async function openRegulation(id) {
   clearTimeout(state.pollTimer);
   state.view = "detail";
+  state.openLinks = null;
+  state.relatedCache = {};
+  if (!state.regulations.length) await loadRegulations();
   state.current = await api(`/api/regulations/${id}`);
   renderDetail();
 }
@@ -280,6 +414,45 @@ function riskBadge(level) {
   return `<span class="badge ${cls}">${esc(level)}</span>`;
 }
 
+function linksPanelHtml(a) {
+  const existing = (a.links || [])
+    .map((l) => {
+      const name = state.regulations.find((r) => r.id === l.regulation_id)?.name || l.regulation_id;
+      return `<div class="row" style="margin:4px 0">
+        <span class="badge status">🔗 ${esc(name)} — ${esc(l.number)}</span>
+        <button class="danger small" data-unlink="${a.id}" data-target="${l.article_id}">فك الربط</button>
+      </div>`;
+    })
+    .join("");
+
+  const cache = state.relatedCache[a.id];
+  let suggestions;
+  if (!cache) {
+    suggestions = '<p class="muted"><span class="spinner"></span> جاري البحث عن مواد مشابهة في بقية الأنظمة…</p>';
+  } else if (!cache.length) {
+    suggestions = '<p class="muted">لا توجد مواد مشابهة في الأنظمة الأخرى (أضف أنظمة أخرى ليعمل الربط).</p>';
+  } else {
+    suggestions = cache
+      .map(
+        (s) => `<div class="row" style="margin:4px 0">
+          <span class="grow">
+            <strong>${esc(s.regulation_name)}</strong> — ${esc(s.number)}: ${esc(s.title)}
+            <span class="muted">(تشابه ${Math.round(s.score * 100)}٪ · ${esc(s.owning_department)} · خطر ${esc(s.risk_level)})</span>
+          </span>
+          <button class="small" data-dolink="${a.id}" data-reg="${s.regulation_id}" data-target="${s.article_id}">ربط</button>
+        </div>`
+      )
+      .join("");
+  }
+
+  return `<div class="links-box">
+    <strong>الروابط الحالية:</strong>
+    ${existing || '<p class="muted">لا توجد روابط بعد.</p>'}
+    <strong style="display:block;margin-top:10px">مواد مقترحة للربط من بقية الأنظمة:</strong>
+    ${suggestions}
+  </div>`;
+}
+
 function renderDetail() {
   const reg = state.current;
   const arts = filteredArticles();
@@ -291,8 +464,15 @@ function renderDetail() {
   };
 
   const editable = isManager();
+  const colCount = editable ? 7 : 6;
   const rows = arts
     .map((a) => {
+      const linkBadges = (a.links || [])
+        .map((l) => {
+          const name = state.regulations.find((r) => r.id === l.regulation_id)?.name || l.regulation_id;
+          return `<span class="badge status">🔗 ${esc(name)} — ${esc(l.number)}</span>`;
+        })
+        .join(" ");
       const cells = editable
         ? `
         <td>${selectHtml(state.meta.applicability, a.applicability, `data-edit="applicability" data-art="${a.id}"`)}</td>
@@ -302,22 +482,29 @@ function renderDetail() {
         <td><span class="badge ${a.applicability === "تنطبق" ? "applies" : "not-applies"}">${esc(a.applicability)}</span></td>
         <td>${riskBadge(a.risk_level)}</td>
         <td>${esc(a.owning_department)}</td>`;
-      return `
+      const mainRow = `
       <tr>
         <td><strong>${esc(a.number)}</strong>${a.needs_review ? '<br/><span class="badge review">بحاجة لمراجعة</span>' : ""}</td>
         <td>
           <strong>${esc(a.title)}</strong>
           <div class="article-text muted">${esc(a.text)}</div>
+          ${linkBadges ? `<div style="margin-top:4px">${linkBadges}</div>` : ""}
         </td>
         ${cells}
         <td class="muted" style="max-width:220px">${esc(a.rationale)}
           ${a.edited_by ? `<br/><em>آخر تعديل: ${esc(a.edited_by)}</em>` : ""}
         </td>
         ${editable ? `<td>
+          <button class="secondary small" data-links="${a.id}" title="الربط مع مواد الأنظمة الأخرى">🔗 روابط${a.links?.length ? ` (${a.links.length})` : ""}</button>
           <button class="secondary small" data-review="${a.id}" title="تبديل حالة المراجعة">${a.needs_review ? "✔ تمت المراجعة" : "🔖 للمراجعة"}</button>
           <button class="danger small" data-delart="${a.id}">حذف</button>
         </td>` : ""}
       </tr>`;
+      const panelRow =
+        editable && state.openLinks === a.id
+          ? `<tr class="links-panel"><td colspan="${colCount}">${linksPanelHtml(a)}</td></tr>`
+          : "";
+      return mainRow + panelRow;
     })
     .join("");
 
@@ -331,6 +518,7 @@ function renderDetail() {
         </div>
         <div class="row">
           ${statusBadge(reg)}
+          <a class="btn-link" href="/api/regulations/${reg.id}/export.xlsx" download><button class="secondary small">⬇ تصدير Excel</button></a>
           ${editable && reg.status !== "processing" ? `<button class="secondary small" id="reanalyze">🔄 إعادة التحليل</button>` : ""}
         </div>
       </div>
@@ -450,6 +638,70 @@ function renderDetail() {
           state.current.articles = state.current.articles.filter((a) => a.id !== btn.dataset.delart);
           renderDetail();
           toast("حُذفت المادة");
+        } catch (err) {
+          toast(err.message, true);
+        }
+      };
+    });
+
+    // لوحة الربط مع مواد الأنظمة الأخرى
+    app.querySelectorAll("[data-links]").forEach((btn) => {
+      btn.onclick = async () => {
+        const artId = btn.dataset.links;
+        if (state.openLinks === artId) {
+          state.openLinks = null;
+          renderDetail();
+          return;
+        }
+        state.openLinks = artId;
+        renderDetail();
+        if (!state.relatedCache[artId]) {
+          try {
+            const data = await api(`/api/regulations/${reg.id}/articles/${artId}/related`);
+            state.relatedCache[artId] = data.suggestions;
+          } catch (err) {
+            state.relatedCache[artId] = [];
+            toast(err.message, true);
+          }
+          if (state.openLinks === artId) renderDetail();
+        }
+      };
+    });
+
+    app.querySelectorAll("[data-dolink]").forEach((btn) => {
+      btn.onclick = async () => {
+        try {
+          const updated = await api(
+            `/api/regulations/${reg.id}/articles/${btn.dataset.dolink}/links`,
+            {
+              method: "POST",
+              body: JSON.stringify({
+                regulation_id: btn.dataset.reg,
+                article_id: btn.dataset.target,
+              }),
+            }
+          );
+          const art = state.current.articles.find((a) => a.id === btn.dataset.dolink);
+          if (art) art.links = updated.links;
+          toast("تم الربط بين المادتين");
+          renderDetail();
+        } catch (err) {
+          toast(err.message, true);
+        }
+      };
+    });
+
+    app.querySelectorAll("[data-unlink]").forEach((btn) => {
+      btn.onclick = async () => {
+        try {
+          const updated = await api(
+            `/api/regulations/${reg.id}/articles/${btn.dataset.unlink}/links/${btn.dataset.target}`,
+            { method: "DELETE" }
+          );
+          const art = state.current.articles.find((a) => a.id === btn.dataset.unlink);
+          if (art) art.links = updated.links;
+          toast("تم فك الربط");
+          renderDetail();
         } catch (err) {
           toast(err.message, true);
         }

@@ -178,6 +178,23 @@ tr:hover td { background: #faf8f2; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 td select, td input[type="text"] { min-width: 110px; font-size: 0.88rem; }
+
+.tabs { display: flex; gap: 8px; margin-bottom: 18px; }
+.tab {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 8px 20px;
+}
+.tab:hover { background: #f0ede4; }
+.tab.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+.links-panel td { background: #f7f5ee; }
+.links-box { padding: 6px 10px; }
+.reg-link { color: var(--primary-dark); font-weight: 600; cursor: pointer; }
+.reg-link:hover { text-decoration: underline; }
+.btn-link { text-decoration: none; }
 .filters { margin-bottom: 12px; }
 .back-link { cursor: pointer; color: var(--primary-dark); font-weight: 600; }
 .back-link:hover { text-decoration: underline; }

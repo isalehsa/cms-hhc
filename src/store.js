@@ -68,6 +68,12 @@ export function updateRegulation(id, patch) {
 export function deleteRegulation(id) {
   const before = db.regulations.length;
   db.regulations = db.regulations.filter((r) => r.id !== id);
+  // إزالة روابط المواد التي كانت تشير إلى النظام المحذوف
+  for (const reg of db.regulations) {
+    for (const art of reg.articles) {
+      if (art.links?.length) art.links = art.links.filter((l) => l.regulation_id !== id);
+    }
+  }
   persist();
   return db.regulations.length < before;
 }
@@ -125,9 +131,65 @@ export function deleteArticle(regId, articleId) {
   const before = reg.articles.length;
   reg.articles = reg.articles.filter((a) => a.id !== articleId);
   if (reg.articles.length === before) return false;
+  for (const r of db.regulations) {
+    for (const art of r.articles) {
+      if (art.links?.length) art.links = art.links.filter((l) => l.article_id !== articleId);
+    }
+  }
   reg.updated_at = new Date().toISOString();
   persist();
   return true;
+}
+
+export function allRegulations() {
+  return db.regulations;
+}
+
+// ربط مادة بمادة في نظام آخر (رابط ثنائي الاتجاه)
+export function linkArticles(srcRegId, srcArtId, dstRegId, dstArtId, editor) {
+  const srcReg = getRegulation(srcRegId);
+  const dstReg = getRegulation(dstRegId);
+  const src = srcReg?.articles.find((a) => a.id === srcArtId);
+  const dst = dstReg?.articles.find((a) => a.id === dstArtId);
+  if (!src || !dst) return null;
+  src.links = src.links || [];
+  dst.links = dst.links || [];
+  if (!src.links.some((l) => l.article_id === dstArtId)) {
+    src.links.push({
+      regulation_id: dstRegId,
+      article_id: dstArtId,
+      number: dst.number,
+      created_by: editor,
+      created_at: new Date().toISOString(),
+    });
+  }
+  if (!dst.links.some((l) => l.article_id === srcArtId)) {
+    dst.links.push({
+      regulation_id: srcRegId,
+      article_id: srcArtId,
+      number: src.number,
+      created_by: editor,
+      created_at: new Date().toISOString(),
+    });
+  }
+  persist();
+  return src;
+}
+
+export function unlinkArticles(srcRegId, srcArtId, dstArtId) {
+  const srcReg = getRegulation(srcRegId);
+  const src = srcReg?.articles.find((a) => a.id === srcArtId);
+  if (!src) return null;
+  const link = (src.links || []).find((l) => l.article_id === dstArtId);
+  src.links = (src.links || []).filter((l) => l.article_id !== dstArtId);
+  // إزالة الرابط العكسي
+  if (link) {
+    const dstReg = getRegulation(link.regulation_id);
+    const dst = dstReg?.articles.find((a) => a.id === dstArtId);
+    if (dst) dst.links = (dst.links || []).filter((l) => l.article_id !== srcArtId);
+  }
+  persist();
+  return src;
 }
 
 export function replaceArticles(regId, articles) {
@@ -135,6 +197,15 @@ export function replaceArticles(regId, articles) {
   if (!reg) return null;
   reg.articles = articles;
   reg.updated_at = new Date().toISOString();
+  // إعادة التحليل تستبدل معرفات المواد — نزيل الروابط اليتيمة من بقية الأنظمة
+  for (const other of db.regulations) {
+    if (other.id === regId) continue;
+    for (const art of other.articles) {
+      if (art.links?.length) {
+        art.links = art.links.filter((l) => l.regulation_id !== regId);
+      }
+    }
+  }
   persist();
   return reg;
 }

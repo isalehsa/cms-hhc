@@ -5,6 +5,8 @@ import { fileURLToPath } from "url";
 import * as store from "./src/store.js";
 import { analyzeRegulation } from "./src/analyzer.js";
 import { extractText } from "./src/extract.js";
+import { exportWorkbook } from "./src/export.js";
+import { findRelated } from "./src/similarity.js";
 import { DEPARTMENTS, RISK_LEVELS, APPLICABILITY } from "./src/meta.js";
 import { login, logout, authenticate, requireManager } from "./src/auth.js";
 
@@ -59,12 +61,18 @@ app.post("/api/extract", requireManager, (req, res) => {
     }
     if (!req.file) return res.status(400).json({ error: "لم يُرفق أي ملف" });
     try {
-      const text = await extractText(
+      const result = await extractText(
         req.file.originalname,
         req.file.buffer,
         req.file.mimetype
       );
-      res.json({ filename: req.file.originalname, chars: text.length, text });
+      res.json({
+        filename: req.file.originalname,
+        chars: result.text.length,
+        text: result.text,
+        ocr: result.ocr || false,
+        note: result.note || null,
+      });
     } catch (e) {
       res.status(400).json({ error: e.message });
     }
@@ -141,6 +149,86 @@ app.delete("/api/regulations/:id", requireManager, (req, res) => {
   }
   res.json({ ok: true });
 });
+
+// ---------- مكتبة الالتزام: سجل موحد لجميع المواد عبر كل الأنظمة ----------
+app.get("/api/library", (_req, res) => {
+  const articles = store.allRegulations().flatMap((reg) =>
+    reg.articles.map((a) => ({
+      ...a,
+      regulation_id: reg.id,
+      regulation_name: reg.name,
+    }))
+  );
+  res.json({ articles });
+});
+
+// ---------- تصدير Excel ----------
+function sendXlsx(res, buffer, filename) {
+  res.setHeader(
+    "Content-Type",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  );
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename="export.xlsx"; filename*=UTF-8''${encodeURIComponent(filename)}`
+  );
+  res.send(Buffer.from(buffer));
+}
+
+app.get("/api/library/export.xlsx", async (_req, res) => {
+  try {
+    const buffer = await exportWorkbook(store.allRegulations());
+    sendXlsx(res, buffer, "مكتبة الالتزام.xlsx");
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get("/api/regulations/:id/export.xlsx", async (req, res) => {
+  const reg = store.getRegulation(req.params.id);
+  if (!reg) return res.status(404).json({ error: "النظام غير موجود" });
+  try {
+    const buffer = await exportWorkbook([reg], true);
+    sendXlsx(res, buffer, `${reg.name}.xlsx`);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ---------- الربط بين مواد الأنظمة ----------
+// اقتراح مواد مرتبطة من بقية الأنظمة (تشابه نصي محلي)
+app.get("/api/regulations/:id/articles/:articleId/related", (req, res) => {
+  const reg = store.getRegulation(req.params.id);
+  const article = reg?.articles.find((a) => a.id === req.params.articleId);
+  if (!article) return res.status(404).json({ error: "المادة غير موجودة" });
+  res.json({ suggestions: findRelated(article, store.allRegulations(), reg.id) });
+});
+
+app.post("/api/regulations/:id/articles/:articleId/links", requireManager, (req, res) => {
+  const { regulation_id, article_id } = req.body || {};
+  if (!regulation_id || !article_id) {
+    return res.status(400).json({ error: "يلزم تحديد النظام والمادة المراد الربط بها" });
+  }
+  const src = store.linkArticles(
+    req.params.id,
+    req.params.articleId,
+    regulation_id,
+    article_id,
+    req.user.display_name
+  );
+  if (!src) return res.status(404).json({ error: "المادة المصدر أو الهدف غير موجودة" });
+  res.json(src);
+});
+
+app.delete(
+  "/api/regulations/:id/articles/:articleId/links/:targetArticleId",
+  requireManager,
+  (req, res) => {
+    const src = store.unlinkArticles(req.params.id, req.params.articleId, req.params.targetArticleId);
+    if (!src) return res.status(404).json({ error: "المادة غير موجودة" });
+    res.json(src);
+  }
+);
 
 // ---------- المواد والبنود ----------
 app.post("/api/regulations/:id/articles", requireManager, (req, res) => {
