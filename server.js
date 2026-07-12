@@ -1,8 +1,10 @@
 import express from "express";
+import multer from "multer";
 import path from "path";
 import { fileURLToPath } from "url";
 import * as store from "./src/store.js";
 import { analyzeRegulation } from "./src/analyzer.js";
+import { extractText } from "./src/extract.js";
 import { DEPARTMENTS, RISK_LEVELS, APPLICABILITY } from "./src/meta.js";
 import { login, logout, authenticate, requireManager } from "./src/auth.js";
 
@@ -39,6 +41,33 @@ app.get("/api/meta", (_req, res) => {
     risk_levels: RISK_LEVELS,
     applicability: APPLICABILITY,
     ai_enabled: Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN),
+  });
+});
+
+// ---------- استخراج النص من ملف PDF / Word ----------
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024 }, // 25MB
+});
+
+app.post("/api/extract", requireManager, (req, res) => {
+  upload.single("file")(req, res, async (err) => {
+    if (err) {
+      const msg =
+        err.code === "LIMIT_FILE_SIZE" ? "حجم الملف يتجاوز الحد المسموح (25 م.ب)" : err.message;
+      return res.status(400).json({ error: msg });
+    }
+    if (!req.file) return res.status(400).json({ error: "لم يُرفق أي ملف" });
+    try {
+      const text = await extractText(
+        req.file.originalname,
+        req.file.buffer,
+        req.file.mimetype
+      );
+      res.json({ filename: req.file.originalname, chars: text.length, text });
+    } catch (e) {
+      res.status(400).json({ error: e.message });
+    }
   });
 });
 

@@ -114,8 +114,15 @@ function renderList() {
       <input type="text" id="reg-desc" placeholder="اختياري" />
       <label>سياق المنشأة (يساعد الذكاء الاصطناعي على تحديد الانطباق والإدارة المالكة)</label>
       <input type="text" id="reg-context" placeholder="مثال: شركة قطاع صحي خاص، 500 موظف، تتعامل مع بيانات مرضى" />
+      <label>ملف النظام (PDF أو Word) — اختياري</label>
+      <div class="row">
+        <input type="file" id="reg-file" class="grow"
+          accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+        <span id="reg-file-status" class="muted"></span>
+      </div>
+      <p class="muted">عند اختيار ملف يُستخرج نصه تلقائياً في الحقل أدناه لمراجعته قبل التحليل. ملفات PDF الممسوحة ضوئياً (صور) تحتاج OCR مسبقاً.</p>
       <label>النص الكامل للنظام / اللائحة *</label>
-      <textarea id="reg-text" placeholder="الصق هنا النص الكامل بجميع مواده وبنوده…"></textarea>
+      <textarea id="reg-text" placeholder="الصق النص الكامل هنا، أو حمّل ملف PDF/Word أعلاه…"></textarea>
       <div style="margin-top:12px">
         <button id="add-reg-btn">إضافة وتحليل</button>
       </div>
@@ -147,6 +154,7 @@ function renderList() {
 
   if (isManager()) {
     $("#add-reg-btn")?.addEventListener("click", addRegulation);
+    $("#reg-file")?.addEventListener("change", extractFromFile);
     app.querySelectorAll("[data-del]").forEach((btn) => {
       btn.onclick = async () => {
         if (!confirm("حذف هذا النظام وجميع مواده؟")) return;
@@ -172,6 +180,36 @@ function renderList() {
 async function refreshList() {
   await loadRegulations();
   if (state.view === "list") renderList();
+}
+
+async function extractFromFile() {
+  const input = $("#reg-file");
+  const status = $("#reg-file-status");
+  const file = input.files?.[0];
+  if (!file) return;
+  status.innerHTML = '<span class="spinner"></span> جاري استخراج النص…';
+  try {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch("/api/extract", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${state.token}` },
+      body: form,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `خطأ (${res.status})`);
+    $("#reg-text").value = data.text;
+    const nameField = $("#reg-name");
+    if (!nameField.value.trim()) {
+      nameField.value = file.name.replace(/\.(pdf|docx)$/i, "");
+    }
+    status.textContent = `✔ استُخرج ${data.chars.toLocaleString("ar")} حرفاً من ${file.name}`;
+    toast("تم استخراج النص — راجعه ثم اضغط «إضافة وتحليل»");
+  } catch (err) {
+    status.textContent = "";
+    input.value = "";
+    toast(err.message, true);
+  }
 }
 
 async function addRegulation() {
