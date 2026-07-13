@@ -23,8 +23,8 @@ jobs:
           FIREBASE_SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
           if [ -z "$FIREBASE_SA" ]; then
-            echo "::error::السر FIREBASE_SERVICE_ACCOUNT غير مضبوط — أضفه من Settings → Secrets and variables → Actions"
-            exit 1
+            echo "::warning::السر FIREBASE_SERVICE_ACCOUNT غير مضبوط — تم تخطي النشر التلقائي (أضفه من Settings → Secrets and variables → Actions لتفعيله)"
+            exit 0
           fi
           printf '%s' "$FIREBASE_SA" > "$RUNNER_TEMP/firebase-sa.json"
           export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-sa.json"
