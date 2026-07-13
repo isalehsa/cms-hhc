@@ -1,0 +1,31 @@
+# نشر تلقائي إلى Firebase (الاستضافة + قواعد Firestore) عند كل تحديث
+# يتطلب سراً واحداً في إعدادات المستودع باسم FIREBASE_SERVICE_ACCOUNT
+# (مفتاح حساب الخدمة من: Firebase Console → Project settings → Service accounts → Generate new private key)
+name: Deploy to Firebase
+
+on:
+  push:
+    branches: [main, claude/merge-490frd]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Deploy hosting and Firestore rules
+        env:
+          FIREBASE_SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "$FIREBASE_SA" ]; then
+            echo "::error::السر FIREBASE_SERVICE_ACCOUNT غير مضبوط — أضفه من Settings → Secrets and variables → Actions"
+            exit 1
+          fi
+          printf '%s' "$FIREBASE_SA" > "$RUNNER_TEMP/firebase-sa.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-sa.json"
+          npx firebase-tools@latest deploy --project cms-hhc --non-interactive --force
