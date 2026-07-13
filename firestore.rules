@@ -1,0 +1,35 @@
+rules_version = '2';
+
+// قواعد أمان Firestore لنظام إدارة الالتزام
+// - القراءة: أي مستخدم مسجَّل دخول
+// - الكتابة: مدير الالتزام فقط (role == "compliance_manager" في وثيقة users/{uid})
+// إسناد الأدوار يتم من لوحة Firebase (انظر README)
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isManager() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'compliance_manager';
+    }
+
+    match /users/{uid} {
+      allow read: if signedIn();
+      // الوثيقة الأولى لمدير الالتزام تُنشأ من لوحة Firebase — بعدها يستطيع المدير إدارة البقية
+      allow write: if isManager();
+    }
+
+    match /regulations/{regId} {
+      allow read: if signedIn();
+      allow write: if isManager();
+
+      match /articles/{articleId} {
+        allow read: if signedIn();
+        allow write: if isManager();
+      }
+    }
+  }
+}

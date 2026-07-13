@@ -1,5 +1,5 @@
-// تصدير سجل الالتزام إلى Excel (xlsx) — نظام واحد أو مكتبة الالتزام كاملة
-import ExcelJS from "exceljs";
+// تصدير سجل الالتزام إلى Excel (xlsx) في المتصفح — نظام واحد أو مكتبة الالتزام كاملة
+// يعتمد نسخة المتصفح من مكتبة ExcelJS (سكربت عام من index.html)
 
 const HEADER = [
   { header: "النظام / اللائحة", key: "regulation", width: 30 },
@@ -53,9 +53,12 @@ function articleRow(reg, a, regNameById) {
   };
 }
 
-export async function exportWorkbook(regulations, single = false) {
+async function buildWorkbook(regulations, single) {
+  if (typeof ExcelJS === "undefined") {
+    throw new Error("مكتبة التصدير لم تُحمَّل — تحقق من اتصالك بالإنترنت وأعد تحميل الصفحة");
+  }
   const wb = new ExcelJS.Workbook();
-  wb.creator = "CHCC نظام إدارة الالتزام";
+  wb.creator = "نظام إدارة الالتزام";
   wb.created = new Date();
   const regNameById = new Map(regulations.map((r) => [r.id, r.name]));
 
@@ -73,4 +76,20 @@ export async function exportWorkbook(regulations, single = false) {
     }
   }
   return wb.xlsx.writeBuffer();
+}
+
+// يبني الملف ويبدأ تنزيله في المتصفح
+export async function downloadWorkbook(regulations, filename, single = false) {
+  const buffer = await buildWorkbook(regulations, single);
+  const blob = new Blob([buffer], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename.endsWith(".xlsx") ? filename : `${filename}.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
