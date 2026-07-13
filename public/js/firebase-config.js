@@ -2,12 +2,13 @@
 // Firebase Console → Project settings → Your apps → SDK setup and configuration
 // هذه القيم عامة وغير سرية (الحماية الفعلية عبر قواعد أمان Firestore)
 export const firebaseConfig = {
-  apiKey: "YOUR_FIREBASE_API_KEY",
-  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT_ID.firebasestorage.app",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID",
+  apiKey: "AIzaSyACvF-I0-gfgVcaEukARaJ3RDdlKDfG0dw",
+  authDomain: "cms-hhc.firebaseapp.com",
+  projectId: "cms-hhc",
+  storageBucket: "cms-hhc.firebasestorage.app",
+  messagingSenderId: "749671451438",
+  appId: "1:749671451438:web:8141e48c886a5fd3c708bf",
+  measurementId: "G-CSTYFPFYFT",
 };
 
 // هل ما زالت الإعدادات على القيم المبدئية؟ (تعرض الواجهة شاشة إرشاد بدل الانهيار)
