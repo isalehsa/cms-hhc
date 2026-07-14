@@ -6,6 +6,7 @@ import {
   riskLevel, CRITICALITY, REQ_TYPES, REQ_CATEGORIES, REQ_STATUS,
   RISK_STATUS, MON_TYPES, MON_FREQ, MON_STATUS, MON_RESULT, NC_LEVELS,
   PLAN_STATUS, PLAN_SOURCES, SA_STATUS, SA_ANSWERS, FND_SEVERITY, FND_STATUS, FND_SOURCES,
+  CASE_SOURCES, CASE_STATUS, VISIT_STATUS, OBS_IMPL_STATUS,
 } from "../meta.js";
 
 // ---------- تعريف التقارير ----------
@@ -17,6 +18,8 @@ const REPORTS = [
   { key: "assessments", icon: "📋", title: "تقرير الفحص الذاتي", desc: "نتائج الفحوصات الذاتية للإدارات وإجاباتها" },
   { key: "plan", icon: "📅", title: "تقرير الخطة السنوية", desc: "مبادرات الخطة ونسب إنجازها" },
   { key: "findings", icon: "🛠", title: "تقرير الملاحظات وخطط التصحيح", desc: "الملاحظات المفتوحة والمغلقة وتقدم الإجراءات التصحيحية" },
+  { key: "cases", icon: "📣", title: "سجل البلاغات", desc: "البلاغات الواردة وخطط التحقيق ونتائجها والإجراءات المتخذة وحالتها" },
+  { key: "visits", icon: "🏢", title: "سجل متابعة ملاحظات الزيارات الميدانية", desc: "ملاحظات الزيارات والإجراءات التصحيحية المتفق عليها وحالة تنفيذها" },
 ];
 
 export function renderReports(el) {
@@ -109,6 +112,28 @@ function tableFor(key) {
           FND_STATUS[f.status] || f.status,
         ]),
       };
+    case "cases":
+      return {
+        head: ["رقم البلاغ", "تاريخ الاستلام", "مصدر البلاغ", "وصف مختصر", "الشرح التفصيلي", "التقييم المبدئي", "خطة التحقيق", "المسؤول عن التحقيق", "المستندات الداعمة", "نتيجة التحقيق النهائية", "الإجراء الجزائي/التصحيحي", "تاريخ الإغلاق", "ملاحظات إضافية", "الحالة"],
+        rows: store.cases.map((c) => [
+          c.code, fmtDate(c.receivedDate), CASE_SOURCES[c.source] || c.source || "", c.summary, c.details || "",
+          FND_SEVERITY[c.initialAssessment] || "", c.investigationPlan || "", userName(c.investigatorId), c.supportingDocs || "",
+          c.finalResult || "", c.action || "", fmtDate(c.closeDate), c.notes || "", CASE_STATUS[c.status] || c.status,
+        ]),
+      };
+    case "visits": {
+      const rows = [];
+      for (const v of store.visits) {
+        for (const o of v.observations || []) {
+          rows.push([
+            o.code, fmtDate(o.obsDate), `${v.code} — ${v.site}`, deptName(o.departmentId), o.details || "",
+            FND_SEVERITY[o.severity] || "", o.recommendation || "", o.correctiveAction || "", userName(o.ownerId),
+            fmtDate(o.implDate), OBS_IMPL_STATUS[o.implStatus] || "", o.docs || "", o.followResult || "", o.timeframe || "",
+          ]);
+        }
+      }
+      return { head: ["رقم الملاحظة", "تاريخ الملاحظة", "الزيارة/المقر", "الإدارة المعنية", "الشرح التفصيلي للملاحظة", "مستوى الخطورة", "التوصية", "الإجراء التصحيحي المتفق عليه", "المسؤول عن التنفيذ", "تاريخ التنفيذ", "حالة التنفيذ", "المستندات الداعمة", "نتيجة المتابعة", "الإطار الزمني"], rows };
+    }
     default:
       return { head: [], rows: [] };
   }
@@ -198,7 +223,7 @@ function viewReport(key) {
   win.document.write(`<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"/>
     <title>${esc(REPORTS.find((r) => r.key === key).title)}</title>
     <style>
-      body{font-family:"Segoe UI",Tahoma,sans-serif;margin:24px;color:#222}
+      body{font-family:"Scala","Scala Sans","ScalaSans","IBM Plex Sans Arabic","Segoe UI",Tahoma,sans-serif;margin:24px;color:#222}
       h1{font-size:1.4rem;margin:0}h2{font-size:1.05rem;margin:22px 0 8px;color:#1d5c4d}
       table{width:100%;border-collapse:collapse;margin:8px 0;font-size:.85rem}
       th,td{border:1px solid #ccc;padding:6px 8px;text-align:right;vertical-align:top}
@@ -263,7 +288,7 @@ async function exportExcel(key) {
 async function exportWord(key) {
   const meta = REPORTS.find((r) => r.key === key);
   const html = `<html xmlns:w="urn:schemas-microsoft-com:office:word" lang="ar" dir="rtl"><head><meta charset="utf-8"/>
-    <style>body{font-family:Arial;direction:rtl}table{border-collapse:collapse;width:100%}th,td{border:1px solid #999;padding:5px;text-align:right}th{background:#eef3f0}h2{color:#1d5c4d}</style>
+    <style>body{font-family:"Scala","Scala Sans","IBM Plex Sans Arabic",Arial;direction:rtl}table{border-collapse:collapse;width:100%}th,td{border:1px solid #999;padding:5px;text-align:right}th{background:#eef3f0}h2{color:#1d5c4d}</style>
     </head><body>${reportHtml(key)}</body></html>`;
   downloadBlob(new Blob(["﻿" + html], { type: "application/msword" }), `${meta.title}.doc`);
   logReport(key);

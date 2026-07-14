@@ -86,6 +86,26 @@ service cloud.firestore {
       allow update: if isEditor() || isDeptOwnerOf(resource.data.departmentId);
     }
 
+    // سجل البلاغات — تحرير كامل لفريق الالتزام (سرية على مستوى الوصول للنظام)
+    match /cases/{id} {
+      allow read: if signedIn();
+      allow write: if isEditor();
+    }
+
+    // الزيارات الميدانية وسجل متابعة ملاحظاتها
+    match /visits/{id} {
+      allow read: if signedIn();
+      // مالك الإدارة يحدّث حالة تنفيذ ملاحظات إدارته
+      allow create, delete: if isEditor();
+      allow update: if isEditor() || isDeptOwnerOf(resource.data.departmentId);
+    }
+
+    // إعدادات النظام (مثل القيم اليدوية لمؤشرات الأداء)
+    match /settings/{id} {
+      allow read: if signedIn();
+      allow write: if isEditor();
+    }
+
     match /counters/{id} {
       allow read: if signedIn();
       allow write: if isEditor();

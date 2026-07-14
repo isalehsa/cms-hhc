@@ -14,6 +14,9 @@ import { renderMonitoring } from "./views/monitoring.js";
 import { renderPlan } from "./views/plan.js";
 import { renderAssessments } from "./views/assessments.js";
 import { renderFindings } from "./views/findings.js";
+import { renderCases } from "./views/cases.js";
+import { renderVisits } from "./views/visits.js";
+import { renderKpis } from "./views/kpis.js";
 import { renderReports } from "./views/reports.js";
 import { settings, aiEnabled } from "./views/regulations.js";
 import { renderAdmin } from "./views/admin.js";
@@ -24,14 +27,17 @@ const VIEWS = {
   library: { icon: "📖", label: "مكتبة الالتزام", render: renderLibrary },
   risks: { icon: "⚠️", label: "سجل المخاطر", render: renderRisks },
   monitoring: { icon: "🔍", label: "برنامج المراقبة", render: renderMonitoring },
+  visits: { icon: "🏢", label: "الزيارات الميدانية", render: renderVisits },
   plan: { icon: "📅", label: "الخطة السنوية", render: renderPlan },
   assessments: { icon: "📋", label: "الفحص الذاتي", render: renderAssessments },
   findings: { icon: "🛠", label: "الملاحظات والتصحيح", render: renderFindings },
+  cases: { icon: "📣", label: "سجل البلاغات", render: renderCases },
   // التحليل الذكي مدمج داخل مكتبة الالتزام كتبويب فرعي — المسار يبقى للروابط القديمة
   regulations: {
     icon: "🤖", label: "التحليل الذكي", hidden: true,
     render: (el, navFn, refresh, params = {}) => renderLibrary(el, navFn, refresh, { ...params, tab: "analysis" }),
   },
+  kpis: { icon: "📈", label: "مؤشرات الأداء", render: renderKpis },
   reports: { icon: "📊", label: "التقارير", render: renderReports },
   admin: { icon: "⚙️", label: "الإدارة", render: renderAdmin },
 };

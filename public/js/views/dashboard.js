@@ -34,6 +34,11 @@ export function renderDashboard(el, nav) {
   const openFindings = s.findings.filter((f) => f.status !== "CLOSED");
   const highFindings = openFindings.filter((f) => ["HIGH", "CRITICAL"].includes(f.severity)).length;
 
+  // البلاغات والزيارات الميدانية
+  const openCases = s.cases.filter((c) => c.status !== "CLOSED");
+  const caseClosureRate = s.cases.length ? Math.round(((s.cases.length - openCases.length) / s.cases.length) * 100) : 0;
+  const visitsExec = s.visits.length ? Math.round((s.visits.filter((v) => v.status !== "PLANNED").length / s.visits.length) * 100) : 0;
+
   // الخطة السنوية
   const year = new Date().getFullYear();
   const planYear = s.planItems.filter((p) => p.year === year);
@@ -76,6 +81,22 @@ export function renderDashboard(el, nav) {
       });
     }
   }
+  // بلاغات عالية الأهمية ما زالت قيد التحقيق
+  for (const c of openCases) {
+    if (["HIGH", "CRITICAL"].includes(c.initialAssessment)) {
+      alerts.push({ icon: "📣", text: `${c.code} — ${c.summary}: بلاغ عالي الأهمية قيد التحقيق`, view: "cases", overdue: false });
+    }
+  }
+  // ملاحظات زيارات ميدانية تأخر تنفيذ إجراءاتها
+  for (const v of s.visits) {
+    for (const o of v.observations || []) {
+      if (o.implStatus === "DONE") continue;
+      const d = daysUntil(o.implDate);
+      if (d !== null && d < 0) {
+        alerts.push({ icon: "🏢", text: `${o.code} (${v.site}): تأخر تنفيذ الإجراء التصحيحي ${-d} يوماً`, view: "visits", overdue: true });
+      }
+    }
+  }
   alerts.sort((a, b) => (b.overdue ? 1 : 0) - (a.overdue ? 1 : 0));
 
   el.innerHTML = `
@@ -87,6 +108,8 @@ export function renderDashboard(el, nav) {
       ${statTile(`${monTotal ? Math.round((monDone / monTotal) * 100) : 0}%`, "إنجاز برنامج المراقبة", `${monDone} من ${monTotal} نشاطاً`)}
       ${statTile(openFindings.length, "ملاحظات مفتوحة", levelBadge(highFindings ? "HIGH" : "LOW", `${highFindings} عالية الخطورة`))}
       ${statTile(`${Math.round(planAvg)}%`, `إنجاز خطة ${year}`, `${planYear.length} مبادرة`)}
+      ${statTile(openCases.length, "بلاغات قيد التحقيق", `معدل الإغلاق ${caseClosureRate}%`)}
+      ${statTile(`${visitsExec}%`, "تنفيذ الزيارات الميدانية", `${s.visits.length} زيارة مخططة`)}
       ${statTile(`${saTotal ? Math.round((saDone / saTotal) * 100) : 0}%`, "الفحص الذاتي المكتمل", `${saPending.length} بانتظار الإدارات`)}
     </div>
 

@@ -9,6 +9,8 @@ export const store = {
   planItems: [],
   assessments: [],
   findings: [],
+  cases: [],
+  visits: [],
   departments: [],
   authorities: [],
   users: [],
@@ -19,7 +21,7 @@ export const store = {
 
 export async function loadAll(force = false) {
   if (store.loaded && !force) return store;
-  const [requirements, risks, monitoring, planItems, assessments, findings, departments, authorities, users, notifications] =
+  const [requirements, risks, monitoring, planItems, assessments, findings, cases, visits, departments, authorities, users, notifications] =
     await Promise.all([
       listCol("requirements", "code").catch(() => []),
       listCol("risks", "code").catch(() => []),
@@ -27,13 +29,15 @@ export async function loadAll(force = false) {
       listCol("planItems").catch(() => []),
       listCol("assessments").catch(() => []),
       listCol("findings", "code").catch(() => []),
+      listCol("cases", "code").catch(() => []),
+      listCol("visits", "code").catch(() => []),
       listCol("departments", "name").catch(() => []),
       listCol("authorities", "name").catch(() => []),
       listCol("users").catch(() => []),
       listCol("notifications").catch(() => []),
     ]);
   Object.assign(store, {
-    requirements, risks, monitoring, planItems, assessments, findings,
+    requirements, risks, monitoring, planItems, assessments, findings, cases, visits,
     departments, authorities, users, notifications, loaded: true,
   });
   return store;
@@ -41,7 +45,7 @@ export async function loadAll(force = false) {
 
 // إعادة تحميل مجموعة واحدة بعد التعديل
 export async function reload(...cols) {
-  const orderFields = { requirements: "code", risks: "code", monitoring: "code", findings: "code", departments: "name", authorities: "name" };
+  const orderFields = { requirements: "code", risks: "code", monitoring: "code", findings: "code", cases: "code", visits: "code", departments: "name", authorities: "name" };
   await Promise.all(
     cols.map(async (c) => {
       store[c] = await listCol(c, orderFields[c] || null).catch(() => []);
