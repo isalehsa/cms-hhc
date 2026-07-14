@@ -1,20 +1,40 @@
-// مكتبة الالتزام — المتطلبات النظامية المركزية مع الترابط مع بقية الوحدات
-import { store, reload, deptName, authName, deptOptions, authOptions } from "../state.js";
+// مكتبة الالتزام — تبويبان:
+//  1) الوثائق: مكتبة مجمّعة للوثائق النظامية والتشريعية مع الإضافة والتحليل الذكي (regulations)
+//  2) المتطلبات النظامية: انعكاس لبنود ومواد الوثائق بنداً بنداً (articles) — الإدارة المالكة،
+//     مالك خطر عدم الالتزام، الانطباق، درجة الخطر، وربطها بسجل المخاطر (يدوياً أو من التحليل)
+import { store, reload, deptName, reqLabel } from "../state.js";
 import * as db from "../db.js";
 import {
-  $, esc, toast, modal, confirmBox, fld, txt, area, sel, dateInp, val,
-  fmtDate, daysUntil, isoFromInput, levelBadge, statusBadgeFrom, emptyMsg, chip,
+  $, esc, toast, modal, confirmBox, fld, txt, area, sel, val,
+  fmtDate, levelBadge, emptyMsg, spinnerHtml,
 } from "../ui.js";
-import { REQ_TYPES, REQ_CATEGORIES, CRITICALITY, REQ_STATUS, REQ_SCOPE, SECTORS } from "../meta.js";
-import { canEdit, canApprove } from "../auth.js";
+import { REQ_TYPES, SECTORS, DEPARTMENTS, RISK_LEVELS, APPLICABILITY, REQ_SCOPE, riskLevel } from "../meta.js";
+import { canEdit } from "../auth.js";
 import { renderRegulations } from "./regulations.js";
 
-const CRIT_ROLE = { CRITICAL: "critical", HIGH: "serious", MEDIUM: "warning", LOW: "good" };
-const ST_ROLE = { ACTIVE: "good", UPDATED: "good", UNDER_REVIEW: "warning", CANCELLED: "neutral" };
+const tabState = { tab: "docs" };
+const cfilters = { search: "", doc: "", applicability: "", risk: "", department: "", linked: "" };
 
-const filters = { search: "", category: "", criticality: "", status: "", dept: "" };
-// تبويبا المكتبة: المتطلبات + التحليل الذكي (مدمج هنا)
-const tabState = { tab: "reqs" };
+// ذاكرة البنود المسطّحة عبر جميع الوثائق (تُحمَّل مرة وتُحدَّث عند الطلب)
+let clauseCache = null;
+async function loadClauses(force = false) {
+  if (clauseCache && !force) return clauseCache;
+  const regs = await db.allRegulations().catch(() => []);
+  clauseCache = [];
+  for (const reg of regs) {
+    for (const a of reg.articles || []) {
+      clauseCache.push({ ...a, regId: reg.id, regName: reg.name, docCategory: reg.docCategory, docNumber: reg.docNumber, requirementId: reg.requirementId });
+    }
+  }
+  return clauseCache;
+}
+export function invalidateClauseCache() { clauseCache = null; }
+
+// المخاطر المرتبطة ببند معيّن (من الاشتقاق الآلي أو الربط اليدوي)
+const risksForClause = (c) =>
+  store.risks.filter((r) => r.sourceArticleId === c.id || r.sourceKey === `${c.regId}::${c.number}`);
+
+const deptIdByName = (name) => store.departments.find((d) => d.name === name)?.id || null;
 
 function tabsHtml(editable) {
   return `
@@ -22,323 +42,290 @@ function tabsHtml(editable) {
       <h1>📖 مكتبة الالتزام</h1>
       <div class="row">
         <div class="subtabs">
-          <button class="subtab ${tabState.tab === "reqs" ? "active" : ""}" data-tab="reqs" title="عرض المتطلبات النظامية المسجلة في المكتبة">📋 المتطلبات</button>
-          <button class="subtab ${tabState.tab === "analysis" ? "active" : ""}" data-tab="analysis" title="تحليل الأنظمة واللوائح بالذكاء الاصطناعي واستخراج موادها وغراماتها">🤖 التحليل الذكي</button>
+          <button class="subtab ${tabState.tab === "docs" ? "active" : ""}" data-tab="docs" title="مكتبة الوثائق النظامية والتشريعية — الإضافة والتحليل الذكي">🗂 الوثائق</button>
+          <button class="subtab ${tabState.tab === "reqs" ? "active" : ""}" data-tab="reqs" title="المتطلبات النظامية بنداً بنداً — انعكاس لمواد وبنود الوثائق">📋 المتطلبات النظامية</button>
         </div>
-        ${tabState.tab === "reqs" && editable ? '<button id="add-req" title="إضافة متطلب نظامي جديد إلى مكتبة الالتزام">＋ متطلب جديد</button>' : ""}
       </div>
     </div>`;
 }
 
 function bindTabs(el, rerender) {
   el.querySelectorAll("[data-tab]").forEach((b) => {
-    b.onclick = () => {
-      tabState.tab = b.dataset.tab;
-      rerender();
-    };
+    b.onclick = () => { tabState.tab = b.dataset.tab; rerender(); };
   });
 }
 
 export function renderLibrary(el, nav, refresh, params = {}) {
-  const user = store.user;
-  const editable = canEdit(user);
-  if (params.tab) tabState.tab = params.tab;
-  if (params.createFor) tabState.tab = "analysis";
+  const editable = canEdit(store.user);
+  if (params.tab === "analysis" || params.tab === "docs") tabState.tab = "docs";
+  else if (params.tab === "reqs") tabState.tab = "reqs";
+  if (params.createFor) tabState.tab = "docs";
   const rerenderTabs = () => renderLibrary(el, nav, refresh);
 
-  if (tabState.tab === "analysis") {
-    el.innerHTML = tabsHtml(editable) + '<div id="lib-analysis"></div>';
+  if (tabState.tab === "docs") {
+    el.innerHTML = tabsHtml(editable) + '<div id="lib-docs"></div>';
     bindTabs(el, rerenderTabs);
-    renderRegulations($("#lib-analysis", el), nav, refresh, params);
+    renderRegulations($("#lib-docs", el), nav, refresh, params);
     return;
   }
-  const rows = store.requirements.filter((r) => {
-    if (filters.search && !`${r.code} ${r.title} ${r.summary || ""}`.includes(filters.search)) return false;
-    if (filters.category && r.category !== filters.category) return false;
-    if (filters.criticality && r.criticality !== filters.criticality) return false;
-    if (filters.status && r.status !== filters.status) return false;
-    if (filters.dept && r.ownerDeptId !== filters.dept) return false;
+  // تبويب المتطلبات النظامية — يُحدَّث من الوثائق عند كل دخول للتبويب
+  invalidateClauseCache();
+  el.innerHTML = tabsHtml(editable) + '<div id="lib-reqs">' + spinnerHtml("جاري تحميل بنود الوثائق…") + "</div>";
+  bindTabs(el, rerenderTabs);
+  renderDetailed($("#lib-reqs", el), nav, editable);
+}
+
+async function renderDetailed(host, nav, editable) {
+  const clauses = await loadClauses();
+  const docs = store.regulations;
+
+  const rows = clauses.filter((c) => {
+    if (cfilters.search && !`${c.number} ${c.title} ${c.text} ${c.regName}`.includes(cfilters.search)) return false;
+    if (cfilters.doc && c.regId !== cfilters.doc) return false;
+    if (cfilters.applicability && c.applicability !== cfilters.applicability) return false;
+    if (cfilters.risk && c.risk_level !== cfilters.risk) return false;
+    if (cfilters.department && c.owning_department !== cfilters.department) return false;
+    if (cfilters.linked === "yes" && !risksForClause(c).length) return false;
+    if (cfilters.linked === "no" && risksForClause(c).length) return false;
     return true;
   });
 
-  el.innerHTML = `
-    ${tabsHtml(editable)}
+  const applies = clauses.filter((c) => c.applicability === "تنطبق").length;
+  const linked = clauses.filter((c) => risksForClause(c).length).length;
+
+  host.innerHTML = `
+    <div class="stats">
+      <div class="stat"><div class="num">${clauses.length}</div><div class="lbl">إجمالي البنود والمواد</div><div class="sub">من ${docs.length} وثيقة</div></div>
+      <div class="stat"><div class="num">${applies}</div><div class="lbl">بنود منطبقة</div></div>
+      <div class="stat"><div class="num">${linked}</div><div class="lbl">مرتبطة بمخاطر</div></div>
+      <div class="stat"><div class="num">${clauses.length - linked}</div><div class="lbl">بلا خطر مرتبط</div></div>
+    </div>
     <section class="card">
       <div class="row filters">
-        <input type="text" id="f-search" class="grow" placeholder="بحث بالرمز أو الاسم…" value="${esc(filters.search)}" />
-        ${sel("f-cat", REQ_CATEGORIES, filters.category, { empty: "كل التصنيفات" })}
-        ${sel("f-crit", CRITICALITY, filters.criticality, { empty: "كل درجات الأهمية" })}
-        ${sel("f-status", REQ_STATUS, filters.status, { empty: "كل الحالات" })}
-        ${sel("f-dept", deptOptions(), filters.dept, { empty: "كل الإدارات" })}
+        <input type="text" id="cf-search" class="grow" placeholder="بحث في البنود…" value="${esc(cfilters.search)}" />
+        ${sel("cf-doc", docs.map((d) => ({ id: d.id, name: d.name })), cfilters.doc, { empty: "كل الوثائق" })}
+        ${sel("cf-app", APPLICABILITY, cfilters.applicability, { empty: "كل حالات الانطباق" })}
+        ${sel("cf-risk", RISK_LEVELS, cfilters.risk, { empty: "كل درجات الخطر" })}
+        ${sel("cf-dept", DEPARTMENTS, cfilters.department, { empty: "كل الإدارات" })}
+        ${sel("cf-linked", { yes: "مرتبطة بمخاطر", no: "بلا خطر" }, cfilters.linked, { empty: "الربط بالمخاطر" })}
+        ${editable ? '<button class="small" id="cf-add" title="إضافة متطلب/بند يدوياً إلى وثيقة">＋ متطلب يدوي</button>' : ""}
       </div>
       <div style="overflow-x:auto">
         <table>
           <thead><tr>
-            <th>الرمز</th><th>فئة الوثيقة</th><th>رقم الوثيقة</th><th>اسم الوثيقة</th><th>رقم البند</th>
-            <th>خاص/عام</th><th>الأهمية</th><th>الإدارة المالكة</th><th>المراجعة القادمة</th><th>الحالة</th><th>الروابط</th>
+            <th>الوثيقة</th><th>رقم المادة/البند</th><th>نص المادة/البند</th><th>الانطباق</th>
+            <th>الإدارة المالكة</th><th>مالك الخطر</th><th>درجة الخطر</th><th>المخاطر المرتبطة</th>
           </tr></thead>
           <tbody>
             ${rows
-              .map((r) => {
-                const d = daysUntil(r.nextReviewDate);
-                const riskCount = store.risks.filter((x) => x.requirementId === r.id).length;
-                const monCount = store.monitoring.filter((x) => x.requirementId === r.id).length;
-                const planCount = store.planItems.filter((x) => x.requirementId === r.id).length;
-                return `<tr class="rowlink" data-open="${r.id}">
-                  <td><strong>${esc(r.code)}</strong></td>
-                  <td>${esc(REQ_TYPES[r.type] || r.type || "—")}</td>
-                  <td class="muted">${esc(r.docNumber || "—")}</td>
-                  <td><strong>${esc(r.title)}</strong><div class="muted clamp">${esc(r.clauseText || r.summary || "")}</div></td>
-                  <td class="muted">${esc(r.articleNumber || "—")}</td>
-                  <td>${esc(REQ_SCOPE[r.scope] || "—")}</td>
-                  <td>${levelBadge(r.criticality, CRITICALITY[r.criticality] || r.criticality || "—")}</td>
-                  <td>${esc(deptName(r.ownerDeptId))}</td>
-                  <td>${fmtDate(r.nextReviewDate)}${d !== null && d < 0 ? ' <span class="lvl lvl-critical"><span class="dot"></span>متأخرة</span>' : d !== null && d <= 30 ? ' <span class="lvl lvl-warning"><span class="dot"></span>قريبة</span>' : ""}</td>
-                  <td>${statusBadgeFrom(REQ_STATUS, r.status, ST_ROLE)}</td>
-                  <td class="muted">⚠${riskCount} 🔍${monCount} 📅${planCount}</td>
+              .map((c) => {
+                const rk = risksForClause(c);
+                return `<tr class="rowlink" data-clause="${c.regId}::${c.id}">
+                  <td class="muted">${esc(REQ_TYPES[c.docCategory] || "")}<br/><strong>${esc(c.regName)}</strong></td>
+                  <td><strong>${esc(c.number)}</strong>${c.needs_review ? '<br/><span class="lvl lvl-warning"><span class="dot"></span>للمراجعة</span>' : ""}</td>
+                  <td><strong>${esc(c.title || "")}</strong><div class="muted clamp">${esc(c.text || "")}</div>
+                    ${c.penalty ? `<span class="penalty-chip" data-tip="${esc(c.penalty)}">⚖ عقوبة</span>` : ""}</td>
+                  <td>${c.applicability === "تنطبق" ? '<span class="lvl lvl-good"><span class="dot"></span>تنطبق</span>' : '<span class="lvl lvl-neutral"><span class="dot"></span>لا تنطبق</span>'}</td>
+                  <td>${esc(c.owning_department || "—")}</td>
+                  <td class="muted">${esc(c.risk_owner || "—")}</td>
+                  <td>${riskBadge(c.risk_level)}</td>
+                  <td>${rk.length ? rk.map((r) => `<span class="chip" data-tip="${esc(r.title)}">⚠ ${esc(r.code)}</span>`).join(" ") : '<span class="muted">—</span>'}</td>
                 </tr>`;
               })
-              .join("") || `<tr><td colspan="11">${emptyMsg("لا توجد متطلبات مطابقة")}</td></tr>`}
+              .join("") || `<tr><td colspan="8">${emptyMsg("لا توجد بنود مطابقة — أضِف وثيقة وحلّلها من تبويب «الوثائق»")}</td></tr>`}
           </tbody>
         </table>
       </div>
-      <p class="muted">عدد النتائج: ${rows.length} من ${store.requirements.length}</p>
+      <p class="muted">عدد النتائج: ${rows.length} من ${clauses.length}</p>
     </section>`;
 
-  const rerender = () => renderLibrary(el, nav, refresh);
-  bindTabs(el, rerenderTabs);
-  $("#f-search", el).addEventListener("input", (e) => { filters.search = e.target.value; rerender(); });
-  $("#f-cat", el).onchange = (e) => { filters.category = e.target.value; rerender(); };
-  $("#f-crit", el).onchange = (e) => { filters.criticality = e.target.value; rerender(); };
-  $("#f-status", el).onchange = (e) => { filters.status = e.target.value; rerender(); };
-  $("#f-dept", el).onchange = (e) => { filters.dept = e.target.value; rerender(); };
-  $("#add-req", el)?.addEventListener("click", () => openForm(null, rerender));
-  el.querySelectorAll("[data-open]").forEach((tr) => {
-    tr.addEventListener("click", () => openDetail(tr.dataset.open, nav, rerender));
-  });
-}
-
-function openForm(req, done) {
-  const isNew = !req;
-  const ov = modal(
-    `
-    <h2>${isNew ? "إضافة متطلب جديد" : `تعديل ${esc(req.code)}`}</h2>
-    <h3 class="form-sec">بيانات الوثيقة (موسوعة الالتزام)</h3>
-    <div class="form-grid">
-      ${fld("فئة الوثيقة", sel("q-type", REQ_TYPES, req?.type || "SYSTEM"))}
-      ${fld("رقم الوثيقة", txt("q-docno", req?.docNumber, "مثل: م/19 بتاريخ 9/2/1443هـ"))}
-      ${fld("اسم الوثيقة *", txt("q-title", req?.title))}
-      ${fld("رقم البند / المادة", txt("q-artno", req?.articleNumber, "مثل: المادة 40 / البند 2.3"))}
-      ${fld("خاص / عام", sel("q-scope", REQ_SCOPE, req?.scope || "PUBLIC"))}
-      ${fld("مالك خطر عدم الالتزام", txt("q-riskowner", req?.riskOwner, "الجهة/المنصب المسؤول"))}
-      ${fld("القطاع", sel("q-sector", SECTORS, req?.sector, { empty: "— اختر —" }))}
-      ${fld("الجهة التنظيمية", sel("q-auth", authOptions(), req?.authorityId, { empty: "— اختر —" }))}
-    </div>
-    ${fld("نص البند / المادة", area("q-clause", req?.clauseText, "النص الحرفي للبند أو المادة", 4))}
-    <h3 class="form-sec">قرار التعديل (إن وجد)</h3>
-    <div class="form-grid">
-      ${fld("رقم قرار التعديل", txt("q-amdno", req?.amendmentNo))}
-      ${fld("اسم قرار التعديل", txt("q-amdname", req?.amendmentName))}
-    </div>
-    ${fld("نص قرار التعديل", area("q-amdtext", req?.amendmentText, "", 2))}
-    <h3 class="form-sec">التصنيف والإدارة</h3>
-    <div class="form-grid">
-      ${fld("التصنيف الموضوعي", sel("q-cat", REQ_CATEGORIES, req?.category || "GOVERNANCE"))}
-      ${fld("درجة الأهمية", sel("q-crit", CRITICALITY, req?.criticality || "MEDIUM"))}
-      ${fld("الإدارة المالكة", sel("q-dept", deptOptions(), req?.ownerDeptId, { empty: "— اختر —" }))}
-      ${fld("تاريخ الإصدار", dateInp("q-issue", req?.issueDate))}
-      ${fld("تاريخ المراجعة القادم", dateInp("q-review", req?.nextReviewDate))}
-      ${fld("الحالة", sel("q-status", REQ_STATUS, req?.status || "ACTIVE"))}
-      ${fld("رابط المرفق (اختياري)", txt("q-attach", req?.attachmentUrl || "", "https://…"))}
-    </div>
-    ${fld("ملخص الالتزام / ملاحظات", area("q-summary", req?.summary, "", 3))}
-    ${isNew ? '<label class="chk"><input type="checkbox" id="q-mkrisk" checked /> إنشاء خطر مرتبط تلقائياً في سجل المخاطر</label>' : ""}
-    <div class="row" style="margin-top:14px">
-      <button id="q-save">حفظ</button>
-      <button class="secondary" id="q-cancel">إلغاء</button>
-    </div>`,
-    { wide: true }
+  const rerender = () => renderDetailed(host, nav, editable);
+  $("#cf-search", host).addEventListener("input", (e) => { cfilters.search = e.target.value; rerender(); });
+  $("#cf-doc", host).onchange = (e) => { cfilters.doc = e.target.value; rerender(); };
+  $("#cf-app", host).onchange = (e) => { cfilters.applicability = e.target.value; rerender(); };
+  $("#cf-risk", host).onchange = (e) => { cfilters.risk = e.target.value; rerender(); };
+  $("#cf-dept", host).onchange = (e) => { cfilters.department = e.target.value; rerender(); };
+  $("#cf-linked", host).onchange = (e) => { cfilters.linked = e.target.value; rerender(); };
+  $("#cf-add", host)?.addEventListener("click", () => openManualClause(nav, rerender));
+  host.querySelectorAll("[data-clause]").forEach((tr) =>
+    tr.addEventListener("click", () => {
+      const [regId, artId] = tr.dataset.clause.split("::");
+      openClause(regId, artId, nav, rerender);
+    })
   );
-  $("#q-cancel", ov).onclick = () => ov.remove();
-  $("#q-save", ov).onclick = async () => {
-    const title = val("q-title", ov);
-    if (!title) return toast("اسم المتطلب إلزامي", true);
-    const data = {
-      title,
-      docNumber: val("q-docno", ov) || null,
-      articleNumber: val("q-artno", ov) || null,
-      clauseText: val("q-clause", ov) || null,
-      scope: val("q-scope", ov),
-      riskOwner: val("q-riskowner", ov) || null,
-      sector: val("q-sector", ov) || null,
-      amendmentNo: val("q-amdno", ov) || null,
-      amendmentName: val("q-amdname", ov) || null,
-      amendmentText: val("q-amdtext", ov) || null,
-      authorityId: val("q-auth", ov) || null,
-      type: val("q-type", ov),
-      category: val("q-cat", ov),
-      criticality: val("q-crit", ov),
-      ownerDeptId: val("q-dept", ov) || null,
-      issueDate: isoFromInput(val("q-issue", ov)),
-      nextReviewDate: isoFromInput(val("q-review", ov)),
-      status: val("q-status", ov),
-      attachmentUrl: val("q-attach", ov) || null,
-      summary: val("q-summary", ov),
-      lastUpdated: db.now(),
-    };
-    try {
-      if (isNew) {
-        const code = await db.nextCode("REQ");
-        const row = await db.setRow("requirements", code, {
-          ...data,
-          code,
-          createdById: store.user.uid,
-          approvedById: null,
-          createdAt: db.now(),
-        });
-        await db.audit("CREATE", "Requirement", code, `إضافة متطلب: ${code} — ${title}`);
-        await db.notify({
-          title: "متطلب جديد في مكتبة الالتزام",
-          message: `${code} — ${title}`,
-          type: "REQ_NEW",
-          link: "library",
-          roleTarget: "COMPLIANCE_MANAGER",
-        });
-        if ($("#q-mkrisk", ov)?.checked) {
-          const rcode = await db.nextCode("RSK");
-          await db.setRow("risks", rcode, {
-            code: rcode,
-            title: `خطر عدم الالتزام — ${title}`,
-            description: `احتمال عدم الالتزام بالمتطلب ${code} (${title})`,
-            cause: "",
-            penalty: "",
-            source: "AUTO_LIBRARY",
-            sourceKey: `req::${row.id}`,
-            requirementId: row.id,
-            likelihood: 3,
-            impact: data.criticality === "CRITICAL" ? 5 : data.criticality === "HIGH" ? 4 : 3,
-            residualLikelihood: 3,
-            residualImpact: data.criticality === "CRITICAL" ? 5 : data.criticality === "HIGH" ? 4 : 3,
-            controls: [],
-            ownerDeptId: data.ownerDeptId,
-            treatmentOwnerId: null,
-            treatmentPlan: "",
-            kri: "",
-            dueDate: null,
-            status: "OPEN",
-            createdAt: db.now(),
-            updatedAt: db.now(),
-          });
-          await db.audit("CREATE", "Risk", rcode, `إنشاء خطر تلقائي مرتبط بالمتطلب ${code}`);
-        }
-        await reload("requirements", "risks");
-      } else {
-        await db.updateRow("requirements", req.id, data);
-        await db.audit("UPDATE", "Requirement", req.code, `تعديل المتطلب ${req.code}`);
-        await reload("requirements");
-      }
-      ov.remove();
-      toast("تم الحفظ");
-      done();
-    } catch (err) {
-      toast(err.message, true);
-    }
-  };
 }
 
-export function openDetail(id, nav, done) {
-  const r = store.requirements.find((x) => x.id === id);
-  if (!r) return;
-  const user = store.user;
-  const editable = canEdit(user);
-  const risks = store.risks.filter((x) => x.requirementId === id);
-  const mons = store.monitoring.filter((x) => x.requirementId === id);
-  const plans = store.planItems.filter((x) => x.requirementId === id);
-  const finds = store.findings.filter((x) => x.requirementId === id);
-  const regs = store.regulations.filter((x) => x.requirementId === id);
+const riskBadge = (level) => {
+  const role = level === "عالي" ? "critical" : level === "منخفض" ? "good" : "warning";
+  return `<span class="lvl lvl-${role}"><span class="dot"></span>${esc(level || "—")}</span>`;
+};
 
-  const linkList = (items, fmt, view) =>
-    items.length
-      ? `<ul class="link-list">${items.map((i) => `<li data-nav="${view}">${fmt(i)}</li>`).join("")}</ul>`
-      : '<p class="muted">لا يوجد</p>';
+// تفاصيل البند: تعديل الانطباق/الإدارة/مالك الخطر/درجة الخطر + عرض المخاطر المرتبطة + إنشاء خطر
+function openClause(regId, artId, nav, done) {
+  const c = clauseCache.find((x) => x.regId === regId && x.id === artId);
+  if (!c) return;
+  const editable = canEdit(store.user);
+  const rk = risksForClause(c);
 
   const ov = modal(
     `
     <div class="row" style="justify-content:space-between">
-      <h2>${esc(r.code)} — ${esc(r.title)}</h2>
-      <span>${statusBadgeFrom(REQ_STATUS, r.status, ST_ROLE)}</span>
+      <h2>${esc(c.number)} — ${esc(c.regName)}</h2>
+      ${riskBadge(c.risk_level)}
     </div>
-    <div class="detail-grid">
-      <div><span class="muted">فئة الوثيقة</span><br/>${esc(REQ_TYPES[r.type] || r.type || "—")}</div>
-      <div><span class="muted">رقم الوثيقة</span><br/>${esc(r.docNumber || "—")}</div>
-      <div><span class="muted">رقم البند / المادة</span><br/>${esc(r.articleNumber || "—")}</div>
-      <div><span class="muted">خاص / عام</span><br/>${esc(REQ_SCOPE[r.scope] || "—")}</div>
-      <div><span class="muted">مالك خطر عدم الالتزام</span><br/>${esc(r.riskOwner || "—")}</div>
-      <div><span class="muted">القطاع</span><br/>${esc(r.sector || "—")}</div>
-      <div><span class="muted">الجهة التنظيمية</span><br/>${esc(authName(r.authorityId))}</div>
-      <div><span class="muted">التصنيف الموضوعي</span><br/>${esc(REQ_CATEGORIES[r.category] || r.category || "—")}</div>
-      <div><span class="muted">الأهمية</span><br/>${levelBadge(r.criticality, CRITICALITY[r.criticality] || "—")}</div>
-      <div><span class="muted">الإدارة المالكة</span><br/>${esc(deptName(r.ownerDeptId))}</div>
-      <div><span class="muted">تاريخ الإصدار</span><br/>${fmtDate(r.issueDate)}</div>
-      <div><span class="muted">المراجعة القادمة</span><br/>${fmtDate(r.nextReviewDate)}</div>
-    </div>
-    ${r.clauseText ? `<p><strong>نص البند / المادة:</strong></p><p class="pre-line">${esc(r.clauseText)}</p>` : ""}
-    ${r.amendmentNo || r.amendmentName || r.amendmentText ? `<div class="card sub"><h3>قرار التعديل</h3>${r.amendmentNo ? `<p><strong>الرقم:</strong> ${esc(r.amendmentNo)}</p>` : ""}${r.amendmentName ? `<p><strong>الاسم:</strong> ${esc(r.amendmentName)}</p>` : ""}${r.amendmentText ? `<p class="pre-line">${esc(r.amendmentText)}</p>` : ""}</div>` : ""}
-    ${r.summary ? `<p class="pre-line">${esc(r.summary)}</p>` : ""}
-    ${r.attachmentUrl ? `<p>📎 <a href="${esc(r.attachmentUrl)}" target="_blank" rel="noopener">المرفق</a></p>` : ""}
-    ${r.approvedById ? `<p class="muted">✔ معتمد</p>` : editable && canApprove(user) ? '<button class="secondary small" id="d-approve">✔ اعتماد المتطلب</button>' : '<p class="muted">بانتظار الاعتماد</p>'}
+    ${c.title ? `<p><strong>${esc(c.title)}</strong></p>` : ""}
+    <p class="pre-line">${esc(c.text || "")}</p>
+    ${c.penalty ? `<p><span class="penalty-chip">⚖ ${esc(c.penalty)}</span></p>` : ""}
+    ${editable ? `
+      <div class="form-grid">
+        ${fld("الانطباق", sel("cl-app", APPLICABILITY, c.applicability || "تنطبق"))}
+        ${fld("خاص / عام", sel("cl-scope", REQ_SCOPE, c.scope === "خاص" ? "PRIVATE" : "PUBLIC"))}
+        ${fld("درجة الخطر", sel("cl-risk", RISK_LEVELS, c.risk_level || "متوسط"))}
+        ${fld("الإدارة المالكة", sel("cl-dept", DEPARTMENTS, c.owning_department || "الالتزام"))}
+        ${fld("مالك خطر عدم الالتزام", txt("cl-owner", c.risk_owner || ""))}
+      </div>` : `
+      <div class="detail-grid">
+        <div><span class="muted">الانطباق</span><br/>${esc(c.applicability || "—")}</div>
+        <div><span class="muted">الإدارة المالكة</span><br/>${esc(c.owning_department || "—")}</div>
+        <div><span class="muted">مالك الخطر</span><br/>${esc(c.risk_owner || "—")}</div>
+      </div>`}
 
-    <div class="grid-2" style="margin-top:14px">
-      <div class="card sub">
-        <h3>⚠ المخاطر المرتبطة (${risks.length})</h3>
-        ${linkList(risks, (i) => `<strong>${esc(i.code)}</strong> ${esc(i.title)}`, "risks")}
-      </div>
-      <div class="card sub">
-        <h3>🔍 أنشطة المراقبة (${mons.length})</h3>
-        ${linkList(mons, (i) => `<strong>${esc(i.code)}</strong> ${esc(i.name)}`, "monitoring")}
-      </div>
-      <div class="card sub">
-        <h3>📅 الخطة السنوية (${plans.length})</h3>
-        ${linkList(plans, (i) => esc(i.title), "plan")}
-      </div>
-      <div class="card sub">
-        <h3>🛠 الملاحظات (${finds.length})</h3>
-        ${linkList(finds, (i) => `<strong>${esc(i.code)}</strong> ${esc(i.title)}`, "findings")}
-      </div>
+    <div class="card sub">
+      <h3>⚠ المخاطر المرتبطة (${rk.length})</h3>
+      ${rk.map((r) => `<div class="link-item" data-nav="risks"><strong>${esc(r.code)}</strong> ${esc(r.title)}</div>`).join("") || '<p class="muted">لا يوجد خطر مرتبط بعد</p>'}
     </div>
-    ${regs.length ? `<div class="card sub"><h3>🤖 تحليلات ذكية مرتبطة</h3>${linkList(regs, (i) => `${esc(i.name)} (${i.articles_count} مادة)`, "regulations")}</div>` : ""}
 
     <div class="row" style="margin-top:14px">
-      ${editable ? `
-        <button id="d-edit" title="تعديل بيانات هذا المتطلب">تعديل</button>
-        <button class="secondary" id="d-analyze" title="تحليل نص المتطلب واستخراج مواده بالذكاء الاصطناعي">🤖 تحليل ذكي للنص</button>
-        <button class="danger" id="d-del" title="حذف هذا المتطلب من المكتبة">حذف</button>` : ""}
-      <button class="secondary" id="d-close" title="إغلاق نافذة التفاصيل">إغلاق</button>
+      ${editable ? '<button id="cl-save">حفظ التعديلات</button>' : ""}
+      ${editable && !rk.length ? '<button class="secondary" id="cl-mkrisk">⚠ إنشاء خطر من هذا البند</button>' : ""}
+      <button class="secondary" id="cl-open-doc">🗂 فتح الوثيقة</button>
+      <button class="secondary" id="cl-close">إغلاق</button>
     </div>`,
     { wide: true }
   );
 
-  ov.querySelectorAll("[data-nav]").forEach((li) =>
-    li.addEventListener("click", () => { ov.remove(); nav(li.dataset.nav); })
+  ov.querySelectorAll("[data-nav]").forEach((n) =>
+    n.addEventListener("click", () => { ov.remove(); nav(n.dataset.nav); })
   );
-  $("#d-close", ov).onclick = () => ov.remove();
-  $("#d-approve", ov)?.addEventListener("click", async () => {
-    await db.updateRow("requirements", r.id, { approvedById: user.uid });
-    await db.audit("APPROVE", "Requirement", r.code, `اعتماد المتطلب ${r.code}`);
-    await reload("requirements");
+  $("#cl-close", ov).onclick = () => ov.remove();
+  $("#cl-open-doc", ov).onclick = () => { ov.remove(); nav("library", { tab: "docs", openDoc: regId }); };
+
+  $("#cl-save", ov)?.addEventListener("click", async () => {
+    const patch = {
+      applicability: val("cl-app", ov),
+      scope: val("cl-scope", ov) === "PRIVATE" ? "خاص" : "عام",
+      risk_level: val("cl-risk", ov),
+      owning_department: val("cl-dept", ov),
+      risk_owner: val("cl-owner", ov) || "",
+    };
+    try {
+      await db.updateArticle(regId, artId, patch, store.user.name);
+      await db.audit("UPDATE", "Article", artId, `تعديل بند ${c.number} في ${c.regName}`);
+      Object.assign(c, patch);
+      ov.remove();
+      toast("حُفظت التعديلات");
+      done();
+    } catch (err) { toast(err.message, true); }
+  });
+
+  $("#cl-mkrisk", ov)?.addEventListener("click", async () => {
     ov.remove();
-    toast("تم الاعتماد");
+    await createRiskFromClause(c);
+    await reload("risks");
+    toast("أُنشئ خطر مرتبط بالبند");
     done();
   });
-  $("#d-edit", ov)?.addEventListener("click", () => { ov.remove(); openForm(r, done); });
-  $("#d-analyze", ov)?.addEventListener("click", () => { ov.remove(); nav("regulations", { createFor: r }); });
-  $("#d-del", ov)?.addEventListener("click", async () => {
-    ov.remove();
-    if (!(await confirmBox(`حذف المتطلب ${r.code}؟ لن تُحذف السجلات المرتبطة به لكنها ستفقد الربط.`))) return;
-    await db.removeRow("requirements", r.id);
-    await db.audit("DELETE", "Requirement", r.code, `حذف المتطلب ${r.code} — ${r.title}`);
-    await reload("requirements");
-    toast("تم الحذف");
-    done();
+}
+
+// إنشاء خطر عدم التزام من بند (آمن التكرار عبر sourceKey)
+async function createRiskFromClause(c) {
+  const sourceKey = `${c.regId}::${c.number}`;
+  if (store.risks.some((r) => r.sourceKey === sourceKey)) return;
+  const likelihood = c.risk_level === "عالي" ? 4 : c.risk_level === "منخفض" ? 2 : 3;
+  const impact = c.penalty ? 4 : 3;
+  const rcode = await db.nextCode("RSK");
+  await db.setRow("risks", rcode, {
+    code: rcode,
+    title: `عدم الالتزام — ${c.number} من ${c.regName}`,
+    description: `${c.title || ""}\n${(c.text || "").slice(0, 400)}`.trim(),
+    cause: "احتمال مخالفة أحكام البند المذكور",
+    penalty: (c.penalty || "").slice(0, 300),
+    riskOwner: c.risk_owner || null,
+    requirementId: c.requirementId || null,
+    regulationId: c.regId,
+    sourceArticleId: c.id,
+    sourceKey,
+    source: "AUTO_LIBRARY",
+    likelihood, impact,
+    likelihoodDesc: null, impactDesc: null,
+    residualLikelihood: likelihood, residualImpact: impact,
+    controls: [],
+    ownerDeptId: deptIdByName(c.owning_department),
+    treatmentOwnerId: null, treatmentPlan: "", kri: "", dueDate: null,
+    status: "OPEN", createdAt: db.now(), updatedAt: db.now(),
   });
+  await db.audit("CREATE", "Risk", rcode, `إنشاء خطر من البند ${c.number} في «${c.regName}»`);
+}
+
+// إضافة بند/متطلب يدوياً إلى وثيقة قائمة
+function openManualClause(nav, done) {
+  const docs = store.regulations;
+  if (!docs.length) {
+    return modal(`<h2>لا توجد وثائق بعد</h2>
+      <p class="muted">أضِف وثيقة أولاً من تبويب «الوثائق» ثم أضف بنودها هنا أو حلّلها آلياً.</p>
+      <div class="row" style="margin-top:12px"><button id="mc-go">الذهاب إلى الوثائق</button></div>`).querySelector("#mc-go")
+      ?.addEventListener("click", (e) => { e.target.closest(".modal-overlay").remove(); nav("library", { tab: "docs" }); });
+  }
+  const ov = modal(
+    `
+    <h2>إضافة متطلب / بند يدوياً</h2>
+    <div class="form-grid">
+      ${fld("الوثيقة *", sel("mc-doc", docs.map((d) => ({ id: d.id, name: d.name })), "", { empty: "— اختر الوثيقة —" }))}
+      ${fld("رقم المادة / البند *", txt("mc-number", "", "مثل: المادة 12"))}
+      ${fld("الانطباق", sel("mc-app", APPLICABILITY, "تنطبق"))}
+      ${fld("درجة الخطر", sel("mc-risk", RISK_LEVELS, "متوسط"))}
+      ${fld("الإدارة المالكة", sel("mc-dept", DEPARTMENTS, "الالتزام"))}
+      ${fld("مالك خطر عدم الالتزام", txt("mc-owner", ""))}
+    </div>
+    ${fld("عنوان مختصر", txt("mc-title", ""))}
+    ${fld("نص المادة / البند *", area("mc-text", "", "", 4))}
+    ${fld("الغرامة / العقوبة (إن وجدت)", txt("mc-penalty", ""))}
+    <label class="chk"><input type="checkbox" id="mc-mkrisk" /> إنشاء خطر مرتبط في سجل المخاطر</label>
+    <div class="row" style="margin-top:14px">
+      <button id="mc-save">حفظ</button>
+      <button class="secondary" id="mc-cancel">إلغاء</button>
+    </div>`,
+    { wide: true }
+  );
+  $("#mc-cancel", ov).onclick = () => ov.remove();
+  $("#mc-save", ov).onclick = async () => {
+    const regId = val("mc-doc", ov);
+    const number = val("mc-number", ov);
+    const text = val("mc-text", ov);
+    if (!regId || !number || !text) return toast("الوثيقة ورقم البند والنص حقول إلزامية", true);
+    try {
+      const art = await db.addArticle(regId, {
+        number,
+        title: val("mc-title", ov) || text.slice(0, 60),
+        text,
+        applicability: val("mc-app", ov),
+        risk_level: val("mc-risk", ov),
+        owning_department: val("mc-dept", ov),
+        risk_owner: val("mc-owner", ov) || "",
+        penalty: val("mc-penalty", ov) || "",
+        needs_review: true,
+        edited_by: store.user.name,
+      });
+      await db.audit("CREATE", "Article", art.id, `إضافة بند يدوي ${number} إلى وثيقة`);
+      const reg = store.regulations.find((d) => d.id === regId);
+      if ($("#mc-mkrisk", ov).checked) {
+        await createRiskFromClause({ ...art, regId, regName: reg?.name || "", requirementId: reg?.requirementId || null });
+        await reload("risks");
+      }
+      invalidateClauseCache();
+      ov.remove();
+      toast("أُضيف البند");
+      done();
+    } catch (err) { toast(err.message, true); }
+  };
 }

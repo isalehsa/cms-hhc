@@ -165,6 +165,11 @@ export async function createRegulation(fields) {
     name: fields.name,
     description: fields.description || "",
     text: fields.text,
+    // بيانات الوثيقة (موسوعة الالتزام): فئة الوثيقة، رقمها، الجهة، القطاع
+    docCategory: fields.docCategory || "SYSTEM",
+    docNumber: fields.docNumber || "",
+    authorityId: fields.authorityId || null,
+    sector: fields.sector || null,
     requirementId: fields.requirementId || null, // ربط بمتطلب في مكتبة الالتزام
     status: "pending",
     analysis_method: null,
@@ -199,8 +204,10 @@ export async function addArticle(regId, fields) {
     title: fields.title || "",
     text: fields.text || "",
     applicability: fields.applicability || "تنطبق",
+    scope: fields.scope || "عام",
     risk_level: fields.risk_level || "متوسط",
     owning_department: fields.owning_department || "الالتزام",
+    risk_owner: fields.risk_owner || "",
     rationale: fields.rationale || "",
     penalty: fields.penalty || "",
     needs_review: fields.needs_review ?? false,
@@ -216,8 +223,8 @@ export async function addArticle(regId, fields) {
 
 export async function updateArticle(regId, articleId, patch, editor) {
   const allowed = [
-    "number", "title", "text", "applicability", "risk_level",
-    "owning_department", "rationale", "penalty", "needs_review",
+    "number", "title", "text", "applicability", "scope", "risk_level",
+    "owning_department", "risk_owner", "rationale", "penalty", "needs_review",
   ];
   const clean = {};
   for (const key of allowed) if (key in patch) clean[key] = patch[key];

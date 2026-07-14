@@ -38,8 +38,8 @@ const VIEWS = {
   correspondence: { icon: "📨", label: "سجل المراسلات", render: renderCorrespondence },
   // التحليل الذكي مدمج داخل مكتبة الالتزام كتبويب فرعي — المسار يبقى للروابط القديمة
   regulations: {
-    icon: "🤖", label: "التحليل الذكي", hidden: true,
-    render: (el, navFn, refresh, params = {}) => renderLibrary(el, navFn, refresh, { ...params, tab: "analysis" }),
+    icon: "🗂", label: "الوثائق", hidden: true,
+    render: (el, navFn, refresh, params = {}) => renderLibrary(el, navFn, refresh, { ...params, tab: "docs" }),
   },
   kpis: { icon: "📈", label: "مؤشرات الأداء", render: renderKpis },
   reports: { icon: "📊", label: "التقارير", render: renderReports },

@@ -1,12 +1,12 @@
 // وحدة التحليل الذكي — رفع نص/ملف النظام واستخراج المواد وتصنيفها آلياً (Claude API + OCR)
 // مدمجة مع مكتبة الالتزام: يمكن ربط كل تحليل بمتطلب وإنشاء متطلب من التحليل
-import { store, reload, reqOptions, reqLabel } from "../state.js";
+import { store, reload, reqOptions, reqLabel, authOptions, authName } from "../state.js";
 import * as db from "../db.js";
 import {
   $, esc, toast, modal, confirmBox, fld, txt, area, sel, val,
   fmtDate, emptyMsg, spinnerHtml,
 } from "../ui.js";
-import { DEPARTMENTS, RISK_LEVELS, APPLICABILITY } from "../meta.js";
+import { DEPARTMENTS, RISK_LEVELS, APPLICABILITY, REQ_TYPES, SECTORS } from "../meta.js";
 import { findRelated } from "../similarity.js";
 import { analyzeRegulation, DEFAULT_MODEL } from "../analyzer.js";
 import { extractText } from "../extract.js";
@@ -41,6 +41,10 @@ export async function renderRegulations(el, nav, refresh, params = {}) {
   elRef = el;
   navRef = nav;
   store.regulations = await db.listRegulations().catch(() => []);
+  if (params.openDoc) {
+    await openRegulation(params.openDoc);
+    return;
+  }
   if (params.createFor) {
     local.view = "list";
     renderList();
@@ -78,13 +82,17 @@ function renderList() {
   const addForm = editable
     ? `
     <section class="card">
-      <h2>تحليل نظام / لائحة جديدة</h2>
-      <p class="muted">الصق النص أو حمّل ملف PDF/Word وسيستخرج النظام جميع المواد ويصنفها
-        (الانطباق، درجة الخطر، الإدارة المالكة، الغرامات) آلياً — وبعد اكتمال التحليل
-        يُضاف النظام لمكتبة الالتزام كمتطلب وتُشتق مخاطره في سجل المخاطر وفق الغرامات والعقوبات المذكورة.
+      <h2>إضافة وثيقة نظامية / تشريعية وتحليلها</h2>
+      <p class="muted">أضِف الوثيقة (نظام/لائحة/تعميم…) والصق نصها أو حمّل ملف PDF/Word، وسيستخرج النظام
+        بنودها وموادها ويصنّفها (الانطباق، درجة الخطر، الإدارة المالكة، الغرامات) آلياً — وتنعكس البنود في
+        تبويب «المتطلبات النظامية» وتُشتق مخاطرها في سجل المخاطر وفق الغرامات والعقوبات المذكورة.
         ${aiEnabled() ? "" : "⚠️ التحليل الذكي غير مفعّل (أضف مفتاح API من ⚙) — سيُستخدم التقسيم النصي المبدئي."}</p>
       <div class="form-grid">
-        ${fld("اسم النظام / اللائحة *", txt("reg-name", "", "مثال: لائحة حوكمة البيانات"))}
+        ${fld("اسم الوثيقة *", txt("reg-name", "", "مثال: نظام حماية البيانات الشخصية"))}
+        ${fld("فئة الوثيقة", sel("reg-cat", REQ_TYPES, "SYSTEM"))}
+        ${fld("رقم الوثيقة", txt("reg-docno", "", "مثل: م/19 بتاريخ 9/2/1443هـ"))}
+        ${fld("الجهة التنظيمية", sel("reg-auth", authOptions(), "", { empty: "— اختر —" }))}
+        ${fld("القطاع", sel("reg-sector", SECTORS, "", { empty: "— اختر —" }))}
         ${fld("ربط بمتطلب في مكتبة الالتزام", sel("reg-req", reqOptions(), "", { empty: "— بلا ربط —" }))}
         ${fld("وصف مختصر", txt("reg-desc", "", "اختياري"))}
         ${fld("سياق المنشأة", txt("reg-context", "", "مثال: شركة صحية قابضة، بيانات مرضى"))}
@@ -105,14 +113,14 @@ function renderList() {
   el.innerHTML = `
     ${addForm}
     <section class="card">
-      <h2>التحليلات المسجلة (${store.regulations.length})</h2>
+      <h2>الوثائق النظامية والتشريعية (${store.regulations.length})</h2>
       ${store.regulations
         .map(
           (r) => `
           <div class="reg-list-item">
             <div>
-              <div class="name" data-open="${r.id}">${esc(r.name)}</div>
-              <div class="muted">${esc(r.description || "")} · ${r.articles_count} مادة/بند · ${fmtDate(r.created_at)}
+              <div class="name" data-open="${r.id}">${esc(REQ_TYPES[r.docCategory] ? `[${REQ_TYPES[r.docCategory]}] ` : "")}${esc(r.name)}${r.docNumber ? ` — ${esc(r.docNumber)}` : ""}</div>
+              <div class="muted">${r.sector ? `${esc(r.sector)} · ` : ""}${r.authorityId ? `${esc(authName(r.authorityId))} · ` : ""}${r.articles_count} بند/مادة · ${fmtDate(r.created_at)}
                 ${r.requirementId ? ` · 📖 ${esc(reqLabel(r.requirementId))}` : ""}</div>
             </div>
             <div class="row">
@@ -223,6 +231,10 @@ async function addRegulation() {
       name,
       description: val("reg-desc", elRef),
       text,
+      docCategory: val("reg-cat", elRef) || "SYSTEM",
+      docNumber: val("reg-docno", elRef) || "",
+      authorityId: val("reg-auth", elRef) || null,
+      sector: val("reg-sector", elRef) || null,
       requirementId: val("reg-req", elRef) || null,
     });
     await db.audit("CREATE", "Regulation", reg.id, `إضافة نظام للتحليل: ${name}`);
