@@ -185,6 +185,18 @@ td select { min-width: 110px; font-size: 0.86rem; width: auto; }
 }
 
 .muted { color: var(--muted); font-size: 0.85rem; }
+
+/* التبويبات الفرعية داخل الصفحة */
+.subtabs {
+  display: inline-flex; gap: 4px; padding: 4px;
+  background: rgba(29, 106, 88, 0.08); border-radius: 12px;
+}
+.subtab {
+  background: transparent; color: var(--text);
+  border-radius: 9px; padding: 7px 16px; font-size: 0.9rem;
+}
+.subtab:hover { background: rgba(29, 106, 88, 0.1); }
+.subtab.active { background: var(--primary); color: #fff; }
 .pre-line { white-space: pre-line; }
 
 /* ---------- لوحة التحكم ---------- */

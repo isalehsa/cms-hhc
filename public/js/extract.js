@@ -28,22 +28,71 @@ function normalize(text) {
     .trim();
 }
 
+// معالجة تقطّع الحروف العربية:
+// 1) NFKC يحوّل أشكال العرض الحرفية (ﻣ ﺘ ﻘ …) إلى حروف عربية أساسية متصلة
+// 2) إزالة المحارف الصفرية ومحارف الاتجاه التي تكسر الكلمات
+// 3) الأسطر المفكَّكة (حرف-فراغ-حرف): تُزال الفراغات بين الحروف مع إبقاء
+//    الفراغات المزدوجة فواصلَ بين الكلمات
+function cleanArabicText(text) {
+  let t = text
+    .normalize("NFKC")
+    .replace(/[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g, "");
+  t = t
+    .split("\n")
+    .map((line) => {
+      const tokens = line.trim().split(/\s+/).filter(Boolean);
+      const singles = tokens.filter((w) => w.length === 1 && /[\u0600-\u06FF]/.test(w)).length;
+      if (tokens.length >= 4 && singles / tokens.length > 0.6) {
+        return line
+          .replace(/ {2,}/g, "\u0001")
+          .replace(/(?<=[\u0600-\u06FF]) (?=[\u0600-\u06FF])/g, "")
+          .replace(/\u0001/g, " ");
+      }
+      return line;
+    })
+    .join("\n");
+  return t;
+}
+
+// دمج مقاطع السطر الواحد حسب المسافة الأفقية الفعلية بين المقطعين —
+// المسافة تُدرج فقط عند وجود فراغ حقيقي (يمنع "م ت ق ط ع" الناتجة عن الدمج الأعمى)
+function joinLine(items) {
+  let out = "";
+  let prev = null;
+  for (const it of items) {
+    if (prev && out && !out.endsWith(" ") && !it.str.startsWith(" ")) {
+      const fontSize =
+        Math.max(Math.abs(it.transform?.[0] || 0), Math.abs(it.transform?.[3] || 0), it.height || 0) || 10;
+      const prevX = prev.transform?.[4] ?? 0;
+      const currX = it.transform?.[4] ?? 0;
+      const prevW = prev.width || 0;
+      const currW = it.width || 0;
+      // نأخذ أقرب فجوة بالاتجاهين (يدعم RTL و LTR معاً)
+      const gap = Math.min(Math.abs(currX - (prevX + prevW)), Math.abs(prevX - (currX + currW)));
+      if (gap > fontSize * 0.28) out += " ";
+    }
+    out += it.str;
+    prev = it;
+  }
+  return out;
+}
+
 // طبقة النص في PDF: نجمع عناصر كل صفحة أسطراً حسب موضعها الرأسي
 function pageText(content) {
   const lines = [];
   let lastY = null;
   let line = [];
   for (const item of content.items) {
-    if (!("str" in item)) continue;
+    if (!("str" in item) || !item.str) continue;
     const y = item.transform?.[5];
     if (lastY !== null && y !== undefined && Math.abs(y - lastY) > 2) {
-      lines.push(line.join(" "));
+      lines.push(joinLine(line));
       line = [];
     }
-    if (item.str) line.push(item.str);
+    line.push(item);
     if (y !== undefined) lastY = y;
   }
-  if (line.length) lines.push(line.join(" "));
+  if (line.length) lines.push(joinLine(line));
   return lines.join("\n");
 }
 
@@ -103,12 +152,12 @@ export async function extractText(file, onProgress) {
         const page = await pdf.getPage(i);
         parts.push(pageText(await page.getTextContent()));
       }
-      const text = normalize(parts.join("\n\n"));
+      const text = normalize(cleanArabicText(parts.join("\n\n")));
       if (text) return { text };
 
       // لا توجد طبقة نصية — ملف ممسوح ضوئياً: نعالجه بالتعرف الضوئي على الحروف
       const ocr = await ocrPdf(pdf, onProgress);
-      const ocrText = normalize(ocr.text);
+      const ocrText = normalize(cleanArabicText(ocr.text));
       if (!ocrText) {
         throw new Error(
           "تعذّر استخراج نص من الملف حتى بعد المعالجة الضوئية (OCR) — جودة المسح منخفضة جداً"
@@ -134,7 +183,7 @@ export async function extractText(file, onProgress) {
       throw new Error("مكتبة قراءة Word لم تُحمَّل — تحقق من اتصالك بالإنترنت وأعد تحميل الصفحة");
     }
     const { value } = await mammoth.extractRawText({ arrayBuffer: buffer });
-    const text = normalize(value || "");
+    const text = normalize(cleanArabicText(value || ""));
     if (!text) throw new Error("ملف Word فارغ أو تعذّرت قراءته");
     return { text };
   }

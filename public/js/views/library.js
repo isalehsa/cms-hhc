@@ -7,15 +7,51 @@ import {
 } from "../ui.js";
 import { REQ_TYPES, REQ_CATEGORIES, CRITICALITY, REQ_STATUS } from "../meta.js";
 import { canEdit, canApprove } from "../auth.js";
+import { renderRegulations } from "./regulations.js";
 
 const CRIT_ROLE = { CRITICAL: "critical", HIGH: "serious", MEDIUM: "warning", LOW: "good" };
 const ST_ROLE = { ACTIVE: "good", UPDATED: "good", UNDER_REVIEW: "warning", CANCELLED: "neutral" };
 
 const filters = { search: "", category: "", criticality: "", status: "", dept: "" };
+// تبويبا المكتبة: المتطلبات + التحليل الذكي (مدمج هنا)
+const tabState = { tab: "reqs" };
 
-export function renderLibrary(el, nav, refresh) {
+function tabsHtml(editable) {
+  return `
+    <div class="page-head">
+      <h1>📖 مكتبة الالتزام</h1>
+      <div class="row">
+        <div class="subtabs">
+          <button class="subtab ${tabState.tab === "reqs" ? "active" : ""}" data-tab="reqs">📋 المتطلبات</button>
+          <button class="subtab ${tabState.tab === "analysis" ? "active" : ""}" data-tab="analysis">🤖 التحليل الذكي</button>
+        </div>
+        ${tabState.tab === "reqs" && editable ? '<button id="add-req">＋ متطلب جديد</button>' : ""}
+      </div>
+    </div>`;
+}
+
+function bindTabs(el, rerender) {
+  el.querySelectorAll("[data-tab]").forEach((b) => {
+    b.onclick = () => {
+      tabState.tab = b.dataset.tab;
+      rerender();
+    };
+  });
+}
+
+export function renderLibrary(el, nav, refresh, params = {}) {
   const user = store.user;
   const editable = canEdit(user);
+  if (params.tab) tabState.tab = params.tab;
+  if (params.createFor) tabState.tab = "analysis";
+  const rerenderTabs = () => renderLibrary(el, nav, refresh);
+
+  if (tabState.tab === "analysis") {
+    el.innerHTML = tabsHtml(editable) + '<div id="lib-analysis"></div>';
+    bindTabs(el, rerenderTabs);
+    renderRegulations($("#lib-analysis", el), nav, refresh, params);
+    return;
+  }
   const rows = store.requirements.filter((r) => {
     if (filters.search && !`${r.code} ${r.title} ${r.summary || ""}`.includes(filters.search)) return false;
     if (filters.category && r.category !== filters.category) return false;
@@ -26,12 +62,7 @@ export function renderLibrary(el, nav, refresh) {
   });
 
   el.innerHTML = `
-    <div class="page-head">
-      <h1>📖 مكتبة الالتزام</h1>
-      <div class="row">
-        ${editable ? '<button id="add-req">＋ متطلب جديد</button>' : ""}
-      </div>
-    </div>
+    ${tabsHtml(editable)}
     <section class="card">
       <div class="row filters">
         <input type="text" id="f-search" class="grow" placeholder="بحث بالرمز أو الاسم…" value="${esc(filters.search)}" />
@@ -74,6 +105,7 @@ export function renderLibrary(el, nav, refresh) {
     </section>`;
 
   const rerender = () => renderLibrary(el, nav, refresh);
+  bindTabs(el, rerenderTabs);
   $("#f-search", el).addEventListener("input", (e) => { filters.search = e.target.value; rerender(); });
   $("#f-cat", el).onchange = (e) => { filters.category = e.target.value; rerender(); };
   $("#f-crit", el).onchange = (e) => { filters.criticality = e.target.value; rerender(); };

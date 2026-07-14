@@ -101,7 +101,6 @@ function renderList() {
     : "";
 
   el.innerHTML = `
-    <div class="page-head"><h1>🤖 التحليل الذكي للأنظمة</h1></div>
     ${addForm}
     <section class="card">
       <h2>التحليلات المسجلة (${store.regulations.length})</h2>

@@ -14,7 +14,7 @@ import { renderPlan } from "./views/plan.js";
 import { renderAssessments } from "./views/assessments.js";
 import { renderFindings } from "./views/findings.js";
 import { renderReports } from "./views/reports.js";
-import { renderRegulations, settings, aiEnabled } from "./views/regulations.js";
+import { settings, aiEnabled } from "./views/regulations.js";
 import { renderAdmin } from "./views/admin.js";
 import { DEFAULT_MODEL } from "./analyzer.js";
 
@@ -26,7 +26,11 @@ const VIEWS = {
   plan: { icon: "📅", label: "الخطة السنوية", render: renderPlan },
   assessments: { icon: "📋", label: "الفحص الذاتي", render: renderAssessments },
   findings: { icon: "🛠", label: "الملاحظات والتصحيح", render: renderFindings },
-  regulations: { icon: "🤖", label: "التحليل الذكي", render: renderRegulations },
+  // التحليل الذكي مدمج داخل مكتبة الالتزام كتبويب فرعي — المسار يبقى للروابط القديمة
+  regulations: {
+    icon: "🤖", label: "التحليل الذكي", hidden: true,
+    render: (el, navFn, refresh, params = {}) => renderLibrary(el, navFn, refresh, { ...params, tab: "analysis" }),
+  },
   reports: { icon: "📊", label: "التقارير", render: renderReports },
   admin: { icon: "⚙️", label: "الإدارة", render: renderAdmin },
 };
@@ -57,7 +61,7 @@ function renderShell() {
     </div>
     <nav id="side-nav">
       ${Object.entries(VIEWS)
-        .filter(([k]) => k !== "admin" || canApprove(u))
+        .filter(([k, v]) => !v.hidden && (k !== "admin" || canApprove(u)))
         .map(([k, v]) => `<button class="nav-item" data-view="${k}"><span>${v.icon}</span> ${v.label}</button>`)
         .join("")}
     </nav>
