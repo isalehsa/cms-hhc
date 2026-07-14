@@ -4,7 +4,8 @@ import * as db from "./db.js";
 import * as authApi from "./auth.js";
 import { canEdit, canApprove } from "./auth.js";
 import { store, loadAll, reload } from "./state.js";
-import { $, esc, toast, modal, fld, txt, val, spinnerHtml, fmtDate } from "./ui.js";
+import { $, esc, toast, modal, fld, txt, val, spinnerHtml, fmtDate, initTooltips } from "./ui.js";
+import { runAutoSync } from "./sync.js";
 import { ROLES } from "./meta.js";
 import { renderDashboard } from "./views/dashboard.js";
 import { renderLibrary } from "./views/library.js";
@@ -68,10 +69,10 @@ function renderShell() {
     <div class="side-foot">
       <div class="user-chip" title="${esc(u.email)}">👤 ${esc(u.name)}<br/><small>${esc(ROLES[u.role] || u.role)}</small></div>
       <div class="row">
-        <button class="secondary small" id="btn-notif" title="التنبيهات">🔔<span id="notif-count" class="notif-count hidden"></span></button>
-        ${canEdit(u) ? '<button class="secondary small" id="btn-settings" title="إعدادات التحليل الذكي">⚙</button>' : ""}
-        <button class="secondary small" id="btn-refresh" title="تحديث البيانات">↻</button>
-        <button class="secondary small" id="btn-logout">خروج</button>
+        <button class="secondary small" id="btn-notif" title="عرض التنبيهات الواردة">🔔<span id="notif-count" class="notif-count hidden"></span></button>
+        ${canEdit(u) ? '<button class="secondary small" id="btn-settings" title="إعدادات التحليل الذكي (مفتاح Claude API والنموذج)">⚙</button>' : ""}
+        <button class="secondary small" id="btn-refresh" title="إعادة تحميل جميع البيانات من الخادم">↻</button>
+        <button class="secondary small" id="btn-logout" title="تسجيل الخروج من النظام">خروج</button>
       </div>
     </div>`;
 
@@ -205,6 +206,7 @@ function renderLogin() {
 
 // ---------- تشغيل ----------
 function init() {
+  initTooltips();
   if (!configReady) return renderSetup();
   authApi.onAuth(async (user) => {
     store.user = user;
@@ -223,6 +225,18 @@ function init() {
       const hash = location.hash.replace("#", "");
       nav(VIEWS[hash] ? hash : "dashboard");
       toast(`مرحباً، ${user.name}`);
+      // تحديث سجل المخاطر آلياً في الخلفية وفق الإضافات الحديثة في المكتبة والتحليلات
+      if (canEdit(user)) {
+        runAutoSync()
+          .then((s) => {
+            if (s.createdRisks || s.createdReqs) {
+              toast(`تحديث آلي: أُضيف ${s.createdRisks} خطر و${s.createdReqs} متطلب وفق الإضافات الحديثة`);
+              updateNotifBadge();
+              if (["risks", "library", "dashboard"].includes(currentView)) nav(currentView);
+            }
+          })
+          .catch((e) => console.warn("auto-sync failed", e));
+      }
     } catch (err) {
       toast(err.message, true);
       renderLogin();

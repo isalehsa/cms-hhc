@@ -4,8 +4,13 @@ import { STATUS_COLORS, LEVEL_COLOR_ROLE } from "./meta.js";
 export const $ = (sel, root = document) => root.querySelector(sel);
 export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
+// تحويل الأرقام العربية/الفارسية إلى إنجليزية في كل النصوص المعروضة
+const AR_NUM = { "٠": "0", "١": "1", "٢": "2", "٣": "3", "٤": "4", "٥": "5", "٦": "6", "٧": "7", "٨": "8", "٩": "9",
+  "۰": "0", "۱": "1", "۲": "2", "۳": "3", "۴": "4", "۵": "5", "۶": "6", "۷": "7", "۸": "8", "۹": "9", "٪": "%", "٫": "." };
+export const enDigits = (s) => String(s ?? "").replace(/[٠-٩۰-۹٪٫]/g, (c) => AR_NUM[c] ?? c);
+
 export function esc(s) {
-  return String(s ?? "").replace(/[&<>"']/g, (c) =>
+  return enDigits(s).replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])
   );
 }
@@ -22,7 +27,8 @@ export function fmtDate(iso) {
   if (!iso) return "—";
   const d = new Date(iso);
   if (isNaN(d)) return "—";
-  return d.toLocaleDateString("ar-SA", { year: "numeric", month: "short", day: "numeric" });
+  // تقويم ميلادي وأرقام إنجليزية مع أسماء الأشهر العربية
+  return d.toLocaleDateString("ar-SA-u-ca-gregory-nu-latn", { year: "numeric", month: "short", day: "numeric" });
 }
 
 export function daysUntil(iso) {
@@ -147,7 +153,7 @@ export function distBar(items) {
 // شريط تقدم بنسبة مئوية ظاهرة نصياً
 export function progressBar(pct) {
   const p = Math.max(0, Math.min(100, Math.round(pct || 0)));
-  return `<div class="prog"><div class="prog-bar"><div class="prog-fill" style="width:${p}%"></div></div><span class="prog-num">${p}٪</span></div>`;
+  return `<div class="prog"><div class="prog-bar"><div class="prog-fill" style="width:${p}%"></div></div><span class="prog-num">${p}%</span></div>`;
 }
 
 export function emptyMsg(msg) {
@@ -156,4 +162,60 @@ export function emptyMsg(msg) {
 
 export function spinnerHtml(msg = "جاري التحميل…") {
   return `<p class="muted" style="padding:20px"><span class="spinner"></span> ${esc(msg)}</p>`;
+}
+
+// ---------- تلميحات الأزرار ----------
+// عند مرور المؤشر فوق أي زر تظهر بطاقة تشرح عمله: من data-tip أو title
+// أو من قاموس التسميات الشائعة إن لم يُحدَّد شرح صريح
+const TIP_FALLBACKS = {
+  "حفظ": "حفظ البيانات المدخلة",
+  "إلغاء": "إغلاق النافذة دون حفظ التغييرات",
+  "إغلاق": "إغلاق هذه النافذة",
+  "تعديل": "تعديل بيانات هذا السجل",
+  "حذف": "حذف هذا السجل نهائياً",
+  "تأكيد": "تنفيذ الإجراء المطلوب",
+  "خروج": "تسجيل الخروج من النظام",
+  "دخول": "تسجيل الدخول إلى النظام",
+  "ربط": "ربط المادة بالمادة المقترحة",
+  "فك الربط": "إزالة الربط بين المادتين",
+  "✕": "حذف هذا العنصر",
+  "✔": "إنهاء حالة المراجعة لهذه المادة",
+  "🔖": "تعليم هذه المادة كبحاجة إلى مراجعة",
+};
+
+export function initTooltips() {
+  if ($("#ui-tip")) return;
+  const tip = document.createElement("div");
+  tip.id = "ui-tip";
+  tip.className = "ui-tip";
+  tip.hidden = true;
+  document.body.appendChild(tip);
+
+  let anchor = null;
+  const hide = () => { anchor = null; tip.hidden = true; };
+
+  document.addEventListener("mouseover", (e) => {
+    const b = e.target.closest?.("button, [data-tip]");
+    if (!b) { if (anchor) hide(); return; }
+    if (b === anchor) return;
+    // نقل title إلى data-tip لتوحيد المظهر ومنع تلميح المتصفح الافتراضي
+    if (b.hasAttribute("title")) { b.dataset.tip = b.getAttribute("title"); b.removeAttribute("title"); }
+    const text = b.dataset.tip || TIP_FALLBACKS[b.textContent.trim()] || "";
+    if (!text) { hide(); return; }
+    anchor = b;
+    tip.textContent = text;
+    tip.hidden = false;
+    const r = b.getBoundingClientRect();
+    const tw = tip.offsetWidth, th = tip.offsetHeight;
+    let top = r.top - th - 10;
+    if (top < 6) top = r.bottom + 10;
+    const left = Math.max(8, Math.min(r.left + r.width / 2 - tw / 2, innerWidth - tw - 8));
+    tip.style.top = `${top}px`;
+    tip.style.left = `${left}px`;
+  });
+  document.addEventListener("mouseout", (e) => {
+    if (anchor && !anchor.contains(e.relatedTarget)) hide();
+  });
+  document.addEventListener("click", hide, true);
+  addEventListener("scroll", hide, true);
 }

@@ -22,10 +22,10 @@ function tabsHtml(editable) {
       <h1>📖 مكتبة الالتزام</h1>
       <div class="row">
         <div class="subtabs">
-          <button class="subtab ${tabState.tab === "reqs" ? "active" : ""}" data-tab="reqs">📋 المتطلبات</button>
-          <button class="subtab ${tabState.tab === "analysis" ? "active" : ""}" data-tab="analysis">🤖 التحليل الذكي</button>
+          <button class="subtab ${tabState.tab === "reqs" ? "active" : ""}" data-tab="reqs" title="عرض المتطلبات النظامية المسجلة في المكتبة">📋 المتطلبات</button>
+          <button class="subtab ${tabState.tab === "analysis" ? "active" : ""}" data-tab="analysis" title="تحليل الأنظمة واللوائح بالذكاء الاصطناعي واستخراج موادها وغراماتها">🤖 التحليل الذكي</button>
         </div>
-        ${tabState.tab === "reqs" && editable ? '<button id="add-req">＋ متطلب جديد</button>' : ""}
+        ${tabState.tab === "reqs" && editable ? '<button id="add-req" title="إضافة متطلب نظامي جديد إلى مكتبة الالتزام">＋ متطلب جديد</button>' : ""}
       </div>
     </div>`;
 }
@@ -185,6 +185,9 @@ function openForm(req, done) {
             title: `خطر عدم الالتزام — ${title}`,
             description: `احتمال عدم الالتزام بالمتطلب ${code} (${title})`,
             cause: "",
+            penalty: "",
+            source: "AUTO_LIBRARY",
+            sourceKey: `req::${row.id}`,
             requirementId: row.id,
             likelihood: 3,
             impact: data.criticality === "CRITICAL" ? 5 : data.criticality === "HIGH" ? 4 : 3,
@@ -275,10 +278,10 @@ export function openDetail(id, nav, done) {
 
     <div class="row" style="margin-top:14px">
       ${editable ? `
-        <button id="d-edit">تعديل</button>
+        <button id="d-edit" title="تعديل بيانات هذا المتطلب">تعديل</button>
         <button class="secondary" id="d-analyze" title="تحليل نص المتطلب واستخراج مواده بالذكاء الاصطناعي">🤖 تحليل ذكي للنص</button>
-        <button class="danger" id="d-del">حذف</button>` : ""}
-      <button class="secondary" id="d-close">إغلاق</button>
+        <button class="danger" id="d-del" title="حذف هذا المتطلب من المكتبة">حذف</button>` : ""}
+      <button class="secondary" id="d-close" title="إغلاق نافذة التفاصيل">إغلاق</button>
     </div>`,
     { wide: true }
   );

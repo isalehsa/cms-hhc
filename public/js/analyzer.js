@@ -38,6 +38,11 @@ const ARTICLES_SCHEMA = {
             type: "string",
             description: "مبرر مختصر للتصنيف (سبب الانطباق ودرجة الخطر واختيار الإدارة)",
           },
+          penalty: {
+            type: "string",
+            description:
+              "نص الغرامة أو العقوبة أو الجزاء المنصوص عليه عند مخالفة هذه المادة كما ورد في النظام (المبلغ ونوع العقوبة)، أو سلسلة فارغة إن لم تُذكر عقوبة",
+          },
         },
         required: [
           "number",
@@ -47,6 +52,7 @@ const ARTICLES_SCHEMA = {
           "risk_level",
           "owning_department",
           "rationale",
+          "penalty",
         ],
         additionalProperties: false,
       },
@@ -70,6 +76,7 @@ ${total > 1 ? `النص المعطى هو الجزء ${part} من ${total} من 
 2. risk_level: درجة الخطر المترتبة على عدم الالتزام (عالي/متوسط/منخفض) بحسب العقوبات المحتملة والأثر التنظيمي والمالي والسمعة.
 3. owning_department: الإدارة المالكة الأنسب من القائمة المسموحة فقط.
 4. rationale: مبرر مختصر بجملة أو جملتين.
+5. penalty: انقل نص الغرامة/العقوبة/الجزاء المرتبط بالمادة إن وُجد (المبلغ ونوع العقوبة كما وردا في النص أو في باب العقوبات)، وإلا اتركه فارغاً — يُستخدم لاشتقاق سجل المخاطر آلياً.
 
 قواعد صارمة:
 - استخرج كل مادة وبند على حدة، والتزم بترقيم النص الأصلي في حقل number.
@@ -246,6 +253,7 @@ export function analyzeHeuristically(regulationText) {
         risk_level: "متوسط",
         owning_department: "الالتزام",
         rationale: "تصنيف مبدئي آلي (بدون ذكاء اصطناعي) — بحاجة إلى مراجعة مدير الالتزام",
+        penalty: "",
         needs_review: true,
       });
     }
@@ -275,6 +283,7 @@ export function analyzeHeuristically(regulationText) {
       risk_level: "متوسط",
       owning_department: "الالتزام",
       rationale: "تعذّر تقسيم النص إلى مواد — بحاجة إلى مراجعة يدوية",
+      penalty: "",
       needs_review: true,
     });
   }

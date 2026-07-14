@@ -43,7 +43,7 @@ export function renderPlan(el, nav, refresh) {
         ${sel("f-dept", deptOptions(), filters.dept, { empty: "كل الإدارات" })}
         ${sel("f-status", PLAN_STATUS, filters.status, { empty: "كل الحالات" })}
         <span class="grow"></span>
-        <span class="muted">متوسط الإنجاز: <strong>${avg}٪</strong></span>
+        <span class="muted">متوسط الإنجاز: <strong>${avg}%</strong></span>
       </div>
       <div style="overflow-x:auto">
         <table>
@@ -100,7 +100,7 @@ function openForm(item, done) {
       ${fld("المتطلب المرتبط", sel("p-req", reqOptions(), item?.requirementId, { empty: "— بلا —" }))}
       ${fld("الخطر المرتبط", sel("p-risk", riskOptions(), item?.riskId, { empty: "— بلا —" }))}
       ${fld("الحالة", sel("p-status", PLAN_STATUS, item?.status || "NOT_STARTED"))}
-      ${fld("نسبة الإنجاز ٪", num("p-prog", item?.progress ?? 0, 0, 100))}
+      ${fld("نسبة الإنجاز %", num("p-prog", item?.progress ?? 0, 0, 100))}
       ${fld("رابط الأدلة / المرفقات", txt("p-evidence", item?.evidenceUrl || "", "https://…"))}
     </div>
     ${fld("المخرجات المتوقعة", area("p-output", item?.expectedOutput, "", 2))}
@@ -147,7 +147,7 @@ function openForm(item, done) {
         await db.audit("CREATE", "PlanItem", null, `إضافة مبادرة: ${title}`);
       } else {
         await db.updateRow("planItems", item.id, data);
-        await db.audit("UPDATE", "PlanItem", item.id, `تحديث مبادرة: ${title} (${progress}٪)`);
+        await db.audit("UPDATE", "PlanItem", item.id, `تحديث مبادرة: ${title} (${progress}%)`);
       }
       await reload("planItems");
       ov.remove();
