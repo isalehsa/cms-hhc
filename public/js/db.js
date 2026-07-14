@@ -1,5 +1,6 @@
-// طبقة البيانات على Firestore — بديل مخزن JSON المحلي وواجهة REST
-// البنية: regulations/{regId} (بيانات النظام ونصه) + regulations/{regId}/articles/{artId}
+// طبقة البيانات على Firestore — الوحدات العامة (متطلبات/مخاطر/مراقبة/خطة/فحص/ملاحظات…)
+// + وحدة تحليل الأنظمة بالذكاء الاصطناعي (regulations/articles)
+// البنية متوافقة مع بيانات النظام السابق الموجودة في نفس القاعدة
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import {
   getFirestore,
@@ -8,11 +9,13 @@ import {
   getDoc,
   getDocs,
   setDoc,
+  addDoc,
   updateDoc,
   deleteDoc,
   query,
   orderBy,
   writeBatch,
+  runTransaction,
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { firebaseConfig, configReady } from "./firebase-config.js";
 
@@ -23,14 +26,97 @@ export function newId(prefix) {
   return `${prefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 }
 
-const now = () => new Date().toISOString();
+export const now = () => new Date().toISOString();
 
-const regsCol = () => collection(db, "regulations");
+// ---------- عمليات عامة على المجموعات ----------
+
+export async function listCol(col, orderField = null) {
+  const q = orderField ? query(collection(db, col), orderBy(orderField)) : collection(db, col);
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => ({ ...d.data(), id: d.id }));
+}
+
+export async function getRow(col, id) {
+  const snap = await getDoc(doc(db, col, id));
+  return snap.exists() ? { ...snap.data(), id: snap.id } : null;
+}
+
+export async function setRow(col, id, data) {
+  await setDoc(doc(db, col, id), data);
+  return { ...data, id };
+}
+
+export async function addRow(col, data) {
+  const ref = await addDoc(collection(db, col), data);
+  return { ...data, id: ref.id };
+}
+
+export async function updateRow(col, id, patch) {
+  await updateDoc(doc(db, col, id), { ...patch, updatedAt: now() });
+}
+
+export async function removeRow(col, id) {
+  await deleteDoc(doc(db, col, id));
+}
+
+// رقم تسلسلي موحّد (REQ-0001 …) عبر مجموعة counters — بمعاملة تمنع التكرار
+export async function nextCode(prefix) {
+  const value = await runTransaction(db, async (tx) => {
+    const ref = doc(db, "counters", prefix);
+    const snap = await tx.get(ref);
+    const v = (snap.exists() ? snap.data().value || 0 : 0) + 1;
+    tx.set(ref, { value: v });
+    return v;
+  });
+  return `${prefix}-${String(value).padStart(4, "0")}`;
+}
+
+// ---------- سجل التدقيق والتنبيهات ----------
+
+let currentUser = null;
+export function setAuditUser(u) {
+  currentUser = u;
+}
+
+export async function audit(action, entityType, entityId, details) {
+  try {
+    await addRow("auditLog", {
+      action, // CREATE | UPDATE | DELETE | APPROVE | SUBMIT | REVIEW
+      entityType,
+      entityId: entityId || null,
+      details: details || "",
+      userId: currentUser?.uid || null,
+      userName: currentUser?.name || null,
+      createdAt: now(),
+    });
+  } catch (e) {
+    console.warn("audit failed", e);
+  }
+}
+
+export async function notify({ title, message, type, link, roleTarget = null, userId = null }) {
+  try {
+    await addRow("notifications", {
+      title,
+      message,
+      type,
+      link: link || null,
+      roleTarget,
+      userId,
+      read: false,
+      createdAt: now(),
+    });
+  } catch (e) {
+    console.warn("notify failed", e);
+  }
+}
+
+// ---------- وحدة تحليل الأنظمة بالذكاء الاصطناعي ----------
+
 const regRef = (id) => doc(db, "regulations", id);
 const artsCol = (regId) => collection(db, "regulations", regId, "articles");
 const artRef = (regId, artId) => doc(db, "regulations", regId, "articles", artId);
 
-// حد Firestore هو 500 عملية لكل دفعة — نكتب على دفعات آمنة
 const BATCH_LIMIT = 450;
 
 async function commitInChunks(ops) {
@@ -41,11 +127,8 @@ async function commitInChunks(ops) {
   }
 }
 
-// ---------- الأنظمة واللوائح ----------
-
-// قائمة مختصرة (بدون النص الكامل والمواد) لعرض القائمة الرئيسية
 export async function listRegulations() {
-  const snap = await getDocs(query(regsCol(), orderBy("created_at")));
+  const snap = await getDocs(query(collection(db, "regulations"), orderBy("created_at")));
   return snap.docs.map((d) => {
     const { text, ...meta } = d.data();
     return { ...meta, id: d.id, articles_count: meta.articles_count || 0 };
@@ -63,9 +146,8 @@ export async function getRegulation(id) {
   };
 }
 
-// جميع الأنظمة بموادها — للمكتبة والتصدير واقتراحات الربط
 export async function allRegulations() {
-  const snap = await getDocs(query(regsCol(), orderBy("created_at")));
+  const snap = await getDocs(query(collection(db, "regulations"), orderBy("created_at")));
   return Promise.all(
     snap.docs.map(async (d) => {
       const artsSnap = await getDocs(query(artsCol(d.id), orderBy("seq")));
@@ -83,8 +165,9 @@ export async function createRegulation(fields) {
     name: fields.name,
     description: fields.description || "",
     text: fields.text,
-    status: "pending", // pending | processing | ready | failed
-    analysis_method: null, // ai | heuristic
+    requirementId: fields.requirementId || null, // ربط بمتطلب في مكتبة الالتزام
+    status: "pending",
+    analysis_method: null,
     analysis_error: null,
     articles_count: 0,
     created_at: now(),
@@ -104,15 +187,10 @@ export async function deleteRegulation(id) {
   const ops = artsSnap.docs.map((d) => (b) => b.delete(d.ref));
   ops.push((b) => b.delete(regRef(id)));
   await commitInChunks(ops);
-  // إزالة روابط المواد التي كانت تشير إلى النظام المحذوف
   await removeLinksWhere((l) => l.regulation_id === id);
 }
 
-// ---------- المواد والبنود ----------
-
 export async function addArticle(regId, fields) {
-  const regSnap = await getDoc(regRef(regId));
-  if (!regSnap.exists()) throw new Error("النظام غير موجود");
   const artsSnap = await getDocs(artsCol(regId));
   const maxSeq = artsSnap.docs.reduce((m, d) => Math.max(m, d.data().seq || 0), 0);
   const article = {
@@ -131,28 +209,17 @@ export async function addArticle(regId, fields) {
   };
   const id = newId("art");
   await setDoc(artRef(regId, id), article);
-  await updateDoc(regRef(regId), {
-    articles_count: artsSnap.size + 1,
-    updated_at: now(),
-  });
+  await updateDoc(regRef(regId), { articles_count: artsSnap.size + 1, updated_at: now() });
   return { ...article, id };
 }
 
 export async function updateArticle(regId, articleId, patch, editor) {
   const allowed = [
-    "number",
-    "title",
-    "text",
-    "applicability",
-    "risk_level",
-    "owning_department",
-    "rationale",
-    "needs_review",
+    "number", "title", "text", "applicability", "risk_level",
+    "owning_department", "rationale", "needs_review",
   ];
   const clean = {};
-  for (const key of allowed) {
-    if (key in patch) clean[key] = patch[key];
-  }
+  for (const key of allowed) if (key in patch) clean[key] = patch[key];
   clean.updated_at = now();
   if (editor) clean.edited_by = editor;
   await updateDoc(artRef(regId, articleId), clean);
@@ -166,7 +233,6 @@ export async function deleteArticle(regId, articleId) {
   await removeLinksWhere((l) => l.article_id === articleId);
 }
 
-// استبدال جميع مواد النظام (بعد التحليل أو إعادته)
 export async function replaceArticles(regId, articles) {
   const oldSnap = await getDocs(artsCol(regId));
   const ops = oldSnap.docs.map((d) => (b) => b.delete(d.ref));
@@ -183,24 +249,17 @@ export async function replaceArticles(regId, articles) {
       })
     );
   });
-  ops.push((b) =>
-    b.update(regRef(regId), { articles_count: articles.length, updated_at: now() })
-  );
+  ops.push((b) => b.update(regRef(regId), { articles_count: articles.length, updated_at: now() }));
   await commitInChunks(ops);
-  // إعادة التحليل تستبدل معرفات المواد — نزيل الروابط اليتيمة من بقية الأنظمة
   await removeLinksWhere((l) => l.regulation_id === regId, regId);
 }
-
-// ---------- الربط بين مواد الأنظمة (رابط ثنائي الاتجاه) ----------
 
 export async function linkArticles(srcRegId, srcArtId, dstRegId, dstArtId, editor) {
   const [srcSnap, dstSnap] = await Promise.all([
     getDoc(artRef(srcRegId, srcArtId)),
     getDoc(artRef(dstRegId, dstArtId)),
   ]);
-  if (!srcSnap.exists() || !dstSnap.exists()) {
-    throw new Error("المادة المصدر أو الهدف غير موجودة");
-  }
+  if (!srcSnap.exists() || !dstSnap.exists()) throw new Error("المادة المصدر أو الهدف غير موجودة");
   const src = srcSnap.data();
   const dst = dstSnap.data();
   const srcLinks = src.links || [];
@@ -208,23 +267,11 @@ export async function linkArticles(srcRegId, srcArtId, dstRegId, dstArtId, edito
   const stamp = now();
   const batch = writeBatch(db);
   if (!srcLinks.some((l) => l.article_id === dstArtId)) {
-    srcLinks.push({
-      regulation_id: dstRegId,
-      article_id: dstArtId,
-      number: dst.number,
-      created_by: editor,
-      created_at: stamp,
-    });
+    srcLinks.push({ regulation_id: dstRegId, article_id: dstArtId, number: dst.number, created_by: editor, created_at: stamp });
     batch.update(srcSnap.ref, { links: srcLinks });
   }
   if (!dstLinks.some((l) => l.article_id === srcArtId)) {
-    dstLinks.push({
-      regulation_id: srcRegId,
-      article_id: srcArtId,
-      number: src.number,
-      created_by: editor,
-      created_at: stamp,
-    });
+    dstLinks.push({ regulation_id: srcRegId, article_id: srcArtId, number: src.number, created_by: editor, created_at: stamp });
     batch.update(dstSnap.ref, { links: dstLinks });
   }
   await batch.commit();
@@ -238,22 +285,18 @@ export async function unlinkArticles(srcRegId, srcArtId, dstArtId) {
   const link = (src.links || []).find((l) => l.article_id === dstArtId);
   const newLinks = (src.links || []).filter((l) => l.article_id !== dstArtId);
   await updateDoc(srcSnap.ref, { links: newLinks });
-  // إزالة الرابط العكسي
   if (link) {
     const dstSnap = await getDoc(artRef(link.regulation_id, dstArtId));
     if (dstSnap.exists()) {
-      const dstLinks = (dstSnap.data().links || []).filter(
-        (l) => l.article_id !== srcArtId
-      );
+      const dstLinks = (dstSnap.data().links || []).filter((l) => l.article_id !== srcArtId);
       await updateDoc(dstSnap.ref, { links: dstLinks });
     }
   }
   return { ...src, id: srcArtId, links: newLinks };
 }
 
-// تنظيف الروابط اليتيمة: يمسح مواد جميع الأنظمة ويزيل الروابط المطابقة للشرط
 async function removeLinksWhere(match, skipRegId = null) {
-  const regsSnap = await getDocs(regsCol());
+  const regsSnap = await getDocs(collection(db, "regulations"));
   const ops = [];
   for (const regDoc of regsSnap.docs) {
     if (regDoc.id === skipRegId) continue;
@@ -262,9 +305,7 @@ async function removeLinksWhere(match, skipRegId = null) {
       const links = artDoc.data().links || [];
       if (!links.length) continue;
       const kept = links.filter((l) => !match(l));
-      if (kept.length !== links.length) {
-        ops.push((b) => b.update(artDoc.ref, { links: kept }));
-      }
+      if (kept.length !== links.length) ops.push((b) => b.update(artDoc.ref, { links: kept }));
     }
   }
   if (ops.length) await commitInChunks(ops);

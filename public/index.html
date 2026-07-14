@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>نظام إدارة الالتزام</title>
+  <title>نظام إدارة الالتزام — CMS</title>
   <link rel="stylesheet" href="styles.css" />
   <!-- مكتبات المعالجة داخل المتصفح: قراءة Word، OCR، تصدير Excel -->
   <script defer src="https://cdn.jsdelivr.net/npm/mammoth@1.9.0/mammoth.browser.min.js"></script>
@@ -11,21 +11,12 @@
   <script defer src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand">
-      <span class="logo">⚖️</span>
-      <div>
-        <h1>نظام إدارة الالتزام</h1>
-        <p class="subtitle">تحليل الأنظمة واللوائح وتصنيف موادها آلياً</p>
-      </div>
-    </div>
-    <div id="auth-area" class="auth-area"></div>
-  </header>
-
-  <main id="app">
-    <!-- تُبنى الواجهة عبر js/app.js -->
-  </main>
-
+  <div class="layout">
+    <aside id="sidebar" class="sidebar"></aside>
+    <main id="app">
+      <!-- تُبنى الواجهة عبر js/app.js -->
+    </main>
+  </div>
   <div id="toast" class="toast hidden"></div>
   <script type="module" src="js/app.js"></script>
 </body>

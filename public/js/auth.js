@@ -1,5 +1,5 @@
-// المصادقة عبر Firebase Authentication (بريد إلكتروني وكلمة مرور)
-// الدور والاسم المعروض يُقرآن من وثيقة users/{uid} في Firestore (تُنشأ من لوحة Firebase — انظر README)
+// المصادقة عبر Firebase Authentication — الدور من وثيقة users/{uid}
+// يدعم مخطط النظام السابق: {name, role: ADMIN|COMPLIANCE_MANAGER|…, departmentId, active}
 import {
   getAuth,
   signInWithEmailAndPassword,
@@ -12,6 +12,7 @@ import {
   getDoc,
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { app } from "./db.js";
+import { EDITOR_ROLES, APPROVER_ROLES } from "./meta.js";
 
 const auth = app ? getAuth(app) : null;
 
@@ -24,20 +25,28 @@ const AUTH_ERRORS = {
 };
 
 async function buildProfile(fbUser) {
-  let role = "viewer";
-  let displayName = fbUser.email;
+  let data = {};
   try {
     const snap = await getDoc(doc(getFirestore(app), "users", fbUser.uid));
-    if (snap.exists()) {
-      const data = snap.data();
-      role = data.role || "viewer";
-      displayName = data.display_name || fbUser.email;
-    }
+    if (snap.exists()) data = snap.data();
   } catch {
-    // بلا وثيقة دور (أو تعذّرت قراءتها) يُعامل المستخدم كمستعرض
+    // بلا وثيقة دور يُعامل المستخدم كمراجع (قراءة فقط)
   }
-  return { uid: fbUser.uid, email: fbUser.email, role, display_name: displayName };
+  // توحيد الدور: النظام القديم بأحرف كبيرة، وثائق أقدم بصيغة compliance_manager
+  const role = String(data.role || "AUDITOR").toUpperCase();
+  return {
+    uid: fbUser.uid,
+    email: fbUser.email,
+    role,
+    name: data.name || data.display_name || fbUser.email,
+    departmentId: data.departmentId || null,
+    active: data.active !== false,
+  };
 }
+
+export const canEdit = (u) => EDITOR_ROLES.includes(u?.role);
+export const canApprove = (u) => APPROVER_ROLES.includes(u?.role);
+export const isDeptOwner = (u) => u?.role === "DEPT_OWNER";
 
 export async function login(email, password) {
   try {
@@ -52,7 +61,6 @@ export function logout() {
   return signOut(auth);
 }
 
-// يستدعي cb بالملف الشخصي عند الدخول و null عند الخروج
 export function onAuth(cb) {
   onAuthStateChanged(auth, async (fbUser) => {
     cb(fbUser ? await buildProfile(fbUser) : null);

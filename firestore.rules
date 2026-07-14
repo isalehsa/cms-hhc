@@ -1,34 +1,124 @@
 rules_version = '2';
 
-// قواعد أمان Firestore لنظام إدارة الالتزام
-// - القراءة: أي مستخدم مسجَّل دخول
-// - الكتابة: مدير الالتزام فقط (role == "compliance_manager" في وثيقة users/{uid})
-// إسناد الأدوار يتم من لوحة Firebase (انظر README)
+// قواعد أمان نظام إدارة الالتزام (CMS)
+// القراءة: أي مستخدم مسجَّل دخول
+// الكتابة: حسب الدور في وثيقة users/{uid}:
+//   ADMIN / COMPLIANCE_MANAGER / SPECIALIST — تحرير كامل للمحتوى
+//   DEPT_OWNER — تحديث الفحص الذاتي والملاحظات الخاصة بإدارته فقط
+//   AUDITOR / EXECUTIVE — قراءة فقط
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() {
       return request.auth != null;
     }
 
-    function isManager() {
-      return signedIn()
-        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'compliance_manager';
+    function me() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function hasRoleDoc() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function myRole() {
+      // توافق مع الوثائق القديمة بصيغة compliance_manager
+      return hasRoleDoc() ? me().role.upper() : 'AUDITOR';
+    }
+
+    function isEditor() {
+      return signedIn() && myRole() in ['ADMIN', 'COMPLIANCE_MANAGER', 'SPECIALIST'];
+    }
+
+    function isApprover() {
+      return signedIn() && myRole() in ['ADMIN', 'COMPLIANCE_MANAGER'];
+    }
+
+    function isDeptOwnerOf(deptId) {
+      return signedIn() && myRole() == 'DEPT_OWNER' && hasRoleDoc() && me().departmentId == deptId;
     }
 
     match /users/{uid} {
       allow read: if signedIn();
-      // الوثيقة الأولى لمدير الالتزام تُنشأ من لوحة Firebase — بعدها يستطيع المدير إدارة البقية
-      allow write: if isManager();
+      allow write: if isApprover();
+    }
+
+    match /departments/{id} {
+      allow read: if signedIn();
+      allow write: if isApprover();
+    }
+
+    match /authorities/{id} {
+      allow read: if signedIn();
+      allow write: if isEditor();
+    }
+
+    match /requirements/{id} {
+      allow read: if signedIn();
+      allow write: if isEditor();
+    }
+
+    match /risks/{id} {
+      allow read: if signedIn();
+      allow write: if isEditor();
+    }
+
+    match /monitoring/{id} {
+      allow read: if signedIn();
+      allow write: if isEditor();
+    }
+
+    match /planItems/{id} {
+      allow read: if signedIn();
+      allow write: if isEditor();
+    }
+
+    match /assessments/{id} {
+      allow read: if signedIn();
+      allow create, delete: if isEditor();
+      // مالك الإدارة يجيب على فحص إدارته (تحديث الأسئلة والتعليق والإرسال للمراجعة)
+      allow update: if isEditor() || isDeptOwnerOf(resource.data.departmentId);
+    }
+
+    match /findings/{id} {
+      allow read: if signedIn();
+      allow create, delete: if isEditor();
+      // مالك الإدارة يحدّث تقدم الإجراءات التصحيحية لملاحظات إدارته
+      allow update: if isEditor() || isDeptOwnerOf(resource.data.departmentId);
+    }
+
+    match /counters/{id} {
+      allow read: if signedIn();
+      allow write: if isEditor();
+    }
+
+    match /reports/{id} {
+      allow read: if signedIn();
+      allow create: if signedIn();
+      allow update, delete: if isApprover();
+    }
+
+    match /notifications/{id} {
+      allow read: if signedIn();
+      allow create: if signedIn();
+      // تعليم كمقروء فقط لغير المحررين
+      allow update: if isEditor() || (signedIn() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']));
+      allow delete: if isApprover();
+    }
+
+    // سجل التدقيق: إنشاء فقط — لا تعديل ولا حذف (Audit Trail غير قابل للعبث)
+    match /auditLog/{id} {
+      allow read: if signedIn();
+      allow create: if signedIn();
+      allow update, delete: if false;
     }
 
     match /regulations/{regId} {
       allow read: if signedIn();
-      allow write: if isManager();
+      allow write: if isEditor();
 
       match /articles/{articleId} {
         allow read: if signedIn();
-        allow write: if isManager();
+        allow write: if isEditor();
       }
     }
   }
