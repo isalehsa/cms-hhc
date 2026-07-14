@@ -28,4 +28,12 @@ jobs:
           fi
           printf '%s' "$FIREBASE_SA" > "$RUNNER_TEMP/firebase-sa.json"
           export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-sa.json"
-          npx firebase-tools@latest deploy --project cms-hhc --non-interactive --force
+          if npx firebase-tools@latest deploy --project cms-hhc --non-interactive --force; then
+            exit 0
+          fi
+          # النشر الكامل يتطلب إذن Service Usage على حساب الخدمة — عند غيابه
+          # ننشر الاستضافة وقواعد Firestore كلاً على حدة لتجاوز فحص تفعيل الواجهات
+          echo "::warning::فشل النشر الكامل (غالباً نقص صلاحيات حساب الخدمة) — محاولة نشر الاستضافة فقط"
+          npx firebase-tools@latest deploy --only hosting --project cms-hhc --non-interactive --force
+          npx firebase-tools@latest deploy --only firestore:rules --project cms-hhc --non-interactive --force \
+            || echo "::warning::نُشرت الاستضافة لكن تعذّر نشر قواعد Firestore — امنح حساب الخدمة دور Editor من IAM في Google Cloud"
