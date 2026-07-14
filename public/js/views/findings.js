@@ -222,7 +222,7 @@ export function openDetail(id, nav, done) {
         actions: updated,
         status: f.status === "CLOSED" ? "CLOSED" : allDone ? "IN_PROGRESS" : updated.some((a) => a.progress > 0) ? "IN_PROGRESS" : f.status,
       });
-      await db.audit("UPDATE", "Finding", f.code, `تحديث تقدم إجراء تصحيحي في ${f.code} إلى ${progress}٪`);
+      await db.audit("UPDATE", "Finding", f.code, `تحديث تقدم إجراء تصحيحي في ${f.code} إلى ${progress}%`);
       await reload("findings");
       ov.remove();
       toast("حُدّث التقدم");

@@ -202,6 +202,7 @@ export async function addArticle(regId, fields) {
     risk_level: fields.risk_level || "متوسط",
     owning_department: fields.owning_department || "الالتزام",
     rationale: fields.rationale || "",
+    penalty: fields.penalty || "",
     needs_review: fields.needs_review ?? false,
     links: [],
     edited_by: fields.edited_by || null,
@@ -216,7 +217,7 @@ export async function addArticle(regId, fields) {
 export async function updateArticle(regId, articleId, patch, editor) {
   const allowed = [
     "number", "title", "text", "applicability", "risk_level",
-    "owning_department", "rationale", "needs_review",
+    "owning_department", "rationale", "penalty", "needs_review",
   ];
   const clean = {};
   for (const key of allowed) if (key in patch) clean[key] = patch[key];

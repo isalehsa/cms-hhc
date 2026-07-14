@@ -12,6 +12,7 @@ import { analyzeRegulation, DEFAULT_MODEL } from "../analyzer.js";
 import { extractText } from "../extract.js";
 import { downloadWorkbook } from "../export.js";
 import { canEdit } from "../auth.js";
+import { autoIntegrateRegulation } from "../sync.js";
 
 const local = {
   view: "list", // list | detail
@@ -79,7 +80,8 @@ function renderList() {
     <section class="card">
       <h2>تحليل نظام / لائحة جديدة</h2>
       <p class="muted">الصق النص أو حمّل ملف PDF/Word وسيستخرج النظام جميع المواد ويصنفها
-        (الانطباق، درجة الخطر، الإدارة المالكة) آلياً.
+        (الانطباق، درجة الخطر، الإدارة المالكة، الغرامات) آلياً — وبعد اكتمال التحليل
+        يُضاف النظام لمكتبة الالتزام كمتطلب وتُشتق مخاطره في سجل المخاطر وفق الغرامات والعقوبات المذكورة.
         ${aiEnabled() ? "" : "⚠️ التحليل الذكي غير مفعّل (أضف مفتاح API من ⚙) — سيُستخدم التقسيم النصي المبدئي."}</p>
       <div class="form-grid">
         ${fld("اسم النظام / اللائحة *", txt("reg-name", "", "مثال: لائحة حوكمة البيانات"))}
@@ -94,7 +96,7 @@ function renderList() {
       </div>
       ${fld("النص الكامل *", area("reg-text", "", "الصق النص الكامل هنا، أو حمّل ملفاً أعلاه…", 7))}
       <div class="row" style="margin-top:10px">
-        <button id="add-reg-btn">تحليل وإضافة</button>
+        <button id="add-reg-btn" title="حفظ النظام وبدء تحليله: استخراج المواد وتصنيفها ثم إضافته للمتطلبات واشتقاق المخاطر آلياً">تحليل وإضافة</button>
         <span class="muted">التحليل يجري داخل هذه الصفحة — لا تغلقها قبل اكتماله.</span>
       </div>
     </section>`
@@ -115,7 +117,7 @@ function renderList() {
             </div>
             <div class="row">
               ${statusBadge(r)}
-              ${canEdit(store.user) ? `<button class="danger small" data-del="${r.id}">حذف</button>` : ""}
+              ${canEdit(store.user) ? `<button class="danger small" data-del="${r.id}" title="حذف هذا التحليل وجميع مواده">حذف</button>` : ""}
             </div>
           </div>`
         )
@@ -152,7 +154,7 @@ async function extractFromFile() {
     if (!nameField.value.trim()) nameField.value = file.name.replace(/\.(pdf|docx)$/i, "");
     status.textContent = data.ocr
       ? `✔ ${data.note || "استُخرج بتقنية OCR"}`
-      : `✔ استُخرج ${data.text.length.toLocaleString("ar")} حرفاً`;
+      : `✔ استُخرج ${data.text.length.toLocaleString("en-US")} حرفاً`;
     toast(data.ocr ? "استُخرج النص بالتعرف الضوئي — دقّقه قبل التحليل" : "تم الاستخراج — راجع النص ثم حلّل");
   } catch (err) {
     status.textContent = "";
@@ -185,6 +187,17 @@ async function runAnalysis(regId, text, orgContext) {
     await db.audit("UPDATE", "Regulation", regId, `اكتمل تحليل النظام (${articles.length} مادة، ${method === "ai" ? "ذكاء اصطناعي" : "نصي"})`);
     if (warning) toast(warning, method !== "ai"); // تنبيه أحمر فقط عند اللجوء للمحلل الاحتياطي
     else toast("اكتمل التحليل");
+    // الدمج الآلي: إضافة النظام لمكتبة الالتزام واشتقاق المخاطر وفق الغرامات والمخالفات
+    local.analyzing[regId] = "جاري التحديث الآلي للمكتبة وسجل المخاطر…";
+    refreshView();
+    try {
+      const integ = await autoIntegrateRegulation(regId);
+      if (integ.requirementCreated || integ.createdRisks) {
+        toast(`تحديث آلي: ${integ.requirementCreated ? "أُضيف متطلب لمكتبة الالتزام و" : ""}أُنشئ ${integ.createdRisks} خطر في سجل المخاطر`);
+      }
+    } catch (e) {
+      console.warn("auto-integration failed", e);
+    }
   } catch (err) {
     await db.updateRegulation(regId, { status: "failed", analysis_error: err.message }).catch(() => {});
     toast(`فشل التحليل: ${err.message}`, true);
@@ -272,8 +285,8 @@ function linksPanelHtml(a) {
       .map(
         (s) => `<div class="row" style="margin:4px 0">
           <span class="grow"><strong>${esc(s.regulation_name)}</strong> — ${esc(s.number)}: ${esc(s.title)}
-          <span class="muted">(تشابه ${Math.round(s.score * 100)}٪)</span></span>
-          <button class="small" data-dolink="${a.id}" data-reg="${s.regulation_id}" data-target="${s.article_id}">ربط</button>
+          <span class="muted">(تشابه ${Math.round(s.score * 100)}%)</span></span>
+          <button class="small" data-dolink="${a.id}" data-reg="${s.regulation_id}" data-target="${s.article_id}" title="ربط هذه المادة بالمادة المقترحة">ربط</button>
         </div>`
       )
       .join("");
@@ -292,6 +305,7 @@ function renderDetail() {
     applies: reg.articles.filter((a) => a.applicability === "تنطبق").length,
     high: reg.articles.filter((a) => a.risk_level === "عالي" && a.applicability === "تنطبق").length,
     review: reg.articles.filter((a) => a.needs_review).length,
+    penalties: reg.articles.filter((a) => a.penalty).length,
   };
 
   const rows = arts
@@ -311,13 +325,14 @@ function renderDetail() {
       const mainRow = `<tr>
         <td><strong>${esc(a.number)}</strong>${a.needs_review ? '<br/><span class="lvl lvl-warning"><span class="dot"></span>للمراجعة</span>' : ""}</td>
         <td><strong>${esc(a.title)}</strong><div class="article-text muted">${esc(a.text)}</div>
+          ${a.penalty ? `<div style="margin-top:4px"><span class="penalty-chip" data-tip="الغرامة/العقوبة المنصوص عليها — تُستخدم لاشتقاق سجل المخاطر آلياً">⚖ ${esc(a.penalty)}</span></div>` : ""}
           ${linkBadges ? `<div style="margin-top:4px">${linkBadges}</div>` : ""}</td>
         ${cells}
         <td class="muted" style="max-width:220px">${esc(a.rationale)}${a.edited_by ? `<br/><em>آخر تعديل: ${esc(a.edited_by)}</em>` : ""}</td>
         ${editable ? `<td>
-          <button class="secondary small" data-links="${a.id}">🔗${a.links?.length ? ` (${a.links.length})` : ""}</button>
-          <button class="secondary small" data-review="${a.id}">${a.needs_review ? "✔" : "🔖"}</button>
-          <button class="danger small" data-delart="${a.id}">✕</button>
+          <button class="secondary small" data-links="${a.id}" title="عرض وربط المواد المشابهة في التحليلات الأخرى">🔗${a.links?.length ? ` (${a.links.length})` : ""}</button>
+          <button class="secondary small" data-review="${a.id}" title="${a.needs_review ? "إنهاء حالة المراجعة لهذه المادة" : "تعليم هذه المادة كبحاجة إلى مراجعة"}">${a.needs_review ? "✔" : "🔖"}</button>
+          <button class="danger small" data-delart="${a.id}" title="حذف هذه المادة من التحليل">✕</button>
         </td>` : ""}
       </tr>`;
       const panelRow = editable && local.openLinks === a.id
@@ -334,9 +349,9 @@ function renderDetail() {
           ${reg.requirementId ? ` · 📖 ${esc(reqLabel(reg.requirementId))}` : ""}</p></div>
         <div class="row">
           ${statusBadge(reg)}
-          <button class="secondary small" id="export-reg">⬇ Excel</button>
+          <button class="secondary small" id="export-reg" title="تصدير جميع المواد وتصنيفاتها إلى ملف Excel">⬇ Excel</button>
           ${editable && !reg.requirementId ? '<button class="secondary small" id="mk-req" title="إنشاء متطلب في مكتبة الالتزام من هذا التحليل">📖 إنشاء متطلب</button>' : ""}
-          ${editable && reg.status !== "processing" ? '<button class="secondary small" id="reanalyze">🔄 إعادة التحليل</button>' : ""}
+          ${editable && reg.status !== "processing" ? '<button class="secondary small" id="reanalyze" title="إعادة تحليل النص من جديد — تستبدل التصنيفات والتعديلات الحالية">🔄 إعادة التحليل</button>' : ""}
         </div>
       </div>
       ${reg.analysis_error ? `<p class="muted">⚠️ ${esc(reg.analysis_error)}</p>` : ""}
@@ -345,6 +360,7 @@ function renderDetail() {
         <div class="stat"><div class="num">${counts.applies}</div><div class="lbl">تنطبق</div></div>
         <div class="stat"><div class="num">${counts.total - counts.applies}</div><div class="lbl">لا تنطبق</div></div>
         <div class="stat"><div class="num">${counts.high}</div><div class="lbl">خطر عالٍ (منطبقة)</div></div>
+        <div class="stat"><div class="num">${counts.penalties}</div><div class="lbl">بها غرامات / عقوبات</div></div>
         <div class="stat"><div class="num">${counts.review}</div><div class="lbl">بحاجة لمراجعة</div></div>
       </div>
     </section>
@@ -354,7 +370,7 @@ function renderDetail() {
         <select id="f-app"><option value="">كل حالات الانطباق</option>${APPLICABILITY.map((o) => `<option ${local.filters.applicability === o ? "selected" : ""}>${o}</option>`).join("")}</select>
         <select id="f-risk"><option value="">كل درجات الخطر</option>${RISK_LEVELS.map((o) => `<option ${local.filters.risk === o ? "selected" : ""}>${o}</option>`).join("")}</select>
         <select id="f-dept"><option value="">كل الإدارات</option>${DEPARTMENTS.map((o) => `<option ${local.filters.department === o ? "selected" : ""}>${o}</option>`).join("")}</select>
-        ${editable ? '<button class="small" id="add-art">＋ مادة يدوياً</button>' : ""}
+        ${editable ? '<button class="small" id="add-art" title="إضافة مادة أو بند يدوياً إلى هذا التحليل">＋ مادة يدوياً</button>' : ""}
       </div>
       <div style="overflow-x:auto">
         <table>

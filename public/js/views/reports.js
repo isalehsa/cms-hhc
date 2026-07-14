@@ -92,7 +92,7 @@ function tableFor(key) {
     }
     case "plan":
       return {
-        head: ["المبادرة", "السنة", "الربع", "المصدر", "الإدارة", "المسؤول", "المخرجات المتوقعة", "الإنجاز ٪", "الحالة"],
+        head: ["المبادرة", "السنة", "الربع", "المصدر", "الإدارة", "المسؤول", "المخرجات المتوقعة", "الإنجاز %", "الحالة"],
         rows: store.planItems.map((p) => [
           p.title, p.year || "", p.quarter ? `الربع ${p.quarter}` : "", PLAN_SOURCES[p.source] || p.source,
           deptName(p.departmentId), userName(p.ownerId), p.expectedOutput || "", p.progress || 0, PLAN_STATUS[p.status] || p.status,
@@ -100,11 +100,11 @@ function tableFor(key) {
       };
     case "findings":
       return {
-        head: ["الرقم", "الملاحظة", "المصدر", "الخطورة", "الإدارة", "المتطلب", "الاستحقاق", "الإجراءات التصحيحية", "متوسط التقدم ٪", "الحالة"],
+        head: ["الرقم", "الملاحظة", "المصدر", "الخطورة", "الإدارة", "المتطلب", "الاستحقاق", "الإجراءات التصحيحية", "متوسط التقدم %", "الحالة"],
         rows: store.findings.map((f) => [
           f.code, f.title, FND_SOURCES[f.source] || f.source, FND_SEVERITY[f.severity] || f.severity,
           deptName(f.departmentId), reqLabel(f.requirementId), fmtDate(f.dueDate),
-          (f.actions || []).map((a) => `${a.description} (${a.progress || 0}٪)`).join(" | "),
+          (f.actions || []).map((a) => `${a.description} (${a.progress || 0}%)`).join(" | "),
           (f.actions || []).length ? Math.round(f.actions.reduce((s, a) => s + (a.progress || 0), 0) / f.actions.length) : 0,
           FND_STATUS[f.status] || f.status,
         ]),
@@ -140,7 +140,7 @@ function execHighlights() {
 // ---------- عرض التقرير (وللطباعة PDF) ----------
 function reportHtml(key) {
   const k = kpis();
-  const today = new Date().toLocaleDateString("ar-SA", { dateStyle: "long" });
+  const today = new Date().toLocaleDateString("ar-SA-u-ca-gregory-nu-latn", { dateStyle: "long" });
   const meta = REPORTS.find((r) => r.key === key);
   let body = "";
 
@@ -149,9 +149,9 @@ function reportHtml(key) {
       <td><strong>${k.activeReqs.length}</strong><br/>متطلب نشط</td>
       <td><strong>${store.risks.length}</strong><br/>خطر مسجل</td>
       <td><strong>${k.riskCounts.CRITICAL + k.riskCounts.HIGH}</strong><br/>مخاطر عالية فأكثر</td>
-      <td><strong>${store.monitoring.length ? Math.round((k.monDone / store.monitoring.length) * 100) : 0}٪</strong><br/>إنجاز المراقبة</td>
+      <td><strong>${store.monitoring.length ? Math.round((k.monDone / store.monitoring.length) * 100) : 0}%</strong><br/>إنجاز المراقبة</td>
       <td><strong>${k.openFnd.length}</strong><br/>ملاحظة مفتوحة</td>
-      <td><strong>${k.planAvg}٪</strong><br/>إنجاز الخطة السنوية</td>
+      <td><strong>${k.planAvg}%</strong><br/>إنجاز الخطة السنوية</td>
     </tr></tbody></table>`;
 
   if (key === "executive") {
@@ -160,8 +160,8 @@ function reportHtml(key) {
       <h2>الملخص التنفيذي</h2>
       <p>يعرض هذا التقرير حالة الالتزام المؤسسي وفق منهجية ISO 37301: تغطي مكتبة الالتزام ${k.activeReqs.length} متطلباً نظامياً نشطاً،
       ويرصد سجل المخاطر ${store.risks.length} خطراً منها ${k.riskCounts.CRITICAL} حرج و${k.riskCounts.HIGH} عالٍ (بعد الضوابط)،
-      وبلغت نسبة إنجاز برنامج المراقبة ${store.monitoring.length ? Math.round((k.monDone / store.monitoring.length) * 100) : 0}٪،
-      مع ${k.openFnd.length} ملاحظة مفتوحة قيد المعالجة، ونسبة إنجاز الخطة السنوية ${k.planAvg}٪.</p>
+      وبلغت نسبة إنجاز برنامج المراقبة ${store.monitoring.length ? Math.round((k.monDone / store.monitoring.length) * 100) : 0}%،
+      مع ${k.openFnd.length} ملاحظة مفتوحة قيد المعالجة، ونسبة إنجاز الخطة السنوية ${k.planAvg}%.</p>
       ${kpiBlock}
       <h2>أبرز المخاطر (بعد الضوابط)</h2>
       <table><thead><tr><th>الرقم</th><th>الخطر</th><th>المستوى</th><th>الإدارة</th><th>الحالة</th></tr></thead><tbody>
@@ -241,9 +241,9 @@ async function exportExcel(key) {
       ["إجمالي المخاطر", store.risks.length],
       ["مخاطر حرجة (بعد الضوابط)", k.riskCounts.CRITICAL],
       ["مخاطر عالية", k.riskCounts.HIGH],
-      ["نسبة إنجاز المراقبة ٪", store.monitoring.length ? Math.round((k.monDone / store.monitoring.length) * 100) : 0],
+      ["نسبة إنجاز المراقبة %", store.monitoring.length ? Math.round((k.monDone / store.monitoring.length) * 100) : 0],
       ["ملاحظات مفتوحة", k.openFnd.length],
-      ["نسبة إنجاز الخطة السنوية ٪", k.planAvg],
+      ["نسبة إنجاز الخطة السنوية %", k.planAvg],
     ]);
     for (const sub of ["requirements", "risks", "monitoring", "findings", "plan"]) {
       const t = tableFor(sub);

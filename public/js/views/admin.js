@@ -66,7 +66,7 @@ export function renderAdmin(el, nav, refresh) {
       .slice(0, 100)
       .map(
         (l) => `<tr>
-          <td class="muted">${fmtDate(l.createdAt)} ${l.createdAt ? new Date(l.createdAt).toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" }) : ""}</td>
+          <td class="muted">${fmtDate(l.createdAt)} ${l.createdAt ? new Date(l.createdAt).toLocaleTimeString("ar-SA-u-ca-gregory-nu-latn", { hour: "2-digit", minute: "2-digit" }) : ""}</td>
           <td>${esc(l.userName || "—")}</td>
           <td>${esc({ CREATE: "إنشاء", UPDATE: "تعديل", DELETE: "حذف", APPROVE: "اعتماد", SUBMIT: "إرسال", REVIEW: "مراجعة" }[l.action] || l.action)}</td>
           <td>${esc(l.entityType || "")}${l.entityId ? ` (${esc(l.entityId)})` : ""}</td>

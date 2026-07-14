@@ -10,6 +10,7 @@ const HEADER = [
   { header: "درجة الخطر", key: "risk_level", width: 12 },
   { header: "الإدارة المالكة", key: "owning_department", width: 20 },
   { header: "المبرر", key: "rationale", width: 40 },
+  { header: "الغرامة / العقوبة", key: "penalty", width: 40 },
   { header: "بحاجة لمراجعة", key: "needs_review", width: 14 },
   { header: "المواد المرتبطة", key: "links", width: 40 },
   { header: "آخر تعديل بواسطة", key: "edited_by", width: 18 },
@@ -45,6 +46,7 @@ function articleRow(reg, a, regNameById) {
     risk_level: a.risk_level,
     owning_department: a.owning_department,
     rationale: a.rationale,
+    penalty: a.penalty || "",
     needs_review: a.needs_review ? "نعم" : "لا",
     links: (a.links || [])
       .map((l) => `${regNameById.get(l.regulation_id) || "؟"} — ${l.number}`)

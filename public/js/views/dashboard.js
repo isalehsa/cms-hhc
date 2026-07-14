@@ -79,15 +79,15 @@ export function renderDashboard(el, nav) {
   alerts.sort((a, b) => (b.overdue ? 1 : 0) - (a.overdue ? 1 : 0));
 
   el.innerHTML = `
-    <div class="page-head"><h1>لوحة التحكم</h1><p class="muted">مؤشرات الالتزام العامة — ${new Date().toLocaleDateString("ar-SA", { dateStyle: "long" })}</p></div>
+    <div class="page-head"><h1>لوحة التحكم</h1><p class="muted">مؤشرات الالتزام العامة — ${new Date().toLocaleDateString("ar-SA-u-ca-gregory-nu-latn", { dateStyle: "long" })}</p></div>
 
     <div class="stats">
       ${statTile(activeReqs.length, "المتطلبات النظامية", `${critReqs} ${esc("حرجة")}`)}
       ${statTile(s.risks.length, "مخاطر الالتزام", levelBadge("CRITICAL", `${riskCounts.CRITICAL + riskCounts.HIGH} عالية فأكثر`))}
-      ${statTile(`${monTotal ? Math.round((monDone / monTotal) * 100) : 0}٪`, "إنجاز برنامج المراقبة", `${monDone} من ${monTotal} نشاطاً`)}
+      ${statTile(`${monTotal ? Math.round((monDone / monTotal) * 100) : 0}%`, "إنجاز برنامج المراقبة", `${monDone} من ${monTotal} نشاطاً`)}
       ${statTile(openFindings.length, "ملاحظات مفتوحة", levelBadge(highFindings ? "HIGH" : "LOW", `${highFindings} عالية الخطورة`))}
-      ${statTile(`${Math.round(planAvg)}٪`, `إنجاز خطة ${year}`, `${planYear.length} مبادرة`)}
-      ${statTile(`${saTotal ? Math.round((saDone / saTotal) * 100) : 0}٪`, "الفحص الذاتي المكتمل", `${saPending.length} بانتظار الإدارات`)}
+      ${statTile(`${Math.round(planAvg)}%`, `إنجاز خطة ${year}`, `${planYear.length} مبادرة`)}
+      ${statTile(`${saTotal ? Math.round((saDone / saTotal) * 100) : 0}%`, "الفحص الذاتي المكتمل", `${saPending.length} بانتظار الإدارات`)}
     </div>
 
     <div class="grid-2">

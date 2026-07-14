@@ -5,8 +5,9 @@ import {
   $, esc, toast, modal, confirmBox, fld, txt, num, area, sel, dateInp, val,
   fmtDate, isoFromInput, levelBadge, statusBadgeFrom, emptyMsg,
 } from "../ui.js";
-import { riskLevel, RISK_STATUS, CONTROL_EFFECTIVENESS } from "../meta.js";
+import { riskLevel, RISK_STATUS, CONTROL_EFFECTIVENESS, RISK_SOURCES } from "../meta.js";
 import { canEdit } from "../auth.js";
+import { runAutoSync } from "../sync.js";
 
 const ST_ROLE = { OPEN: "critical", IN_TREATMENT: "warning", TREATED: "good", ACCEPTED: "neutral", CLOSED: "good" };
 const filters = { search: "", level: "", status: "", dept: "" };
@@ -25,7 +26,10 @@ export function renderRisks(el, nav, refresh) {
   el.innerHTML = `
     <div class="page-head">
       <h1>⚠ سجل مخاطر الالتزام</h1>
-      ${editable ? '<button id="add-risk">＋ خطر جديد</button>' : ""}
+      ${editable ? `<div class="row">
+        <button class="secondary" id="sync-risks" title="تحديث سجل المخاطر آلياً: فحص الإضافات الحديثة في مكتبة الالتزام والأنظمة المحلَّلة وإنشاء المخاطر الناقصة وفق الغرامات والمخالفات">⟳ تحديث آلي</button>
+        <button id="add-risk" title="إضافة خطر جديد يدوياً إلى السجل">＋ خطر جديد</button>
+      </div>` : ""}
     </div>
     <section class="card">
       <div class="row filters">
@@ -47,7 +51,10 @@ export function renderRisks(el, nav, refresh) {
                 const post = riskLevel(r.residualLikelihood ?? r.likelihood, r.residualImpact ?? r.impact);
                 return `<tr class="rowlink" data-open="${r.id}">
                   <td><strong>${esc(r.code)}</strong></td>
-                  <td><strong>${esc(r.title)}</strong><div class="muted clamp">${esc(r.description || "")}</div></td>
+                  <td><strong>${esc(r.title)}</strong>
+                    ${r.source ? ` <span class="chip chip-auto" data-tip="${esc(RISK_SOURCES[r.source] || "أُنشئ آلياً")}">🤖 آلي</span>` : ""}
+                    ${r.penalty ? ` <span class="chip chip-penalty" data-tip="${esc(r.penalty)}">⚖ غرامة</span>` : ""}
+                    <div class="muted clamp">${esc(r.description || "")}</div></td>
                   <td class="muted">${esc(reqLabel(r.requirementId))}</td>
                   <td>${levelBadge(pre.key, `${pre.label} (${pre.score})`)}</td>
                   <td>${levelBadge(post.key, `${post.label} (${post.score})`)}</td>
@@ -69,6 +76,23 @@ export function renderRisks(el, nav, refresh) {
   $("#f-status", el).onchange = (e) => { filters.status = e.target.value; rerender(); };
   $("#f-dept", el).onchange = (e) => { filters.dept = e.target.value; rerender(); };
   $("#add-risk", el)?.addEventListener("click", () => openForm(null, rerender));
+  $("#sync-risks", el)?.addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    toast("جاري التحديث الآلي لسجل المخاطر…");
+    try {
+      const s = await runAutoSync((msg) => toast(msg));
+      toast(
+        s.createdRisks || s.createdReqs
+          ? `اكتمل التحديث الآلي: ${s.createdRisks} خطر جديد و${s.createdReqs} متطلب`
+          : "سجل المخاطر محدّث — لا توجد إضافات جديدة"
+      );
+      rerender();
+    } catch (err) {
+      toast(err.message, true);
+      btn.disabled = false;
+    }
+  });
   el.querySelectorAll("[data-open]").forEach((tr) =>
     tr.addEventListener("click", () => openDetail(tr.dataset.open, nav, rerender))
   );
@@ -231,6 +255,8 @@ export function openDetail(id, nav, done) {
     ${r.cause ? `<p><strong>السبب:</strong> ${esc(r.cause)}</p>` : ""}
     ${r.treatmentPlan ? `<p><strong>خطة المعالجة:</strong> ${esc(r.treatmentPlan)}</p>` : ""}
     ${r.kri ? `<p><strong>KRI:</strong> ${esc(r.kri)}</p>` : ""}
+    ${r.penalty ? `<p><strong>الغرامة / العقوبة النظامية:</strong><br/><span class="penalty-chip">⚖ ${esc(r.penalty)}</span></p>` : ""}
+    ${r.source ? `<p class="muted">🤖 ${esc(RISK_SOURCES[r.source] || "أُنشئ آلياً")}${r.regulationId ? ` — من تحليل: ${esc(store.regulations.find((x) => x.id === r.regulationId)?.name || "نظام محذوف")}` : ""}</p>` : ""}
     <div class="card sub">
       <h3>الضوابط الحالية (${(r.controls || []).length})</h3>
       ${(r.controls || []).map((c) => `<div class="row" style="margin:4px 0"><span class="grow">${esc(c.name)}</span><span class="chip">${esc(c.effectiveness || "—")}</span></div>`).join("") || '<p class="muted">لا توجد ضوابط مسجلة</p>'}

@@ -81,6 +81,12 @@ export const RISK_STATUS = {
 
 export const CONTROL_EFFECTIVENESS = ["فعّال", "فعّال جزئيًا", "غير فعّال"];
 
+// مصدر إنشاء الخطر عند التوليد الآلي
+export const RISK_SOURCES = {
+  AUTO_REGULATION: "أُنشئ آلياً من التحليل الذكي وفق الغرامات والعقوبات المذكورة في النظام",
+  AUTO_LIBRARY: "أُنشئ آلياً عند إضافة المتطلب إلى مكتبة الالتزام",
+};
+
 // تقييم 5×5: الدرجة = الاحتمالية × الأثر
 export function riskLevel(likelihood, impact) {
   const score = (Number(likelihood) || 0) * (Number(impact) || 0);
