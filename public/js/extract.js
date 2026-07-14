@@ -20,30 +20,78 @@ function getPdfjs() {
   return pdfjsPromise;
 }
 
-function normalize(text) {
+const ARABIC_CHAR = /[؀-ۿݐ-ݿࢠ-ࣿﭐ-﷿ﹰ-﻿]/;
+
+export function normalize(text) {
   return text
+    .replace(/[ﭐ-﷿ﹰ-﻿]+/g, (m) => m.normalize("NFKC")) // أشكال العرض العربية → حروف قياسية قابلة للوصل
     .replace(/\r\n/g, "\n")
+    .replace(/[ \t]{2,}/g, " ")
     .replace(/[ \t]+\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
 
-// طبقة النص في PDF: نجمع عناصر كل صفحة أسطراً حسب موضعها الرأسي
-function pageText(content) {
+// شبكة أمان لملفات PDF المتدهورة (عناصر بلا عرض): سطر أغلب مقاطعه حروف عربية
+// مفردة تفصلها مسافات هو سطر تقطّعت حروفه أثناء الاستخراج — نعيد وصلها
+function joinDetachedArabic(line) {
+  const tokens = line.split(" ");
+  if (tokens.length < 8) return line;
+  const singles = tokens.filter((t) => t.length === 1 && ARABIC_CHAR.test(t)).length;
+  if (singles / tokens.length < 0.6) return line;
+  let out = "";
+  let prevSingle = false;
+  for (const tok of tokens) {
+    if (!tok) continue;
+    const single = tok.length === 1 && ARABIC_CHAR.test(tok);
+    if (out) out += prevSingle && single ? "" : " ";
+    out += tok;
+    prevSingle = single;
+  }
+  return out;
+}
+
+// طبقة النص في PDF: نجمع عناصر كل صفحة أسطراً حسب موضعها الرأسي.
+// ملفات PDF العربية كثيراً ما تخزّن كل حرف (أو مقطع قصير) عنصراً مستقلاً، لذا لا
+// نضيف مسافة بين عنصرين متجاورين إلا إذا كانت الفجوة الأفقية بينهما فجوة كلمات
+// حقيقية — وإلا تقطّعت حروف الكلمة الواحدة بمسافات
+export function pageText(content) {
   const lines = [];
-  let lastY = null;
   let line = [];
+  let lastY = null;
+  let prevX0 = null; // بداية العنصر السابق أفقياً
+  let prevX1 = null; // نهايته
+
+  const flushLine = () => {
+    if (line.length) lines.push(joinDetachedArabic(line.join("")));
+    line = [];
+    prevX0 = prevX1 = null;
+  };
+
   for (const item of content.items) {
     if (!("str" in item)) continue;
-    const y = item.transform?.[5];
-    if (lastY !== null && y !== undefined && Math.abs(y - lastY) > 2) {
-      lines.push(line.join(" "));
-      line = [];
+    const t = item.transform || [];
+    const x = t[4];
+    const y = t[5];
+    const fontSize = Math.max(Math.abs(t[3] || 0), Math.abs(t[0] || 0)) || 10;
+    if (lastY !== null && y !== undefined && Math.abs(y - lastY) > 2) flushLine();
+    if (item.str) {
+      if (line.length && x !== undefined && prevX1 !== null) {
+        const width = item.width || 0;
+        // الفجوة بين العنصرين أياً كان اتجاه الكتابة (يمين→يسار أو العكس)
+        const gap = Math.max(x - prevX1, prevX0 - (x + width));
+        if (gap > fontSize * 0.2) line.push(" ");
+      }
+      line.push(item.str);
+      if (x !== undefined) {
+        prevX0 = x;
+        prevX1 = x + (item.width || 0);
+      }
     }
-    if (item.str) line.push(item.str);
+    if (item.hasEOL) flushLine();
     if (y !== undefined) lastY = y;
   }
-  if (line.length) lines.push(line.join(" "));
+  flushLine();
   return lines.join("\n");
 }
 
