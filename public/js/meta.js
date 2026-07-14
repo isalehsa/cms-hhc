@@ -148,6 +148,45 @@ export const OBS_IMPL_STATUS = {
   NOT_DONE: "لا — لم يُنفّذ",
 };
 
+// تصنيف الخطر للزيارة الميدانية (وفق قالب خطة الزيارات)
+export const VISIT_RISK_CLASS = {
+  CRITICAL: "حرج",
+  HIGH: "عالٍ",
+  MEDIUM: "متوسط",
+  LOW: "منخفض",
+};
+
+// ---------- الخطة التدريبية السنوية ----------
+export const TRAINING_METHOD = {
+  IN_PERSON: "حضوري",
+  ONLINE: "إلكتروني",
+  BLENDED: "مدمج",
+};
+
+export const TRAINING_STATUS = {
+  PLANNED: "مخطط",
+  IN_PROGRESS: "جاري التنفيذ",
+  COMPLETED: "مكتمل",
+  POSTPONED: "مؤجل",
+  CANCELLED: "ملغي",
+};
+
+// ---------- سجل المراسلات ----------
+export const CORR_TYPES = {
+  INQUIRY: "استفسار",
+  RESPONSE: "رد على ملاحظات",
+  NOTIFICATION: "إشعار / إبلاغ",
+  NO_OBJECTION: "طلب عدم ممانعة",
+  REPORT: "رفع تقرير",
+  OTHER: "أخرى",
+};
+
+export const CORR_STATUS = {
+  SENT: "مُرسل — بانتظار الرد",
+  REPLIED: "ورد الرد",
+  CLOSED: "مغلق",
+};
+
 // ---------- برنامج المراقبة ----------
 export const MON_TYPES = {
   DESK: "مكتبي",

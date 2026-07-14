@@ -31,9 +31,10 @@ const KPIS = [
     formula: "(البرامج المنفذة ÷ إجمالي البرامج المخططة) × 100",
     target: 100, weight: 10, unit: "%",
     auto: (s) => {
-      const prog = s.planItems.filter((p) => /تدريب|توعو|توعية/.test(p.title || "") && p.year === YEAR);
-      if (!prog.length) return null;
-      return Math.round(prog.reduce((a, p) => a + (p.progress || 0), 0) / prog.length);
+      // يُحتسب من وحدة الخطة التدريبية السنوية لسنة الاحتساب
+      const yr = s.training.filter((t) => t.year === YEAR && t.status !== "CANCELLED");
+      if (!yr.length) return null;
+      return pct(yr.filter((t) => t.status === "COMPLETED").length, yr.length);
     },
   },
   {

@@ -7,6 +7,7 @@ import {
   RISK_STATUS, MON_TYPES, MON_FREQ, MON_STATUS, MON_RESULT, NC_LEVELS,
   PLAN_STATUS, PLAN_SOURCES, SA_STATUS, SA_ANSWERS, FND_SEVERITY, FND_STATUS, FND_SOURCES,
   CASE_SOURCES, CASE_STATUS, VISIT_STATUS, OBS_IMPL_STATUS,
+  TRAINING_METHOD, TRAINING_STATUS, CORR_TYPES, CORR_STATUS,
 } from "../meta.js";
 
 // ---------- تعريف التقارير ----------
@@ -20,6 +21,8 @@ const REPORTS = [
   { key: "findings", icon: "🛠", title: "تقرير الملاحظات وخطط التصحيح", desc: "الملاحظات المفتوحة والمغلقة وتقدم الإجراءات التصحيحية" },
   { key: "cases", icon: "📣", title: "سجل البلاغات", desc: "البلاغات الواردة وخطط التحقيق ونتائجها والإجراءات المتخذة وحالتها" },
   { key: "visits", icon: "🏢", title: "سجل متابعة ملاحظات الزيارات الميدانية", desc: "ملاحظات الزيارات والإجراءات التصحيحية المتفق عليها وحالة تنفيذها" },
+  { key: "training", icon: "🎓", title: "الخطة التدريبية السنوية", desc: "البرامج التدريبية والتوعوية والفئات المستهدفة وحالة التنفيذ" },
+  { key: "correspondence", icon: "📨", title: "سجل المراسلات", desc: "المراسلات مع الجهات التنظيمية والردود والإجراءات المتخذة" },
 ];
 
 export function renderReports(el) {
@@ -134,6 +137,24 @@ function tableFor(key) {
       }
       return { head: ["رقم الملاحظة", "تاريخ الملاحظة", "الزيارة/المقر", "الإدارة المعنية", "الشرح التفصيلي للملاحظة", "مستوى الخطورة", "التوصية", "الإجراء التصحيحي المتفق عليه", "المسؤول عن التنفيذ", "تاريخ التنفيذ", "حالة التنفيذ", "المستندات الداعمة", "نتيجة المتابعة", "الإطار الزمني"], rows };
     }
+    case "training":
+      return {
+        head: ["الرقم", "البرنامج التدريبي", "الهدف من التدريب", "الفئة المستهدفة", "المسؤول عن التنفيذ", "السنة", "التاريخ/الربع", "طريقة التدريب", "طريقة التقييم", "الحالة", "ملاحظات"],
+        rows: store.training.map((t) => [
+          t.code, t.program, t.objective || "", t.audience || "", userName(t.ownerId), t.year || "",
+          `${t.quarter ? `الربع ${t.quarter} ` : ""}${fmtDate(t.date)}`, TRAINING_METHOD[t.method] || "", t.evaluation || "",
+          TRAINING_STATUS[t.status] || t.status, t.notes || "",
+        ]),
+      };
+    case "correspondence":
+      return {
+        head: ["الرقم", "رقم الصادر", "تاريخ الإرسال", "الجهة التنظيمية", "نوع المراسلة", "موضوع المراسلة", "ملخص المحتوى", "المستندات المرفقة", "تاريخ الرد", "ملخص الرد", "الإجراء المتخذ", "المسؤول", "الحالة"],
+        rows: store.correspondence.map((c) => [
+          c.code, c.refNo || "", fmtDate(c.sentDate), authName(c.authorityId), CORR_TYPES[c.type] || c.type || "", c.subject,
+          c.contentSummary || "", c.attachments || "", fmtDate(c.replyDate), c.replySummary || "", c.actionTaken || "",
+          userName(c.ownerId), CORR_STATUS[c.status] || c.status,
+        ]),
+      };
     default:
       return { head: [], rows: [] };
   }

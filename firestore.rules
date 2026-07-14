@@ -100,6 +100,18 @@ service cloud.firestore {
       allow update: if isEditor() || isDeptOwnerOf(resource.data.departmentId);
     }
 
+    // الخطة التدريبية السنوية
+    match /training/{id} {
+      allow read: if signedIn();
+      allow write: if isEditor();
+    }
+
+    // سجل المراسلات مع الجهات التنظيمية
+    match /correspondence/{id} {
+      allow read: if signedIn();
+      allow write: if isEditor();
+    }
+
     // إعدادات النظام (مثل القيم اليدوية لمؤشرات الأداء)
     match /settings/{id} {
       allow read: if signedIn();

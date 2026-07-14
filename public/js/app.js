@@ -16,6 +16,8 @@ import { renderAssessments } from "./views/assessments.js";
 import { renderFindings } from "./views/findings.js";
 import { renderCases } from "./views/cases.js";
 import { renderVisits } from "./views/visits.js";
+import { renderTraining } from "./views/training.js";
+import { renderCorrespondence } from "./views/correspondence.js";
 import { renderKpis } from "./views/kpis.js";
 import { renderReports } from "./views/reports.js";
 import { settings, aiEnabled } from "./views/regulations.js";
@@ -32,6 +34,8 @@ const VIEWS = {
   assessments: { icon: "📋", label: "الفحص الذاتي", render: renderAssessments },
   findings: { icon: "🛠", label: "الملاحظات والتصحيح", render: renderFindings },
   cases: { icon: "📣", label: "سجل البلاغات", render: renderCases },
+  training: { icon: "🎓", label: "الخطة التدريبية", render: renderTraining },
+  correspondence: { icon: "📨", label: "سجل المراسلات", render: renderCorrespondence },
   // التحليل الذكي مدمج داخل مكتبة الالتزام كتبويب فرعي — المسار يبقى للروابط القديمة
   regulations: {
     icon: "🤖", label: "التحليل الذكي", hidden: true,
