@@ -5,7 +5,7 @@ import {
   $, esc, toast, modal, confirmBox, fld, txt, area, sel, dateInp, val,
   fmtDate, daysUntil, isoFromInput, levelBadge, statusBadgeFrom, emptyMsg, chip,
 } from "../ui.js";
-import { REQ_TYPES, REQ_CATEGORIES, CRITICALITY, REQ_STATUS } from "../meta.js";
+import { REQ_TYPES, REQ_CATEGORIES, CRITICALITY, REQ_STATUS, REQ_SCOPE, SECTORS } from "../meta.js";
 import { canEdit, canApprove } from "../auth.js";
 import { renderRegulations } from "./regulations.js";
 
@@ -74,8 +74,8 @@ export function renderLibrary(el, nav, refresh, params = {}) {
       <div style="overflow-x:auto">
         <table>
           <thead><tr>
-            <th>الرمز</th><th>المتطلب</th><th>الجهة</th><th>النوع</th><th>التصنيف</th>
-            <th>الأهمية</th><th>الإدارة المالكة</th><th>المراجعة القادمة</th><th>الحالة</th><th>الروابط</th>
+            <th>الرمز</th><th>فئة الوثيقة</th><th>رقم الوثيقة</th><th>اسم الوثيقة</th><th>رقم البند</th>
+            <th>خاص/عام</th><th>الأهمية</th><th>الإدارة المالكة</th><th>المراجعة القادمة</th><th>الحالة</th><th>الروابط</th>
           </tr></thead>
           <tbody>
             ${rows
@@ -86,10 +86,11 @@ export function renderLibrary(el, nav, refresh, params = {}) {
                 const planCount = store.planItems.filter((x) => x.requirementId === r.id).length;
                 return `<tr class="rowlink" data-open="${r.id}">
                   <td><strong>${esc(r.code)}</strong></td>
-                  <td><strong>${esc(r.title)}</strong><div class="muted clamp">${esc(r.summary || "")}</div></td>
-                  <td>${esc(authName(r.authorityId))}</td>
                   <td>${esc(REQ_TYPES[r.type] || r.type || "—")}</td>
-                  <td>${esc(REQ_CATEGORIES[r.category] || r.category || "—")}</td>
+                  <td class="muted">${esc(r.docNumber || "—")}</td>
+                  <td><strong>${esc(r.title)}</strong><div class="muted clamp">${esc(r.clauseText || r.summary || "")}</div></td>
+                  <td class="muted">${esc(r.articleNumber || "—")}</td>
+                  <td>${esc(REQ_SCOPE[r.scope] || "—")}</td>
                   <td>${levelBadge(r.criticality, CRITICALITY[r.criticality] || r.criticality || "—")}</td>
                   <td>${esc(deptName(r.ownerDeptId))}</td>
                   <td>${fmtDate(r.nextReviewDate)}${d !== null && d < 0 ? ' <span class="lvl lvl-critical"><span class="dot"></span>متأخرة</span>' : d !== null && d <= 30 ? ' <span class="lvl lvl-warning"><span class="dot"></span>قريبة</span>' : ""}</td>
@@ -97,7 +98,7 @@ export function renderLibrary(el, nav, refresh, params = {}) {
                   <td class="muted">⚠${riskCount} 🔍${monCount} 📅${planCount}</td>
                 </tr>`;
               })
-              .join("") || `<tr><td colspan="10">${emptyMsg("لا توجد متطلبات مطابقة")}</td></tr>`}
+              .join("") || `<tr><td colspan="11">${emptyMsg("لا توجد متطلبات مطابقة")}</td></tr>`}
           </tbody>
         </table>
       </div>
@@ -122,11 +123,27 @@ function openForm(req, done) {
   const ov = modal(
     `
     <h2>${isNew ? "إضافة متطلب جديد" : `تعديل ${esc(req.code)}`}</h2>
+    <h3 class="form-sec">بيانات الوثيقة (موسوعة الالتزام)</h3>
     <div class="form-grid">
-      ${fld("اسم المتطلب *", txt("q-title", req?.title))}
+      ${fld("فئة الوثيقة", sel("q-type", REQ_TYPES, req?.type || "SYSTEM"))}
+      ${fld("رقم الوثيقة", txt("q-docno", req?.docNumber, "مثل: م/19 بتاريخ 9/2/1443هـ"))}
+      ${fld("اسم الوثيقة *", txt("q-title", req?.title))}
+      ${fld("رقم البند / المادة", txt("q-artno", req?.articleNumber, "مثل: المادة 40 / البند 2.3"))}
+      ${fld("خاص / عام", sel("q-scope", REQ_SCOPE, req?.scope || "PUBLIC"))}
+      ${fld("مالك خطر عدم الالتزام", txt("q-riskowner", req?.riskOwner, "الجهة/المنصب المسؤول"))}
+      ${fld("القطاع", sel("q-sector", SECTORS, req?.sector, { empty: "— اختر —" }))}
       ${fld("الجهة التنظيمية", sel("q-auth", authOptions(), req?.authorityId, { empty: "— اختر —" }))}
-      ${fld("نوع المتطلب", sel("q-type", REQ_TYPES, req?.type || "REGULATION"))}
-      ${fld("التصنيف", sel("q-cat", REQ_CATEGORIES, req?.category || "GOVERNANCE"))}
+    </div>
+    ${fld("نص البند / المادة", area("q-clause", req?.clauseText, "النص الحرفي للبند أو المادة", 4))}
+    <h3 class="form-sec">قرار التعديل (إن وجد)</h3>
+    <div class="form-grid">
+      ${fld("رقم قرار التعديل", txt("q-amdno", req?.amendmentNo))}
+      ${fld("اسم قرار التعديل", txt("q-amdname", req?.amendmentName))}
+    </div>
+    ${fld("نص قرار التعديل", area("q-amdtext", req?.amendmentText, "", 2))}
+    <h3 class="form-sec">التصنيف والإدارة</h3>
+    <div class="form-grid">
+      ${fld("التصنيف الموضوعي", sel("q-cat", REQ_CATEGORIES, req?.category || "GOVERNANCE"))}
       ${fld("درجة الأهمية", sel("q-crit", CRITICALITY, req?.criticality || "MEDIUM"))}
       ${fld("الإدارة المالكة", sel("q-dept", deptOptions(), req?.ownerDeptId, { empty: "— اختر —" }))}
       ${fld("تاريخ الإصدار", dateInp("q-issue", req?.issueDate))}
@@ -134,7 +151,7 @@ function openForm(req, done) {
       ${fld("الحالة", sel("q-status", REQ_STATUS, req?.status || "ACTIVE"))}
       ${fld("رابط المرفق (اختياري)", txt("q-attach", req?.attachmentUrl || "", "https://…"))}
     </div>
-    ${fld("النص النظامي أو ملخص الالتزام", area("q-summary", req?.summary, "", 5))}
+    ${fld("ملخص الالتزام / ملاحظات", area("q-summary", req?.summary, "", 3))}
     ${isNew ? '<label class="chk"><input type="checkbox" id="q-mkrisk" checked /> إنشاء خطر مرتبط تلقائياً في سجل المخاطر</label>' : ""}
     <div class="row" style="margin-top:14px">
       <button id="q-save">حفظ</button>
@@ -148,6 +165,15 @@ function openForm(req, done) {
     if (!title) return toast("اسم المتطلب إلزامي", true);
     const data = {
       title,
+      docNumber: val("q-docno", ov) || null,
+      articleNumber: val("q-artno", ov) || null,
+      clauseText: val("q-clause", ov) || null,
+      scope: val("q-scope", ov),
+      riskOwner: val("q-riskowner", ov) || null,
+      sector: val("q-sector", ov) || null,
+      amendmentNo: val("q-amdno", ov) || null,
+      amendmentName: val("q-amdname", ov) || null,
+      amendmentText: val("q-amdtext", ov) || null,
       authorityId: val("q-auth", ov) || null,
       type: val("q-type", ov),
       category: val("q-cat", ov),
@@ -243,15 +269,21 @@ export function openDetail(id, nav, done) {
       <span>${statusBadgeFrom(REQ_STATUS, r.status, ST_ROLE)}</span>
     </div>
     <div class="detail-grid">
+      <div><span class="muted">فئة الوثيقة</span><br/>${esc(REQ_TYPES[r.type] || r.type || "—")}</div>
+      <div><span class="muted">رقم الوثيقة</span><br/>${esc(r.docNumber || "—")}</div>
+      <div><span class="muted">رقم البند / المادة</span><br/>${esc(r.articleNumber || "—")}</div>
+      <div><span class="muted">خاص / عام</span><br/>${esc(REQ_SCOPE[r.scope] || "—")}</div>
+      <div><span class="muted">مالك خطر عدم الالتزام</span><br/>${esc(r.riskOwner || "—")}</div>
+      <div><span class="muted">القطاع</span><br/>${esc(r.sector || "—")}</div>
       <div><span class="muted">الجهة التنظيمية</span><br/>${esc(authName(r.authorityId))}</div>
-      <div><span class="muted">النوع</span><br/>${esc(REQ_TYPES[r.type] || r.type || "—")}</div>
-      <div><span class="muted">التصنيف</span><br/>${esc(REQ_CATEGORIES[r.category] || r.category || "—")}</div>
+      <div><span class="muted">التصنيف الموضوعي</span><br/>${esc(REQ_CATEGORIES[r.category] || r.category || "—")}</div>
       <div><span class="muted">الأهمية</span><br/>${levelBadge(r.criticality, CRITICALITY[r.criticality] || "—")}</div>
       <div><span class="muted">الإدارة المالكة</span><br/>${esc(deptName(r.ownerDeptId))}</div>
       <div><span class="muted">تاريخ الإصدار</span><br/>${fmtDate(r.issueDate)}</div>
-      <div><span class="muted">آخر تحديث</span><br/>${fmtDate(r.lastUpdated)}</div>
       <div><span class="muted">المراجعة القادمة</span><br/>${fmtDate(r.nextReviewDate)}</div>
     </div>
+    ${r.clauseText ? `<p><strong>نص البند / المادة:</strong></p><p class="pre-line">${esc(r.clauseText)}</p>` : ""}
+    ${r.amendmentNo || r.amendmentName || r.amendmentText ? `<div class="card sub"><h3>قرار التعديل</h3>${r.amendmentNo ? `<p><strong>الرقم:</strong> ${esc(r.amendmentNo)}</p>` : ""}${r.amendmentName ? `<p><strong>الاسم:</strong> ${esc(r.amendmentName)}</p>` : ""}${r.amendmentText ? `<p class="pre-line">${esc(r.amendmentText)}</p>` : ""}</div>` : ""}
     ${r.summary ? `<p class="pre-line">${esc(r.summary)}</p>` : ""}
     ${r.attachmentUrl ? `<p>📎 <a href="${esc(r.attachmentUrl)}" target="_blank" rel="noopener">المرفق</a></p>` : ""}
     ${r.approvedById ? `<p class="muted">✔ معتمد</p>` : editable && canApprove(user) ? '<button class="secondary small" id="d-approve">✔ اعتماد المتطلب</button>' : '<p class="muted">بانتظار الاعتماد</p>'}

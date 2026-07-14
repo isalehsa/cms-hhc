@@ -32,15 +32,43 @@ export const EDITOR_ROLES = ["ADMIN", "COMPLIANCE_MANAGER", "SPECIALIST"];
 // المخوّلون بالاعتماد وإدارة المستخدمين
 export const APPROVER_ROLES = ["ADMIN", "COMPLIANCE_MANAGER"];
 
-// ---------- مكتبة الالتزام ----------
+// ---------- مكتبة الالتزام / موسوعة الالتزام ----------
+// فئة الوثيقة وفق قالب موسوعة الالتزام (ورقة التعاريف والمصطلحات)
 export const REQ_TYPES = {
-  REGULATION: "لائحة / نظام",
-  POLICY: "سياسة",
+  SYSTEM: "نظام",
+  REGULATION: "لائحة",
+  INSTRUCTIONS: "تعليمات",
   CIRCULAR: "تعميم",
+  GUIDELINES: "إرشادات",
+  ORGANIZATION: "تنظيمات",
+  ROYAL_ORDER: "أمر ملكي",
+  HIGH_ORDER: "أمر سامٍ",
+  POLICY: "سياسة",
   GUIDELINE: "دليل",
   CONTRACT: "عقد",
   STANDARD: "معيار",
 };
+
+// خاص / عام — نطاق انطباق المتطلب على الشركة (وفق عمود «خاص/ عام» في القالب)
+export const REQ_SCOPE = {
+  PUBLIC: "عام",
+  PRIVATE: "خاص",
+};
+
+// القطاعات وفق أوراق موسوعة الالتزام (تُستخدم لتصنيف المتطلب حسب القطاع)
+export const SECTORS = [
+  "القطاع المالي",
+  "قطاع الشؤون القانونية",
+  "قطاع الحوكمة والمخاطر",
+  "قطاع تقنية المعلومات",
+  "قطاع التحول والاستراتيجية",
+  "قطاع الخدمات المشتركة",
+  "قطاع التسويق والتواصل المؤسسي",
+  "قطاع شؤون العمالة",
+  "قطاع التوظيف الخارجي",
+  "قطاع الأعمال",
+  "قطاع المنزل",
+];
 
 export const REQ_CATEGORIES = {
   GOVERNANCE: "حوكمة",
@@ -99,6 +127,15 @@ export function riskLevel(likelihood, impact) {
   if (score >= 10) return { key: "HIGH", label: "عالٍ", score };
   if (score >= 4) return { key: "MEDIUM", label: "متوسط", score };
   return { key: "LOW", label: "منخفض", score };
+}
+
+// أولوية متطلب الالتزام وفق مستوى الخطر المتبقي (I حرج .. IIII منخفض) — من قالب سجل المخاطر
+export function riskPriority(score) {
+  const s = Number(score) || 0;
+  if (s >= 16) return { label: "حرج", roman: "I", key: "CRITICAL" };
+  if (s >= 10) return { label: "عالٍ", roman: "II", key: "HIGH" };
+  if (s >= 4) return { label: "متوسط", roman: "III", key: "MEDIUM" };
+  return { label: "منخفض", roman: "IIII", key: "LOW" };
 }
 
 // مقاييس الاحتمالية والأثر (1-5) كما وردت في دليل السياسات — تُعرض كتلميح عند الإدخال

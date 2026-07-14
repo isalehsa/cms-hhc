@@ -479,3 +479,10 @@ code { background: rgba(120,130,125,0.12); border-radius: 6px; padding: 2px 8px;
 .kpi-table td { vertical-align: top; }
 .kpi-table tfoot td { border-top: 2px solid var(--border-soft); font-size: 0.95rem; }
 .lvl-neutral { background: rgba(120, 130, 125, 0.1); border-color: rgba(120, 130, 125, 0.14); }
+
+/* عناوين أقسام داخل النماذج (مراحل/مجموعات الحقول) */
+.form-sec {
+  margin: 16px 0 6px; padding-bottom: 4px; font-size: 0.95rem; color: var(--primary-dark);
+  border-bottom: 1px solid var(--border-soft);
+}
+.ctl-row .ctl-dept, .ctl-row .ctl-eff { min-width: 130px; }

@@ -3,7 +3,7 @@ import { store, deptName, authName, userName, reqLabel } from "../state.js";
 import * as db from "../db.js";
 import { esc, toast, fmtDate } from "../ui.js";
 import {
-  riskLevel, CRITICALITY, REQ_TYPES, REQ_CATEGORIES, REQ_STATUS,
+  riskLevel, riskPriority, CRITICALITY, REQ_TYPES, REQ_CATEGORIES, REQ_STATUS, REQ_SCOPE,
   RISK_STATUS, MON_TYPES, MON_FREQ, MON_STATUS, MON_RESULT, NC_LEVELS,
   PLAN_STATUS, PLAN_SOURCES, SA_STATUS, SA_ANSWERS, FND_SEVERITY, FND_STATUS, FND_SOURCES,
   CASE_SOURCES, CASE_STATUS, VISIT_STATUS, OBS_IMPL_STATUS,
@@ -13,8 +13,8 @@ import {
 // ---------- تعريف التقارير ----------
 const REPORTS = [
   { key: "executive", icon: "🏛", title: "تقرير الالتزام التنفيذي", desc: "ملخص شامل لمجلس الإدارة والإدارة التنفيذية: المؤشرات، أبرز المخاطر، التوصيات" },
-  { key: "requirements", icon: "📖", title: "تقرير المتطلبات التنظيمية", desc: "مكتبة الالتزام كاملة بحالاتها وتواريخ مراجعتها" },
-  { key: "risks", icon: "⚠", title: "تقرير سجل المخاطر", desc: "المخاطر بتقييمها قبل الضوابط وبعدها وخطط معالجتها" },
+  { key: "requirements", icon: "📖", title: "موسوعة الالتزام", desc: "المتطلبات التنظيمية بأعمدة الموسوعة: فئة ورقم الوثيقة، البند، قرار التعديل، خاص/عام، مالك الخطر" },
+  { key: "risks", icon: "⚠", title: "سجل مخاطر الالتزام", desc: "المنهجية الرباعية: الموسوعة ← المخاطر الكامنة ← تقييم الضوابط والخطر المتبقي والأولوية ← المعالجة" },
   { key: "monitoring", icon: "🔍", title: "تقرير برنامج المراقبة", desc: "الأنشطة الرقابية ونتائجها وتوصياتها" },
   { key: "assessments", icon: "📋", title: "تقرير الفحص الذاتي", desc: "نتائج الفحوصات الذاتية للإدارات وإجاباتها" },
   { key: "plan", icon: "📅", title: "تقرير الخطة السنوية", desc: "مبادرات الخطة ونسب إنجازها" },
@@ -52,28 +52,44 @@ function tableFor(key) {
   const lvl = (r) => riskLevel(r.residualLikelihood ?? r.likelihood, r.residualImpact ?? r.impact);
   switch (key) {
     case "requirements":
+      // موسوعة الالتزام — أعمدة مطابقة لقالب الموسوعة
       return {
-        head: ["الرمز", "المتطلب", "الجهة", "النوع", "التصنيف", "الأهمية", "الإدارة المالكة", "الإصدار", "المراجعة القادمة", "الحالة"],
+        head: ["الرمز", "فئة الوثيقة", "رقم الوثيقة", "اسم الوثيقة", "رقم البند / المادة", "نص البند / المادة", "رقم قرار التعديل", "اسم قرار التعديل", "نص قرار التعديل", "خاص/ عام", "مالك خطر عدم الالتزام", "القطاع", "الإدارة المالكة", "الأهمية", "الحالة"],
         rows: store.requirements.map((r) => [
-          r.code, r.title, authName(r.authorityId), REQ_TYPES[r.type] || r.type, REQ_CATEGORIES[r.category] || r.category,
-          CRITICALITY[r.criticality] || r.criticality, deptName(r.ownerDeptId), fmtDate(r.issueDate), fmtDate(r.nextReviewDate), REQ_STATUS[r.status] || r.status,
+          r.code, REQ_TYPES[r.type] || r.type || "", r.docNumber || "", r.title, r.articleNumber || "",
+          r.clauseText || r.summary || "", r.amendmentNo || "", r.amendmentName || "", r.amendmentText || "",
+          REQ_SCOPE[r.scope] || "", r.riskOwner || "", r.sector || "", deptName(r.ownerDeptId),
+          CRITICALITY[r.criticality] || r.criticality, REQ_STATUS[r.status] || r.status,
         ]),
       };
-    case "risks":
+    case "risks": {
+      // سجل مخاطر الالتزام — المنهجية الرباعية، مع سحب بيانات الوثيقة من الموسوعة المرتبطة
+      const reqById = (id) => store.requirements.find((x) => x.id === id) || {};
       return {
-        head: ["الرقم", "الخطر", "المتطلب", "الاحتمالية", "الأثر", "قبل الضوابط", "بعد الضوابط", "الضوابط", "الإدارة", "مالك المعالجة", "خطة المعالجة", "KRI", "الاستحقاق", "الحالة"],
+        head: [
+          "الرقم", "فئة الوثيقة", "رقم الوثيقة", "اسم الوثيقة", "رقم البند", "خاص/ عام",
+          "خطر عدم الالتزام (مخالفات وعقوبات)", "مالك خطر عدم الالتزام",
+          "أثر الخطر", "وصف أثر الخطر", "احتمالية وقوع الخطر", "وصف الاحتمالية", "تقييم الخطر الكامن",
+          "الضابط الرقابي الحالي", "الإدارة المعنية بالضابط", "تقييم الضابط", "الخطر المتبقي", "الأولوية",
+          "الخطة التصحيحية", "الحالة",
+        ],
         rows: store.risks.map((r) => {
           const pre = riskLevel(r.likelihood, r.impact);
           const post = lvl(r);
+          const q = reqById(r.requirementId);
+          const ctlNames = (r.controls || []).map((c) => c.name).join(" | ");
+          const ctlDepts = (r.controls || []).map((c) => deptName(c.deptId)).join(" | ");
+          const ctlEff = (r.controls || []).map((c) => c.effectiveness || "—").join(" | ");
           return [
-            r.code, r.title, reqLabel(r.requirementId), r.likelihood, r.impact,
-            `${pre.label} (${pre.score})`, `${post.label} (${post.score})`,
-            (r.controls || []).map((c) => c.name).join(" | "),
-            deptName(r.ownerDeptId), userName(r.treatmentOwnerId), r.treatmentPlan || "", r.kri || "",
-            fmtDate(r.dueDate), RISK_STATUS[r.status] || r.status,
+            r.code, REQ_TYPES[q.type] || q.type || "", q.docNumber || "", q.title || reqLabel(r.requirementId), q.articleNumber || "",
+            REQ_SCOPE[q.scope] || "", r.description || r.penalty || "", r.riskOwner || "",
+            r.impact, r.impactDesc || "", r.likelihood, r.likelihoodDesc || "", `${pre.label} (${pre.score})`,
+            ctlNames, ctlDepts, ctlEff, `${post.label} (${post.score})`, riskPriority(post.score).roman,
+            r.treatmentPlan || "", RISK_STATUS[r.status] || r.status,
           ];
         }),
       };
+    }
     case "monitoring":
       return {
         head: ["الرقم", "النشاط", "المتطلب", "النوع", "التكرار", "الإدارة المستهدفة", "المسؤول", "البداية", "النهاية", "النتيجة", "مستوى عدم الالتزام", "الملاحظات", "التوصيات", "الحالة"],
