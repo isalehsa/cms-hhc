@@ -173,8 +173,8 @@ async function runAnalysis(regId, text, orgContext) {
     const { method, articles, warning } = await analyzeRegulation(
       text, orgContext,
       { apiKey: settings.apiKey, model: settings.model },
-      (chars) => {
-        local.analyzing[regId] = `جاري التحليل… (~${Math.round(chars / 1024)} ك.ب)`;
+      (msg) => {
+        local.analyzing[regId] = msg;
         if (Date.now() - lastPaint > 2000) { lastPaint = Date.now(); refreshView(); }
       }
     );
@@ -183,7 +183,7 @@ async function runAnalysis(regId, text, orgContext) {
     await db.replaceArticles(regId, articles);
     await db.updateRegulation(regId, { status: "ready", analysis_method: method, analysis_error: warning || null });
     await db.audit("UPDATE", "Regulation", regId, `اكتمل تحليل النظام (${articles.length} مادة، ${method === "ai" ? "ذكاء اصطناعي" : "نصي"})`);
-    if (warning) toast(warning, true);
+    if (warning) toast(warning, method !== "ai"); // تنبيه أحمر فقط عند اللجوء للمحلل الاحتياطي
     else toast("اكتمل التحليل");
   } catch (err) {
     await db.updateRegulation(regId, { status: "failed", analysis_error: err.message }).catch(() => {});
