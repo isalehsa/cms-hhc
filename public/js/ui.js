@@ -4,6 +4,24 @@ import { STATUS_COLORS, LEVEL_COLOR_ROLE } from "./meta.js";
 export const $ = (sel, root = document) => root.querySelector(sel);
 export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
+// يحافظ على تركيز حقل الإدخال وموضع المؤشر عبر إعادة بناء الواجهة.
+// تُعيد دوال العرض بناء الـ DOM عبر innerHTML، مما يُتلف الحقل النشط ويُفقده
+// التركيز؛ فنلتقط معرّف الحقل وموضع المؤشر قبل العرض ونستعيدهما بعده.
+export function keepFocus(render) {
+  const a = document.activeElement;
+  const id = a && a.id;
+  const start = a && a.selectionStart;
+  const end = a && a.selectionEnd;
+  render();
+  if (!id) return;
+  const next = document.getElementById(id);
+  if (!next) return;
+  next.focus();
+  if (start != null && next.setSelectionRange) {
+    try { next.setSelectionRange(start, end); } catch { /* أنواع حقول لا تدعم التحديد */ }
+  }
+}
+
 // تحويل الأرقام العربية/الفارسية إلى إنجليزية في كل النصوص المعروضة
 const AR_NUM = { "٠": "0", "١": "1", "٢": "2", "٣": "3", "٤": "4", "٥": "5", "٦": "6", "٧": "7", "٨": "8", "٩": "9",
   "۰": "0", "۱": "1", "۲": "2", "۳": "3", "۴": "4", "۵": "5", "۶": "6", "۷": "7", "۸": "8", "۹": "9", "٪": "%", "٫": "." };
