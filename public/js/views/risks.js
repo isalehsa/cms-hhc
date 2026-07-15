@@ -3,7 +3,7 @@ import { store, reload, deptName, userName, reqLabel, deptOptions, userOptions, 
 import * as db from "../db.js";
 import {
   $, esc, toast, modal, confirmBox, fld, txt, num, area, sel, dateInp, val,
-  fmtDate, isoFromInput, levelBadge, statusBadgeFrom, emptyMsg,
+  fmtDate, isoFromInput, levelBadge, statusBadgeFrom, emptyMsg, keepFocus,
 } from "../ui.js";
 import { riskLevel, riskPriority, RISK_STATUS, CONTROL_EFFECTIVENESS, RISK_SOURCES, LIKELIHOOD_SCALE, IMPACT_SCALE } from "../meta.js";
 import { canEdit } from "../auth.js";
@@ -73,7 +73,7 @@ export function renderRisks(el, nav, refresh) {
     </section>`;
 
   const rerender = () => renderRisks(el, nav, refresh);
-  $("#f-search", el).addEventListener("input", (e) => { filters.search = e.target.value; rerender(); });
+  $("#f-search", el).addEventListener("input", (e) => { filters.search = e.target.value; keepFocus(rerender); });
   $("#f-level", el).onchange = (e) => { filters.level = e.target.value; rerender(); };
   $("#f-status", el).onchange = (e) => { filters.status = e.target.value; rerender(); };
   $("#f-dept", el).onchange = (e) => { filters.dept = e.target.value; rerender(); };

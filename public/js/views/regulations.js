@@ -4,7 +4,7 @@ import { store, reload, reqOptions, reqLabel, authOptions, authName } from "../s
 import * as db from "../db.js";
 import {
   $, esc, toast, modal, confirmBox, fld, txt, area, sel, val,
-  fmtDate, emptyMsg, spinnerHtml,
+  fmtDate, emptyMsg, spinnerHtml, keepFocus,
 } from "../ui.js";
 import { DEPARTMENTS, RISK_LEVELS, APPLICABILITY, REQ_TYPES, SECTORS } from "../meta.js";
 import { findRelated } from "../similarity.js";
@@ -473,7 +473,7 @@ function renderDetail() {
     renderDetail();
   });
 
-  $("#f-search", el)?.addEventListener("input", (e) => { local.filters.search = e.target.value; renderDetail(); });
+  $("#f-search", el)?.addEventListener("input", (e) => { local.filters.search = e.target.value; keepFocus(renderDetail); });
   $("#f-app", el).onchange = (e) => { local.filters.applicability = e.target.value; renderDetail(); };
   $("#f-risk", el).onchange = (e) => { local.filters.risk = e.target.value; renderDetail(); };
   $("#f-dept", el).onchange = (e) => { local.filters.department = e.target.value; renderDetail(); };

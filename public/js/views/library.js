@@ -6,7 +6,7 @@ import { store, reload, deptName, reqLabel } from "../state.js";
 import * as db from "../db.js";
 import {
   $, esc, toast, modal, confirmBox, fld, txt, area, sel, val,
-  fmtDate, levelBadge, emptyMsg, spinnerHtml,
+  fmtDate, levelBadge, emptyMsg, spinnerHtml, keepFocus,
 } from "../ui.js";
 import { REQ_TYPES, SECTORS, DEPARTMENTS, RISK_LEVELS, APPLICABILITY, REQ_SCOPE, riskLevel } from "../meta.js";
 import { canEdit } from "../auth.js";
@@ -140,7 +140,7 @@ async function renderDetailed(host, nav, editable) {
     </section>`;
 
   const rerender = () => renderDetailed(host, nav, editable);
-  $("#cf-search", host).addEventListener("input", (e) => { cfilters.search = e.target.value; rerender(); });
+  $("#cf-search", host).addEventListener("input", (e) => { cfilters.search = e.target.value; keepFocus(rerender); });
   $("#cf-doc", host).onchange = (e) => { cfilters.doc = e.target.value; rerender(); };
   $("#cf-app", host).onchange = (e) => { cfilters.applicability = e.target.value; rerender(); };
   $("#cf-risk", host).onchange = (e) => { cfilters.risk = e.target.value; rerender(); };

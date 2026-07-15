@@ -4,7 +4,7 @@ import { store, reload, userName, userOptions } from "../state.js";
 import * as db from "../db.js";
 import {
   $, esc, toast, modal, confirmBox, fld, txt, area, sel, dateInp, val,
-  fmtDate, isoFromInput, statusBadgeFrom, emptyMsg,
+  fmtDate, isoFromInput, statusBadgeFrom, emptyMsg, keepFocus,
 } from "../ui.js";
 import { TRAINING_METHOD, TRAINING_STATUS } from "../meta.js";
 import { canEdit } from "../auth.js";
@@ -68,7 +68,7 @@ export function renderTraining(el, nav, refresh) {
     </section>`;
 
   const rerender = () => renderTraining(el, nav, refresh);
-  $("#f-search", el).addEventListener("input", (e) => { filters.search = e.target.value; rerender(); });
+  $("#f-search", el).addEventListener("input", (e) => { filters.search = e.target.value; keepFocus(rerender); });
   $("#f-status", el).onchange = (e) => { filters.status = e.target.value; rerender(); };
   $("#f-year", el).onchange = (e) => { filters.year = e.target.value; rerender(); };
   $("#add-tr", el)?.addEventListener("click", () => openForm(null, rerender));

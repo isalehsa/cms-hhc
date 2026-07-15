@@ -4,7 +4,7 @@ import { store, reload, deptName, userName, deptOptions, userOptions, reqOptions
 import * as db from "../db.js";
 import {
   $, esc, toast, modal, confirmBox, fld, txt, area, sel, dateInp, val,
-  fmtDate, isoFromInput, todayISO, levelBadge, statusBadgeFrom, emptyMsg,
+  fmtDate, isoFromInput, todayISO, levelBadge, statusBadgeFrom, emptyMsg, keepFocus,
 } from "../ui.js";
 import { CASE_SOURCES, CASE_STATUS, FND_SEVERITY } from "../meta.js";
 import { canEdit } from "../auth.js";
@@ -67,7 +67,7 @@ export function renderCases(el, nav, refresh) {
     </section>`;
 
   const rerender = () => renderCases(el, nav, refresh);
-  $("#f-search", el).addEventListener("input", (e) => { filters.search = e.target.value; rerender(); });
+  $("#f-search", el).addEventListener("input", (e) => { filters.search = e.target.value; keepFocus(rerender); });
   $("#f-status", el).onchange = (e) => { filters.status = e.target.value; rerender(); };
   $("#f-source", el).onchange = (e) => { filters.source = e.target.value; rerender(); };
   $("#add-case", el)?.addEventListener("click", () => openForm(null, rerender));
