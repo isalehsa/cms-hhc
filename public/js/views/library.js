@@ -3,7 +3,7 @@ import { store, reload, deptName, authName, deptOptions, authOptions } from "../
 import * as db from "../db.js";
 import {
   $, esc, toast, modal, confirmBox, fld, txt, area, sel, dateInp, val,
-  fmtDate, daysUntil, isoFromInput, levelBadge, statusBadgeFrom, emptyMsg, chip,
+  fmtDate, daysUntil, isoFromInput, levelBadge, statusBadgeFrom, emptyMsg, chip, keepFocus,
 } from "../ui.js";
 import { REQ_TYPES, REQ_CATEGORIES, CRITICALITY, REQ_STATUS } from "../meta.js";
 import { canEdit, canApprove } from "../auth.js";
@@ -106,7 +106,7 @@ export function renderLibrary(el, nav, refresh, params = {}) {
 
   const rerender = () => renderLibrary(el, nav, refresh);
   bindTabs(el, rerenderTabs);
-  $("#f-search", el).addEventListener("input", (e) => { filters.search = e.target.value; rerender(); });
+  $("#f-search", el).addEventListener("input", (e) => { filters.search = e.target.value; keepFocus(rerender); });
   $("#f-cat", el).onchange = (e) => { filters.category = e.target.value; rerender(); };
   $("#f-crit", el).onchange = (e) => { filters.criticality = e.target.value; rerender(); };
   $("#f-status", el).onchange = (e) => { filters.status = e.target.value; rerender(); };
