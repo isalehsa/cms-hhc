@@ -3,25 +3,36 @@ import { store, reload, deptName, userName, reqLabel, deptOptions, userOptions, 
 import * as db from "../db.js";
 import {
   $, esc, toast, modal, confirmBox, fld, txt, num, area, sel, dateInp, val,
-  fmtDate, isoFromInput, levelBadge, statusBadgeFrom, emptyMsg, keepFocus,
+  fmtDate, isoFromInput, levelBadge, statusBadgeFrom, emptyMsg, keepFocus, riskHeatmap, fmtSAR,
 } from "../ui.js";
-import { riskLevel, RISK_STATUS, CONTROL_EFFECTIVENESS, RISK_SOURCES } from "../meta.js";
+import { riskLevel, RISK_STATUS, CONTROL_EFFECTIVENESS, CONTROL_TYPES, RISK_SOURCES } from "../meta.js";
 import { canEdit } from "../auth.js";
 import { runAutoSync } from "../sync.js";
 
 const ST_ROLE = { OPEN: "critical", IN_TREATMENT: "warning", TREATED: "good", ACCEPTED: "neutral", CLOSED: "good" };
-const filters = { search: "", level: "", status: "", dept: "" };
+const filters = { search: "", level: "", status: "", dept: "", cell: "" };
 
 export function renderRisks(el, nav, refresh) {
   const editable = canEdit(store.user);
   const rows = store.risks.filter((r) => {
-    const lvl = riskLevel(r.residualLikelihood ?? r.likelihood, r.residualImpact ?? r.impact);
+    const lik = r.residualLikelihood ?? r.likelihood;
+    const imp = r.residualImpact ?? r.impact;
+    const lvl = riskLevel(lik, imp);
     if (filters.search && !`${r.code} ${r.title} ${r.description || ""}`.includes(filters.search)) return false;
     if (filters.level && lvl.key !== filters.level) return false;
     if (filters.status && r.status !== filters.status) return false;
     if (filters.dept && r.ownerDeptId !== filters.dept) return false;
+    if (filters.cell && `${lik},${imp}` !== filters.cell) return false;
     return true;
   });
+
+  // التقدير المالي: الغرامات المتوقعة للمخاطر القائمة والمتجنَّبة بعد المعالجة
+  const openFines = store.risks
+    .filter((r) => ["OPEN", "IN_TREATMENT"].includes(r.status))
+    .reduce((s, r) => s + (r.fineAmount || 0), 0);
+  const avoidedFines = store.risks
+    .filter((r) => ["TREATED", "CLOSED", "ACCEPTED"].includes(r.status))
+    .reduce((s, r) => s + (r.fineAmount || 0), 0);
 
   el.innerHTML = `
     <div class="page-head">
@@ -30,6 +41,26 @@ export function renderRisks(el, nav, refresh) {
         <button class="secondary" id="sync-risks" title="تحديث سجل المخاطر آلياً: فحص الإضافات الحديثة في مكتبة الالتزام والأنظمة المحلَّلة وإنشاء المخاطر الناقصة وفق الغرامات والمخالفات">⟳ تحديث آلي</button>
         <button id="add-risk" title="إضافة خطر جديد يدوياً إلى السجل">＋ خطر جديد</button>
       </div>` : ""}
+    </div>
+    <div class="grid-2">
+      <section class="card">
+        <div class="row" style="justify-content:space-between">
+          <h2>الخريطة الحرارية (بعد الضوابط)</h2>
+          ${filters.cell ? '<button class="secondary small" id="hm-clear" title="إلغاء تصفية الجدول بالخلية المحددة">✕ إلغاء التصفية</button>' : ""}
+        </div>
+        <p class="muted">انقر خلية لتصفية الجدول بمخاطرها (الاحتمالية × الأثر)</p>
+        ${riskHeatmap(store.risks, { residual: true, selected: filters.cell })}
+      </section>
+      <section class="card">
+        <h2>التقدير المالي للغرامات</h2>
+        <div class="stats" style="margin:8px 0">
+          <div class="stat"><div class="num">${fmtSAR(openFines)}</div><div class="lbl">غرامات متوقعة — مخاطر قائمة</div>
+            <div class="sub">${levelBadge(openFines > 0 ? "HIGH" : "LOW", `${store.risks.filter((r) => ["OPEN", "IN_TREATMENT"].includes(r.status) && r.fineAmount).length} خطر بغرامة مقدّرة`)}</div></div>
+          <div class="stat"><div class="num">${fmtSAR(avoidedFines)}</div><div class="lbl">غرامات متجنَّبة — مخاطر معالجة</div>
+            <div class="sub">${levelBadge("LOW", `${store.risks.filter((r) => ["TREATED", "CLOSED", "ACCEPTED"].includes(r.status) && r.fineAmount).length} خطر عولج`)}</div></div>
+        </div>
+        <p class="muted">تُقدَّر القيم آلياً من نصوص الغرامات في الأنظمة المحلَّلة ويمكن تعديلها يدوياً في بطاقة كل خطر.</p>
+      </section>
     </div>
     <section class="card">
       <div class="row filters">
@@ -96,6 +127,13 @@ export function renderRisks(el, nav, refresh) {
   el.querySelectorAll("[data-open]").forEach((tr) =>
     tr.addEventListener("click", () => openDetail(tr.dataset.open, nav, rerender))
   );
+  el.querySelectorAll(".heatmap [data-cell]").forEach((td) => {
+    td.addEventListener("click", () => {
+      filters.cell = filters.cell === td.dataset.cell ? "" : td.dataset.cell;
+      rerender();
+    });
+  });
+  $("#hm-clear", el)?.addEventListener("click", () => { filters.cell = ""; rerender(); });
 }
 
 function controlsEditor(controls) {
@@ -105,13 +143,14 @@ function controlsEditor(controls) {
         .map(
           (c, i) => `<div class="row ctl-row" data-i="${i}">
             <input type="text" class="grow ctl-name" value="${esc(c.name)}" placeholder="وصف الضابط" />
-            <select class="ctl-eff">${CONTROL_EFFECTIVENESS.map((e) => `<option ${e === c.effectiveness ? "selected" : ""}>${e}</option>`).join("")}</select>
+            <select class="ctl-type" data-tip="نوع الضابط: وقائي يمنع، كشفي يرصد، تصحيحي يعالج، توجيهي يرشد">${CONTROL_TYPES.map((t) => `<option ${t === c.type ? "selected" : ""}>${t}</option>`).join("")}</select>
+            <select class="ctl-eff" data-tip="مدى فعالية الضابط الحالية">${CONTROL_EFFECTIVENESS.map((e) => `<option ${e === c.effectiveness ? "selected" : ""}>${e}</option>`).join("")}</select>
             <button class="danger small ctl-del">✕</button>
           </div>`
         )
         .join("")}
     </div>
-    <button class="secondary small" id="ctl-add">＋ إضافة ضابط</button>`;
+    <button class="secondary small" id="ctl-add" title="إضافة ضابط رقابي جديد لهذا الخطر">＋ إضافة ضابط</button>`;
 }
 
 function readControls(ov) {
@@ -119,6 +158,7 @@ function readControls(ov) {
     .map((row) => ({
       id: crypto.randomUUID(),
       name: row.querySelector(".ctl-name").value.trim(),
+      type: row.querySelector(".ctl-type").value,
       effectiveness: row.querySelector(".ctl-eff").value,
     }))
     .filter((c) => c.name);
@@ -140,6 +180,7 @@ function openForm(risk, done, presetReqId = null) {
       ${fld("مالك المعالجة", sel("k-owner", userOptions(), risk?.treatmentOwnerId, { empty: "— اختر —" }))}
       ${fld("تاريخ الاستحقاق", dateInp("k-due", risk?.dueDate))}
       ${fld("الحالة", sel("k-status", RISK_STATUS, risk?.status || "OPEN"))}
+      ${fld("الغرامة المتوقعة (ريال)", `<input type="number" id="k-fine" min="0" step="1000" value="${risk?.fineAmount ?? ""}" placeholder="مثال: 500000" />`)}
     </div>
     ${fld("وصف الخطر", area("k-desc", risk?.description, "", 3))}
     ${fld("سبب الخطر", area("k-cause", risk?.cause, "", 2))}
@@ -162,6 +203,7 @@ function openForm(risk, done, presetReqId = null) {
     div.className = "row ctl-row";
     div.innerHTML = `
       <input type="text" class="grow ctl-name" placeholder="وصف الضابط" />
+      <select class="ctl-type">${CONTROL_TYPES.map((t) => `<option>${t}</option>`).join("")}</select>
       <select class="ctl-eff">${CONTROL_EFFECTIVENESS.map((e) => `<option>${e}</option>`).join("")}</select>
       <button class="danger small ctl-del">✕</button>`;
     $("#ctl-list", ov).appendChild(div);
@@ -187,6 +229,7 @@ function openForm(risk, done, presetReqId = null) {
       cause: val("k-cause", ov),
       treatmentPlan: val("k-plan", ov),
       kri: val("k-kri", ov),
+      fineAmount: val("k-fine", ov) ? Number(val("k-fine", ov)) : null,
       controls: readControls(ov),
     };
     try {
@@ -256,10 +299,11 @@ export function openDetail(id, nav, done) {
     ${r.treatmentPlan ? `<p><strong>خطة المعالجة:</strong> ${esc(r.treatmentPlan)}</p>` : ""}
     ${r.kri ? `<p><strong>KRI:</strong> ${esc(r.kri)}</p>` : ""}
     ${r.penalty ? `<p><strong>الغرامة / العقوبة النظامية:</strong><br/><span class="penalty-chip">⚖ ${esc(r.penalty)}</span></p>` : ""}
+    ${r.fineAmount ? `<p><strong>الغرامة المتوقعة:</strong> ${esc(fmtSAR(r.fineAmount))}</p>` : ""}
     ${r.source ? `<p class="muted">🤖 ${esc(RISK_SOURCES[r.source] || "أُنشئ آلياً")}${r.regulationId ? ` — من تحليل: ${esc(store.regulations.find((x) => x.id === r.regulationId)?.name || "نظام محذوف")}` : ""}</p>` : ""}
     <div class="card sub">
       <h3>الضوابط الحالية (${(r.controls || []).length})</h3>
-      ${(r.controls || []).map((c) => `<div class="row" style="margin:4px 0"><span class="grow">${esc(c.name)}</span><span class="chip">${esc(c.effectiveness || "—")}</span></div>`).join("") || '<p class="muted">لا توجد ضوابط مسجلة</p>'}
+      ${(r.controls || []).map((c) => `<div class="row" style="margin:4px 0"><span class="grow">${esc(c.name)}</span>${c.type ? `<span class="chip">${esc(c.type)}</span>` : ""}<span class="chip">${esc(c.effectiveness || "—")}</span></div>`).join("") || '<p class="muted">لا توجد ضوابط مسجلة</p>'}
     </div>
     <div class="grid-2">
       <div class="card sub"><h3>🔍 أنشطة مراقبة مرتبطة (${mons.length})</h3>
