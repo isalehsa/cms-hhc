@@ -79,6 +79,11 @@ service cloud.firestore {
       allow update: if isEditor() || isDeptOwnerOf(resource.data.departmentId);
     }
 
+    match /correspondence/{id} {
+      allow read: if signedIn();
+      allow write: if isEditor();
+    }
+
     match /findings/{id} {
       allow read: if signedIn();
       allow create, delete: if isEditor();
