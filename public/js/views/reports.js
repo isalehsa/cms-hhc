@@ -6,6 +6,7 @@ import {
   riskLevel, CRITICALITY, REQ_TYPES, REQ_CATEGORIES, REQ_STATUS,
   RISK_STATUS, MON_TYPES, MON_FREQ, MON_STATUS, MON_RESULT, NC_LEVELS,
   PLAN_STATUS, PLAN_SOURCES, SA_STATUS, SA_ANSWERS, FND_SEVERITY, FND_STATUS, FND_SOURCES,
+  COR_DIRECTION, COR_PRIORITY, COR_STATUS,
 } from "../meta.js";
 
 // ---------- تعريف التقارير ----------
@@ -17,6 +18,7 @@ const REPORTS = [
   { key: "assessments", icon: "📋", title: "تقرير الفحص الذاتي", desc: "نتائج الفحوصات الذاتية للإدارات وإجاباتها" },
   { key: "plan", icon: "📅", title: "تقرير الخطة السنوية", desc: "مبادرات الخطة ونسب إنجازها" },
   { key: "findings", icon: "🛠", title: "تقرير الملاحظات وخطط التصحيح", desc: "الملاحظات المفتوحة والمغلقة وتقدم الإجراءات التصحيحية" },
+  { key: "correspondence", icon: "📨", title: "تقرير سجل المراسلات", desc: "المراسلات الواردة والصادرة مع الجهات وحالات الرد عليها" },
 ];
 
 export function renderReports(el) {
@@ -107,6 +109,15 @@ function tableFor(key) {
           (f.actions || []).map((a) => `${a.description} (${a.progress || 0}%)`).join(" | "),
           (f.actions || []).length ? Math.round(f.actions.reduce((s, a) => s + (a.progress || 0), 0) / f.actions.length) : 0,
           FND_STATUS[f.status] || f.status,
+        ]),
+      };
+    case "correspondence":
+      return {
+        head: ["الرقم", "الموضوع", "الاتجاه", "الجهة", "الرقم المرجعي", "تاريخ الخطاب", "استحقاق الرد", "الإدارة المعنية", "المسؤول", "المتطلب", "الأولوية", "الرد/الإجراء", "الحالة"],
+        rows: store.correspondence.map((c) => [
+          c.code, c.subject, COR_DIRECTION[c.direction] || c.direction, authName(c.authorityId), c.refNumber || "",
+          fmtDate(c.date), fmtDate(c.dueDate), deptName(c.ownerDeptId), userName(c.assigneeId),
+          reqLabel(c.requirementId), COR_PRIORITY[c.priority] || "عادية", c.replyNotes || "", COR_STATUS[c.status] || c.status,
         ]),
       };
     default:

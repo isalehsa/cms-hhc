@@ -97,6 +97,24 @@ export function riskLevel(likelihood, impact) {
   return { key: "LOW", label: "منخفض", score };
 }
 
+// ---------- سجل المراسلات ----------
+export const COR_DIRECTION = {
+  INCOMING: "واردة",
+  OUTGOING: "صادرة",
+};
+
+export const COR_PRIORITY = {
+  NORMAL: "عادية",
+  URGENT: "عاجلة",
+  CONFIDENTIAL: "سرية",
+};
+
+export const COR_STATUS = {
+  OPEN: "قيد المعالجة",
+  REPLIED: "تم الرد",
+  CLOSED: "مغلقة",
+};
+
 // ---------- برنامج المراقبة ----------
 export const MON_TYPES = {
   DESK: "مكتبي",

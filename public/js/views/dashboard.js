@@ -23,6 +23,7 @@ function calendarEvents() {
   for (const r of store.risks) if (["OPEN", "IN_TREATMENT"].includes(r.status)) add(r.dueDate, "⚠", r.code, `استحقاق معالجة الخطر: ${r.code} — ${r.title}`, "risks");
   for (const f of store.findings) if (f.status !== "CLOSED") add(f.dueDate, "🛠", f.code, `استحقاق خطة التصحيح: ${f.code} — ${f.title}`, "findings");
   for (const a of store.assessments) if (["SENT", "SUBMITTED"].includes(a.status)) add(a.dueDate, "📋", "فحص", `استحقاق الفحص الذاتي: ${a.title}`, "assessments");
+  for (const c of store.correspondence) if (c.status === "OPEN") add(c.dueDate, "📨", c.code, `استحقاق الرد على المراسلة: ${c.code} — ${c.subject}`, "correspondence");
   return evs;
 }
 
@@ -141,6 +142,17 @@ export function renderDashboard(el, nav) {
         icon: "📋",
         text: `${a.title} (${deptName(a.departmentId)}): ${d < 0 ? `متأخر ${-d} يوماً` : `يستحق خلال ${d} يوماً`}`,
         view: "assessments",
+        overdue: d < 0,
+      });
+    }
+  }
+  for (const c of s.correspondence.filter((x) => x.status === "OPEN")) {
+    const d = daysUntil(c.dueDate);
+    if (d !== null && d <= 7) {
+      alerts.push({
+        icon: "📨",
+        text: `${c.code} — ${c.subject}: ${d < 0 ? `الرد متأخر ${-d} يوماً` : `الرد مستحق خلال ${d} يوماً`}`,
+        view: "correspondence",
         overdue: d < 0,
       });
     }
