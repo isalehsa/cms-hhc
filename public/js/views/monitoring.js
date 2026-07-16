@@ -4,7 +4,7 @@ import { store, reload, deptName, userName, reqLabel, riskLabel, deptOptions, us
 import * as db from "../db.js";
 import {
   $, esc, toast, modal, confirmBox, fld, txt, area, sel, dateInp, val,
-  fmtDate, isoFromInput, levelBadge, statusBadgeFrom, emptyMsg,
+  fmtDate, isoFromInput, levelBadge, statusBadgeFrom, emptyMsg, keepFocus,
 } from "../ui.js";
 import { MON_TYPES, MON_FREQ, MON_STATUS, MON_RESULT, NC_LEVELS } from "../meta.js";
 import { canEdit } from "../auth.js";
@@ -64,7 +64,7 @@ export function renderMonitoring(el, nav, refresh) {
     </section>`;
 
   const rerender = () => renderMonitoring(el, nav, refresh);
-  $("#f-search", el).addEventListener("input", (e) => { filters.search = e.target.value; rerender(); });
+  $("#f-search", el).addEventListener("input", (e) => { filters.search = e.target.value; keepFocus(rerender); });
   $("#f-status", el).onchange = (e) => { filters.status = e.target.value; rerender(); };
   $("#f-result", el).onchange = (e) => { filters.result = e.target.value; rerender(); };
   $("#f-dept", el).onchange = (e) => { filters.dept = e.target.value; rerender(); };

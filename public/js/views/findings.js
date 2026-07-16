@@ -3,7 +3,7 @@ import { store, reload, deptName, userName, reqLabel, monLabel, deptOptions, use
 import * as db from "../db.js";
 import {
   $, esc, toast, modal, confirmBox, fld, txt, area, sel, dateInp, val, num,
-  fmtDate, daysUntil, isoFromInput, levelBadge, statusBadgeFrom, progressBar, emptyMsg,
+  fmtDate, daysUntil, isoFromInput, levelBadge, statusBadgeFrom, progressBar, emptyMsg, keepFocus,
 } from "../ui.js";
 import { FND_SEVERITY, FND_STATUS, FND_SOURCES, ACTION_STATUS } from "../meta.js";
 import { canEdit, canApprove, isDeptOwner } from "../auth.js";
@@ -67,7 +67,7 @@ export function renderFindings(el, nav, refresh) {
     </section>`;
 
   const rerender = () => renderFindings(el, nav, refresh);
-  $("#f-search", el).addEventListener("input", (e) => { filters.search = e.target.value; rerender(); });
+  $("#f-search", el).addEventListener("input", (e) => { filters.search = e.target.value; keepFocus(rerender); });
   $("#f-sev", el).onchange = (e) => { filters.severity = e.target.value; rerender(); };
   $("#f-status", el).onchange = (e) => { filters.status = e.target.value; rerender(); };
   $("#f-dept", el).onchange = (e) => { filters.dept = e.target.value; rerender(); };
