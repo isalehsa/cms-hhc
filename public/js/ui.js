@@ -1,5 +1,5 @@
 // مكونات واجهة مشتركة: تنبيهات، نوافذ، شارات، حقول، رسوم بسيطة
-import { STATUS_COLORS, LEVEL_COLOR_ROLE } from "./meta.js";
+import { STATUS_COLORS, LEVEL_COLOR_ROLE, riskLevel } from "./meta.js";
 
 export const $ = (sel, root = document) => root.querySelector(sel);
 export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -158,6 +158,95 @@ export function progressBar(pct) {
 
 export function emptyMsg(msg) {
   return `<p class="muted" style="padding:14px">${esc(msg)}</p>`;
+}
+
+// تنسيق مبلغ بالريال بأرقام إنجليزية
+export const fmtSAR = (n) => `${Math.round(Number(n) || 0).toLocaleString("en-US")} ريال`;
+
+// مؤشر دائري لنسبة مئوية واحدة (عداد الالتزام) — الرقم ظاهر نصياً دوماً
+export function donutStat(pct, label, sub = "") {
+  if (pct === null || pct === undefined || isNaN(pct)) return statTile("—", label, sub);
+  const p = Math.max(0, Math.min(100, Math.round(pct)));
+  const r = 34;
+  const c = 2 * Math.PI * r;
+  return `<div class="stat stat-donut">
+    <svg viewBox="0 0 84 84" class="donut" role="img" aria-label="${esc(label)}: ${p}%">
+      <circle cx="42" cy="42" r="${r}" class="donut-track"></circle>
+      <circle cx="42" cy="42" r="${r}" class="donut-fill" stroke-dasharray="${((p / 100) * c).toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 42 42)"></circle>
+      <text x="42" y="48" text-anchor="middle" class="donut-num">${p}%</text>
+    </svg>
+    <div><div class="lbl">${esc(label)}</div>${sub ? `<div class="sub muted">${esc(sub)}</div>` : ""}</div>
+  </div>`;
+}
+
+// أعمدة أفقية بلون واحد مع التسمية والقيمة نصاً: items = [{label, count, tip?}]
+export function hBars(items) {
+  const max = Math.max(...items.map((i) => i.count), 1);
+  return `<div class="hbars">${items
+    .map(
+      (i) => `<div class="hbar-row" ${i.tip ? `data-tip="${esc(i.tip)}"` : ""}>
+        <span class="hbar-lbl">${esc(i.label)}</span>
+        <span class="hbar-track"><span class="hbar-fill" style="width:${Math.max(2, Math.round((i.count / max) * 100))}%"></span></span>
+        <span class="hbar-num">${i.count}</span>
+      </div>`
+    )
+    .join("")}</div>`;
+}
+
+// خريطة حرارية 5×5 للمخاطر: صفوف الأثر (5→1) × أعمدة الاحتمالية (1→5)
+// كل خلية تحمل العدد نصاً ولونها من لوحة الحالات بحسب درجة الخطر — قابلة للنقر عبر data-cell
+export function riskHeatmap(risks, { residual = true, selected = "" } = {}) {
+  const clamp = (v) => Math.max(1, Math.min(5, Number(v) || 3));
+  const counts = {};
+  for (const r of risks) {
+    const lik = clamp(residual ? r.residualLikelihood ?? r.likelihood : r.likelihood);
+    const imp = clamp(residual ? r.residualImpact ?? r.impact : r.impact);
+    counts[`${lik},${imp}`] = (counts[`${lik},${imp}`] || 0) + 1;
+  }
+  let rows = "";
+  for (let imp = 5; imp >= 1; imp--) {
+    let cells = "";
+    for (let lik = 1; lik <= 5; lik++) {
+      const key = `${lik},${imp}`;
+      const n = counts[key] || 0;
+      const lvl = riskLevel(lik, imp);
+      const role = LEVEL_COLOR_ROLE[lvl.key] || "neutral";
+      cells += `<td class="hm-cell hm-${role} ${n ? "" : "hm-empty"} ${selected === key ? "hm-active" : ""}"
+        data-cell="${key}" data-tip="الاحتمالية ${lik} × الأثر ${imp} = ${lvl.score} (${lvl.label}) — ${n} خطر">${n || ""}</td>`;
+    }
+    rows += `<tr><th class="hm-axis">${imp}</th>${cells}</tr>`;
+  }
+  return `<table class="heatmap" role="img" aria-label="خريطة حرارية للمخاطر">
+    <tbody>${rows}
+    <tr><th class="hm-axis hm-corner">الأثر ⟍ الاحتمالية</th>${[1, 2, 3, 4, 5].map((l) => `<th class="hm-axis">${l}</th>`).join("")}</tr>
+    </tbody></table>`;
+}
+
+// شبكة تقويم شهري: يعيد شبكة الأيام فقط — عناوين التنقل يبنيها المستدعي
+// events = [{date: "YYYY-MM-DD", icon, label, tip, view, overdue}]
+const WEEKDAYS = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
+export const MONTH_NAMES = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"];
+
+export function monthCalendar(year, month, events) {
+  const firstDow = new Date(year, month, 1).getDay();
+  const days = new Date(year, month + 1, 0).getDate();
+  const todayISOd = todayISO();
+  const byDay = {};
+  for (const e of events) (byDay[e.date] ||= []).push(e);
+
+  let cells = "";
+  for (let i = 0; i < firstDow; i++) cells += '<div class="cal-cell cal-out"></div>';
+  for (let d = 1; d <= days; d++) {
+    const iso = `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    const evs = byDay[iso] || [];
+    cells += `<div class="cal-cell ${iso === todayISOd ? "cal-today" : ""}">
+      <span class="cal-day">${d}</span>
+      ${evs.slice(0, 3).map((e) => `<span class="cal-ev ${e.overdue ? "cal-ev-late" : ""}" data-nav="${esc(e.view)}" data-tip="${esc(e.tip || e.label)}">${e.icon} ${esc(e.label)}</span>`).join("")}
+      ${evs.length > 3 ? `<span class="cal-more muted" data-tip="${esc(evs.slice(3).map((e) => e.label).join(" · "))}">+${evs.length - 3} أخرى</span>` : ""}
+    </div>`;
+  }
+  return `<div class="cal-grid cal-head">${WEEKDAYS.map((w) => `<div class="cal-wd">${w}</div>`).join("")}</div>
+    <div class="cal-grid">${cells}</div>`;
 }
 
 export function spinnerHtml(msg = "جاري التحميل…") {

@@ -1,7 +1,49 @@
 // لوحة التحكم التنفيذية — مؤشرات الالتزام العامة والتنبيهات
 import { store, deptName } from "../state.js";
-import { esc, statTile, distBar, progressBar, fmtDate, daysUntil, levelBadge } from "../ui.js";
-import { riskLevel, CRITICALITY, FND_SEVERITY, MON_RESULT, SA_STATUS } from "../meta.js";
+import {
+  esc, statTile, distBar, progressBar, fmtDate, daysUntil, levelBadge,
+  donutStat, riskHeatmap, hBars, monthCalendar, MONTH_NAMES, fmtSAR,
+} from "../ui.js";
+import { riskLevel, CRITICALITY, FND_SEVERITY, MON_RESULT, SA_STATUS, CONTROL_TYPES } from "../meta.js";
+
+// شهر التقويم المعروض — يبقى بين عمليات إعادة الرسم
+const calState = { y: new Date().getFullYear(), m: new Date().getMonth() };
+
+// أحداث تقويم الالتزام من جميع الوحدات: مراجعات المتطلبات، نهايات المراقبة، استحقاقات المخاطر والملاحظات والفحوصات
+function calendarEvents() {
+  const evs = [];
+  const today = new Date().toISOString().slice(0, 10);
+  const add = (iso, icon, label, tip, view) => {
+    if (!iso) return;
+    const date = String(iso).slice(0, 10);
+    evs.push({ date, icon, label, tip, view, overdue: date < today });
+  };
+  for (const r of store.requirements) if (r.status !== "CANCELLED") add(r.nextReviewDate, "📖", r.code, `مراجعة المتطلب: ${r.code} — ${r.title}`, "library");
+  for (const m of store.monitoring) if (!["COMPLETED", "CLOSED"].includes(m.status)) add(m.endDate, "🔍", m.code, `نهاية نشاط المراقبة: ${m.code} — ${m.name}`, "monitoring");
+  for (const r of store.risks) if (["OPEN", "IN_TREATMENT"].includes(r.status)) add(r.dueDate, "⚠", r.code, `استحقاق معالجة الخطر: ${r.code} — ${r.title}`, "risks");
+  for (const f of store.findings) if (f.status !== "CLOSED") add(f.dueDate, "🛠", f.code, `استحقاق خطة التصحيح: ${f.code} — ${f.title}`, "findings");
+  for (const a of store.assessments) if (["SENT", "SUBMITTED"].includes(a.status)) add(a.dueDate, "📋", "فحص", `استحقاق الفحص الذاتي: ${a.title}`, "assessments");
+  return evs;
+}
+
+// الأرباع الأربعة الأخيرة وعدد الملاحظات المنشأة في كل ربع (والمفتوح منها)
+function findingsByQuarter() {
+  const now = new Date();
+  const out = [];
+  for (let i = 3; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i * 3, 1);
+    const q = Math.floor(d.getMonth() / 3);
+    const start = new Date(d.getFullYear(), q * 3, 1).toISOString();
+    const end = new Date(d.getFullYear(), q * 3 + 3, 1).toISOString();
+    const inQ = store.findings.filter((f) => f.createdAt >= start && f.createdAt < end);
+    out.push({
+      label: `الربع ${q + 1} — ${d.getFullYear()}`,
+      count: inQ.length,
+      tip: `${inQ.length} ملاحظة أُنشئت، منها ${inQ.filter((f) => f.status !== "CLOSED").length} ما تزال مفتوحة`,
+    });
+  }
+  return out;
+}
 
 export function renderDashboard(el, nav) {
   const s = store;
@@ -40,6 +82,33 @@ export function renderDashboard(el, nav) {
   const planAvg = planYear.length
     ? planYear.reduce((sum, p) => sum + (p.progress || 0), 0) / planYear.length
     : 0;
+
+  // نسبة الالتزام العامة: متوسط نتائج المراقبة المنفذة وإجابات الفحص الذاتي
+  const scoreParts = [];
+  for (const m of s.monitoring) {
+    if (m.result === "COMPLIANT") scoreParts.push(100);
+    else if (m.result === "PARTIAL") scoreParts.push(50);
+    else if (m.result === "NON_COMPLIANT") scoreParts.push(0);
+  }
+  for (const a of s.assessments) {
+    for (const q of a.questions || []) {
+      const ans = q.response?.answer;
+      if (ans === "COMPLIANT") scoreParts.push(100);
+      else if (ans === "PARTIAL") scoreParts.push(50);
+      else if (ans === "NON_COMPLIANT") scoreParts.push(0);
+    }
+  }
+  const compScore = scoreParts.length ? scoreParts.reduce((x, y) => x + y, 0) / scoreParts.length : null;
+
+  // التقدير المالي للغرامات من سجل المخاطر
+  const expectedFines = s.risks.filter((r) => ["OPEN", "IN_TREATMENT"].includes(r.status)).reduce((sum, r) => sum + (r.fineAmount || 0), 0);
+  const avoidedFines = s.risks.filter((r) => ["TREATED", "CLOSED", "ACCEPTED"].includes(r.status)).reduce((sum, r) => sum + (r.fineAmount || 0), 0);
+
+  // الضوابط المسجلة على المخاطر: التوزيع حسب النوع والفعالية
+  const allControls = s.risks.flatMap((r) => r.controls || []);
+  const ctlTypes = CONTROL_TYPES.map((t) => ({ label: t, count: allControls.filter((c) => c.type === t).length }));
+  const untyped = allControls.filter((c) => !c.type).length;
+  if (untyped) ctlTypes.push({ label: "غير مصنف", count: untyped });
 
   // التنبيهات: متطلبات تستحق مراجعة خلال 30 يوماً أو متأخرة، خطط تصحيح متأخرة، فحوصات متأخرة
   const alerts = [];
@@ -82,6 +151,7 @@ export function renderDashboard(el, nav) {
     <div class="page-head"><h1>لوحة التحكم</h1><p class="muted">مؤشرات الالتزام العامة — ${new Date().toLocaleDateString("ar-SA-u-ca-gregory-nu-latn", { dateStyle: "long" })}</p></div>
 
     <div class="stats">
+      ${donutStat(compScore, "نسبة الالتزام العامة", compScore === null ? "" : `من ${scoreParts.length} نتيجة مراقبة وفحص ذاتي`)}
       ${statTile(activeReqs.length, "المتطلبات النظامية", `${critReqs} ${esc("حرجة")}`)}
       ${statTile(s.risks.length, "مخاطر الالتزام", levelBadge("CRITICAL", `${riskCounts.CRITICAL + riskCounts.HIGH} عالية فأكثر`))}
       ${statTile(`${monTotal ? Math.round((monDone / monTotal) * 100) : 0}%`, "إنجاز برنامج المراقبة", `${monDone} من ${monTotal} نشاطاً`)}
@@ -89,6 +159,37 @@ export function renderDashboard(el, nav) {
       ${statTile(`${Math.round(planAvg)}%`, `إنجاز خطة ${year}`, `${planYear.length} مبادرة`)}
       ${statTile(`${saTotal ? Math.round((saDone / saTotal) * 100) : 0}%`, "الفحص الذاتي المكتمل", `${saPending.length} بانتظار الإدارات`)}
     </div>
+
+    <div class="stats">
+      ${statTile(fmtSAR(expectedFines), "الغرامات المتوقعة — مخاطر قائمة", levelBadge(expectedFines > 0 ? "HIGH" : "LOW", "قيمة مقدّرة من الأنظمة المحلَّلة"))}
+      ${statTile(fmtSAR(avoidedFines), "الغرامات المتجنَّبة — مخاطر معالجة", levelBadge("LOW", "أثر جهود الالتزام"))}
+    </div>
+
+    <div class="grid-2">
+      <section class="card">
+        <h2>خريطة المخاطر الكامنة (قبل الضوابط)</h2>
+        <p class="muted">انقر أي خلية للانتقال إلى سجل المخاطر</p>
+        ${riskHeatmap(s.risks, { residual: false })}
+      </section>
+      <section class="card">
+        <h2>خريطة المخاطر المتبقية (بعد الضوابط)</h2>
+        <p class="muted">توزيع المخاطر بعد تطبيق الضوابط الحالية</p>
+        ${riskHeatmap(s.risks, { residual: true })}
+      </section>
+    </div>
+
+    <section class="card">
+      <div class="row" style="justify-content:space-between">
+        <h2>📅 تقويم الالتزام — ${MONTH_NAMES[calState.m]} ${calState.y}</h2>
+        <div class="row">
+          <button class="secondary small" id="cal-prev" title="عرض الشهر السابق">›</button>
+          <button class="secondary small" id="cal-today" title="العودة إلى الشهر الحالي">اليوم</button>
+          <button class="secondary small" id="cal-next" title="عرض الشهر التالي">‹</button>
+        </div>
+      </div>
+      <p class="muted">مراجعات المتطلبات 📖 · نهايات المراقبة 🔍 · استحقاقات المخاطر ⚠ · خطط التصحيح 🛠 · الفحص الذاتي 📋 — الأحمر متأخر</p>
+      ${monthCalendar(calState.y, calState.m, calendarEvents())}
+    </section>
 
     <div class="grid-2">
       <section class="card">
@@ -107,6 +208,23 @@ export function renderDashboard(el, nav) {
           { label: MON_RESULT.PARTIAL, count: monResults.PARTIAL, role: "warning" },
           { label: MON_RESULT.NON_COMPLIANT, count: monResults.NON_COMPLIANT, role: "critical" },
         ])}
+      </section>
+    </div>
+
+    <div class="grid-2">
+      <section class="card">
+        <h2>فعالية الضوابط المسجلة (${allControls.length})</h2>
+        ${distBar([
+          { label: "فعّال", count: allControls.filter((c) => c.effectiveness === "فعّال").length, role: "good" },
+          { label: "فعّال جزئيًا", count: allControls.filter((c) => c.effectiveness === "فعّال جزئيًا").length, role: "warning" },
+          { label: "غير فعّال", count: allControls.filter((c) => c.effectiveness === "غير فعّال").length, role: "critical" },
+        ])}
+        <h2 style="margin-top:18px">الضوابط حسب النوع</h2>
+        ${allControls.length ? hBars(ctlTypes) : '<p class="muted">لا توجد ضوابط بعد</p>'}
+      </section>
+      <section class="card">
+        <h2>الملاحظات المنشأة حسب الربع (آخر سنة)</h2>
+        ${hBars(findingsByQuarter())}
       </section>
     </div>
 
@@ -167,5 +285,25 @@ export function renderDashboard(el, nav) {
 
   el.querySelectorAll("[data-goto]").forEach((n) => {
     n.addEventListener("click", () => nav(n.dataset.goto));
+  });
+  el.querySelectorAll(".heatmap [data-cell]").forEach((td) =>
+    td.addEventListener("click", () => nav("risks"))
+  );
+  el.querySelectorAll(".cal-ev[data-nav]").forEach((ev) =>
+    ev.addEventListener("click", () => nav(ev.dataset.nav))
+  );
+  const rerender = () => renderDashboard(el, nav);
+  const shift = (d) => {
+    const x = new Date(calState.y, calState.m + d, 1);
+    calState.y = x.getFullYear();
+    calState.m = x.getMonth();
+    rerender();
+  };
+  el.querySelector("#cal-prev")?.addEventListener("click", () => shift(-1));
+  el.querySelector("#cal-next")?.addEventListener("click", () => shift(1));
+  el.querySelector("#cal-today")?.addEventListener("click", () => {
+    calState.y = new Date().getFullYear();
+    calState.m = new Date().getMonth();
+    rerender();
   });
 }

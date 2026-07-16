@@ -399,6 +399,63 @@ td select { min-width: 110px; font-size: 0.86rem; width: auto; }
 .back-link { cursor: pointer; color: var(--primary-dark); font-weight: 600; }
 .back-link:hover { text-decoration: underline; }
 
+/* ---------- المؤشر الدائري (نسبة الالتزام) ---------- */
+.stat-donut { display: flex; align-items: center; gap: 14px; }
+.donut { width: 84px; height: 84px; flex-shrink: 0; }
+.donut-track { fill: none; stroke: rgba(120, 130, 125, 0.18); stroke-width: 9; }
+.donut-fill { fill: none; stroke: var(--primary); stroke-width: 9; stroke-linecap: round; transition: stroke-dasharray 0.5s ease; }
+.donut-num { font-size: 19px; font-weight: 700; fill: var(--primary-dark); }
+
+/* ---------- أعمدة أفقية بلون واحد ---------- */
+.hbars { display: flex; flex-direction: column; gap: 8px; margin: 8px 0; }
+.hbar-row { display: flex; align-items: center; gap: 10px; }
+.hbar-lbl { min-width: 110px; font-size: 0.84rem; color: var(--muted); }
+.hbar-track { flex: 1; height: 12px; border-radius: 6px; background: rgba(120, 130, 125, 0.12); overflow: hidden; }
+.hbar-fill { display: block; height: 100%; border-radius: 6px; background: var(--primary-grad); transition: width 0.4s ease; }
+.hbar-num { min-width: 28px; font-weight: 700; font-size: 0.86rem; color: var(--primary-dark); }
+
+/* ---------- الخريطة الحرارية 5×5 ---------- */
+.heatmap { border-collapse: separate; border-spacing: 3px; width: 100%; table-layout: fixed; }
+.heatmap td, .heatmap th { border: none; text-align: center; padding: 0; }
+.hm-axis { font-size: 0.72rem; color: var(--muted); background: transparent; position: static; white-space: normal; }
+.hm-corner { font-size: 0.68rem; }
+.hm-cell {
+  height: 44px; border-radius: 10px; font-weight: 700; font-size: 0.95rem;
+  color: var(--text); cursor: pointer;
+  transition: transform 0.12s, box-shadow 0.12s;
+}
+.hm-cell:hover { transform: scale(1.06); box-shadow: var(--shadow-soft); }
+.hm-good { background: rgba(12, 163, 12, 0.28); }
+.hm-warning { background: rgba(250, 178, 25, 0.34); }
+.hm-serious { background: rgba(236, 131, 90, 0.38); }
+.hm-critical { background: rgba(208, 59, 59, 0.38); }
+.hm-empty { opacity: 0.35; }
+.hm-active { outline: 3px solid var(--primary); outline-offset: 1px; opacity: 1; }
+
+/* ---------- تقويم الالتزام ---------- */
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+.cal-head { margin-top: 10px; }
+.cal-wd { text-align: center; font-size: 0.74rem; color: var(--muted); padding: 4px 0; font-weight: 600; }
+.cal-cell {
+  min-height: 74px; border-radius: 10px; padding: 4px 6px;
+  background: rgba(255, 255, 255, 0.45);
+  border: 1px solid rgba(24, 66, 54, 0.07);
+  display: flex; flex-direction: column; gap: 3px; overflow: hidden;
+}
+.cal-out { background: transparent; border-color: transparent; }
+.cal-today { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(20, 112, 92, 0.25) inset; }
+.cal-day { font-size: 0.74rem; color: var(--muted); font-weight: 600; }
+.cal-ev {
+  font-size: 0.7rem; border-radius: 7px; padding: 1px 6px; cursor: pointer;
+  background: rgba(250, 178, 25, 0.16); border: 1px solid rgba(250, 178, 25, 0.25);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  transition: transform 0.12s;
+}
+.cal-ev:hover { transform: translateX(-2px); }
+.cal-ev-late { background: rgba(208, 59, 59, 0.14); border-color: rgba(208, 59, 59, 0.28); }
+.cal-more { font-size: 0.68rem; }
+@media (max-width: 800px) { .cal-cell { min-height: 52px; } .cal-ev { display: none; } .cal-more { display: block; } }
+
 /* ---------- تلميحات الأزرار ---------- */
 .ui-tip {
   position: fixed;

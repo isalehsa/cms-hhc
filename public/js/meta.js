@@ -80,6 +80,7 @@ export const RISK_STATUS = {
 };
 
 export const CONTROL_EFFECTIVENESS = ["فعّال", "فعّال جزئيًا", "غير فعّال"];
+export const CONTROL_TYPES = ["وقائي", "كشفي", "تصحيحي", "توجيهي"];
 
 // مصدر إنشاء الخطر عند التوليد الآلي
 export const RISK_SOURCES = {

@@ -5,6 +5,7 @@
 // المحرك آمن التكرار: لا يُنشئ سجلاً موجوداً (مفتاح مصدر ثابت لكل مادة/متطلب)
 import { store, reload } from "./state.js";
 import * as db from "./db.js";
+import { enDigits } from "./ui.js";
 
 // ---------- كشف الغرامات والعقوبات في النص ----------
 // الأنماط مرتبة من الأشد أثراً إلى الأخف — يُعتمد أول تطابق لتحديد الأثر (1-5)
@@ -33,6 +34,42 @@ export function detectPenalty(text) {
 }
 
 const deptIdByName = (name) => store.departments.find((d) => d.name === name)?.id || null;
+
+// ---------- تقدير قيمة الغرامة بالريال من نص العقوبة ----------
+// يفهم الأرقام الصريحة (500,000 ريال) والمضاعفات (5 ملايين) والأعداد اللفظية الشائعة (خمسمائة ألف)
+const NUM_WORDS = {
+  واحد: 1, اثنان: 2, اثنين: 2, ثلاثة: 3, ثلاث: 3, أربعة: 4, أربع: 4, خمسة: 5, خمس: 5,
+  ستة: 6, ست: 6, سبعة: 7, سبع: 7, ثمانية: 8, ثماني: 8, تسعة: 9, تسع: 9, عشرة: 10, عشر: 10,
+  عشرون: 20, عشرين: 20, ثلاثون: 30, ثلاثين: 30, خمسون: 50, خمسين: 50,
+  مائة: 100, مئة: 100, مائتين: 200, مئتين: 200, ثلاثمائة: 300, خمسمائة: 500, خمسمئة: 500,
+};
+const MULTS = { ألف: 1e3, آلاف: 1e3, الف: 1e3, مليون: 1e6, ملايين: 1e6, مليار: 1e9 };
+const MULT_RE = Object.keys(MULTS).join("|");
+
+export function estimateFine(text) {
+  const t = enDigits(String(text || ""));
+  if (!t.trim()) return 0;
+  let best = 0;
+  // أرقام صريحة مع مضاعف اختياري: "500,000 ريال" / "5 ملايين ريال"
+  const reDigits = new RegExp(`(\\d[\\d,]*(?:\\.\\d+)?)\\s*(${MULT_RE})?\\s*(?:ريال|ر\\.س)`, "g");
+  for (const m of t.matchAll(reDigits)) {
+    const v = parseFloat(m[1].replace(/,/g, "")) * (MULTS[m[2]] || 1);
+    if (v > best) best = v;
+  }
+  // أعداد لفظية: "خمسة ملايين ريال" / "خمسمائة ألف ريال"
+  const reWords = new RegExp(`(${Object.keys(NUM_WORDS).join("|")})\\s*(${MULT_RE})\\s*(?:ريال|ر\\.س)`, "g");
+  for (const m of t.matchAll(reWords)) {
+    const v = NUM_WORDS[m[1]] * MULTS[m[2]];
+    if (v > best) best = v;
+  }
+  // مضاعف وحده: "مليون ريال"
+  const reLone = new RegExp(`(?:^|[^\\d\\u0621-\\u064A])(${MULT_RE})\\s*(?:ريال|ر\\.س)`, "g");
+  for (const m of t.matchAll(reLone)) {
+    const v = MULTS[m[1]];
+    if (v > best) best = v;
+  }
+  return best;
+}
 
 const CRIT_IMPACT = { CRITICAL: 5, HIGH: 4, MEDIUM: 3, LOW: 2 };
 
@@ -102,6 +139,7 @@ async function deriveRisksFromRegulation(reg, req) {
       description: `${a.title || ""}\n${(a.text || "").slice(0, 400)}`.trim(),
       cause: "احتمال مخالفة أحكام المادة المذكورة",
       penalty: (a.penalty || pen.snippet || "").slice(0, 300),
+      fineAmount: estimateFine(`${a.penalty || ""}\n${a.text || ""}`) || null,
       requirementId: req.id,
       regulationId: reg.id,
       sourceArticleId: a.id,
@@ -164,6 +202,7 @@ async function coverBareRequirements() {
       description: `احتمال عدم الالتزام بالمتطلب ${q.code} (${q.title})`,
       cause: "",
       penalty: "",
+      fineAmount: null,
       requirementId: q.id,
       regulationId: null,
       sourceArticleId: null,
