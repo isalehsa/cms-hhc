@@ -1,8 +1,10 @@
 // المصادقة عبر Firebase Authentication — الدور من وثيقة users/{uid}
 // يدعم مخطط النظام السابق: {name, role: ADMIN|COMPLIANCE_MANAGER|…, departmentId, active}
+import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import {
   getAuth,
   signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
   signOut,
   onAuthStateChanged,
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
@@ -12,6 +14,7 @@ import {
   getDoc,
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { app } from "./db.js";
+import { firebaseConfig } from "./firebase-config.js";
 import { EDITOR_ROLES, APPROVER_ROLES } from "./meta.js";
 
 const auth = app ? getAuth(app) : null;
@@ -59,6 +62,29 @@ export async function login(email, password) {
 
 export function logout() {
   return signOut(auth);
+}
+
+// إنشاء حساب دخول جديد (بريد/كلمة مرور) دون إخراج المدير الحالي من جلسته:
+// نستخدم نسخة Firebase ثانوية مؤقتة لأن إنشاء الحساب على النسخة الرئيسية يبدّل المستخدم النشط
+export async function createAuthUser(email, password) {
+  const secondary = initializeApp(firebaseConfig, `sec-${Date.now()}`);
+  try {
+    const secAuth = getAuth(secondary);
+    const cred = await createUserWithEmailAndPassword(secAuth, email, password);
+    await signOut(secAuth).catch(() => {});
+    return cred.user.uid;
+  } catch (err) {
+    const map = {
+      "auth/email-already-in-use": "البريد مستخدم لحساب موجود — استخدم «إضافة مستخدم بمعرّف UID» بدلاً من إنشاء حساب جديد",
+      "auth/invalid-email": "صيغة البريد الإلكتروني غير صحيحة",
+      "auth/weak-password": "كلمة المرور ضعيفة — استخدم 6 أحرف على الأقل",
+      "auth/network-request-failed": "تعذّر الاتصال بالخادم — تحقق من اتصالك بالإنترنت",
+      "auth/operation-not-allowed": "تسجيل الدخول بالبريد/كلمة المرور غير مفعّل في مشروع Firebase — فعّله من Authentication ← Sign-in method",
+    };
+    throw new Error(map[err.code] || `تعذّر إنشاء الحساب (${err.code || err.message})`);
+  } finally {
+    await deleteApp(secondary).catch(() => {});
+  }
 }
 
 export function onAuth(cb) {
