@@ -165,6 +165,10 @@ export async function createRegulation(fields) {
     name: fields.name,
     description: fields.description || "",
     text: fields.text,
+    category: fields.category || "REGULATION", // فئة الوثيقة (نظام/لائحة/سياسة…)
+    docNumber: fields.docNumber || "",
+    authorityId: fields.authorityId || null,
+    sector: fields.sector || "",
     requirementId: fields.requirementId || null, // ربط بمتطلب في مكتبة الالتزام
     status: "pending",
     analysis_method: null,
