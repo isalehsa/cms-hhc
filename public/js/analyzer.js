@@ -89,10 +89,44 @@ ${total > 1 ? `النص المعطى هو الجزء ${part} من ${total} من 
 ${orgContext ? `\nسياق المنشأة (استخدمه لتحديد الانطباق والإدارة المالكة):\n${orgContext}` : ""}`;
 }
 
+const API_PATH = "/v1/messages";
+const DEFAULT_API_BASE = "https://api.anthropic.com";
+
+// عنوان الطلب: افتراضياً واجهة Anthropic مباشرة، أو وسيط اختياري يحدده المستخدم
+// (لمن تحجب شبكته api.anthropic.com — يمرّر الوسيط الطلب كما هو)
+function apiUrl(apiBase) {
+  const base = (apiBase || DEFAULT_API_BASE).replace(/\/+$/, "");
+  return base.endsWith("/v1/messages") ? base : base + API_PATH;
+}
+
+// طلب الشبكة مع إعادة المحاولة على أعطال الاتصال العابرة (Failed to fetch)
+async function postWithRetry(url, options, onProgress, partLabel) {
+  const MAX_TRIES = 3;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await fetch(url, options);
+    } catch (err) {
+      // TypeError = عطل شبكة/CORS قبل وصول أي استجابة (Failed to fetch)
+      if (attempt >= MAX_TRIES) {
+        const e = new Error(
+          "تعذّر الوصول إلى خدمة الذكاء الاصطناعي (فشل الاتصال بالشبكة). الأسباب الشائعة: " +
+          "مانع إعلانات أو إضافة خصوصية تحجب api.anthropic.com، أو شبكة/جدار حماية يمنع الوصول. " +
+          "الحلول: عطّل مانع الإعلانات لهذا الموقع، أو جرّب شبكة أخرى، أو أضف «وسيط API» من الإعدادات ⚙."
+        );
+        e.code = "network";
+        throw e;
+      }
+      if (onProgress) onProgress(`تعذّر الاتصال${partLabel} — إعادة المحاولة (${attempt}/${MAX_TRIES - 1})…`);
+      await new Promise((r) => setTimeout(r, 1000 * 2 ** (attempt - 1))); // 1ث، 2ث
+    }
+  }
+}
+
 // استدعاء Claude API من المتصفح مع بث الاستجابة (الطلبات الطويلة تتطلب البث)
 // المخرجات مقيدة بالمخطط عبر إجبار النموذج على استدعاء أداة record_articles
-async function analyzeWithClaude(regulationText, orgContext, { apiKey, model }, onProgress, part = 1, total = 1) {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
+async function analyzeWithClaude(regulationText, orgContext, { apiKey, model, apiBase }, onProgress, part = 1, total = 1) {
+  const partLabel = total > 1 ? ` — الجزء ${part} من ${total}` : "";
+  const res = await postWithRetry(apiUrl(apiBase), {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -120,8 +154,7 @@ async function analyzeWithClaude(regulationText, orgContext, { apiKey, model }, 
         },
       ],
     }),
-  });
-  const partLabel = total > 1 ? ` — الجزء ${part} من ${total}` : "";
+  }, onProgress, partLabel);
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -371,10 +404,14 @@ export async function analyzeRegulation(regulationText, orgContext, settings, on
       return { method: "heuristic", articles: dedupeArticles(analyzeHeuristically(regulationText)).articles };
     } catch (err) {
       console.error("AI analysis failed, falling back to heuristic:", err);
+      // خطأ الشبكة/CORS: الرسالة نفسها إرشادية ومفصّلة، نعرضها كما هي
+      const warning = err.code === "network"
+        ? `${err.message} — استُخدم المحلل النصي المبدئي مؤقتاً.`
+        : `تعذّر التحليل بالذكاء الاصطناعي (${err.message}) — تم استخدام المحلل الاحتياطي`;
       return {
         method: "heuristic",
         articles: dedupeArticles(analyzeHeuristically(regulationText)).articles,
-        warning: `تعذّر التحليل بالذكاء الاصطناعي (${err.message}) — تم استخدام المحلل الاحتياطي`,
+        warning,
       };
     }
   }

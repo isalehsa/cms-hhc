@@ -26,11 +26,15 @@ const local = {
 export const settings = {
   get apiKey() { return localStorage.getItem("chcc_api_key") || ""; },
   get model() { return localStorage.getItem("chcc_model") || DEFAULT_MODEL; },
-  save(apiKey, model) {
+  // وسيط API اختياري لمن تحجب شبكته api.anthropic.com — يُمرِّر الطلب كما هو
+  get apiBase() { return localStorage.getItem("chcc_api_base") || ""; },
+  save(apiKey, model, apiBase) {
     if (apiKey) localStorage.setItem("chcc_api_key", apiKey);
     else localStorage.removeItem("chcc_api_key");
     if (model && model !== DEFAULT_MODEL) localStorage.setItem("chcc_model", model);
     else localStorage.removeItem("chcc_model");
+    if (apiBase) localStorage.setItem("chcc_api_base", apiBase.trim());
+    else localStorage.removeItem("chcc_api_base");
   },
 };
 export const aiEnabled = () => Boolean(settings.apiKey);
@@ -262,7 +266,7 @@ async function runAnalysis(regId, text, orgContext) {
     let lastPaint = 0;
     const { method, articles, warning } = await analyzeRegulation(
       text, orgContext,
-      { apiKey: settings.apiKey, model: settings.model },
+      { apiKey: settings.apiKey, model: settings.model, apiBase: settings.apiBase },
       (msg) => {
         local.analyzing[regId] = msg;
         if (Date.now() - lastPaint > 2000) { lastPaint = Date.now(); refreshView(); }
