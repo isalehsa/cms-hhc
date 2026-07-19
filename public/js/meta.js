@@ -97,6 +97,38 @@ export function riskLevel(likelihood, impact) {
   return { key: "LOW", label: "منخفض", score };
 }
 
+// ---------- موسوعة الوثائق ----------
+export const DOC_CATEGORIES = {
+  LAW: "نظام",
+  REGULATION: "لائحة",
+  POLICY: "سياسة",
+  CIRCULAR: "تعميم",
+  GUIDELINE: "دليل استرشادي",
+  STANDARD: "معيار",
+  DECISION: "قرار",
+  OTHER: "أخرى",
+};
+
+export const DOC_SECTORS = [
+  "الصحة",
+  "المالية",
+  "الموارد البشرية",
+  "التقنية والاتصالات",
+  "الأمن السيبراني",
+  "التجارة",
+  "البيئة",
+  "الطاقة",
+  "النقل",
+  "البلديات والإسكان",
+  "عام / متعدد القطاعات",
+];
+
+// فئة الوثيقة → نوع المتطلب المنعكس منها
+export const DOC_TO_REQ_TYPE = {
+  LAW: "REGULATION", REGULATION: "REGULATION", POLICY: "POLICY", CIRCULAR: "CIRCULAR",
+  GUIDELINE: "GUIDELINE", STANDARD: "STANDARD", DECISION: "REGULATION", OTHER: "REGULATION",
+};
+
 // ---------- سجل المراسلات ----------
 export const COR_DIRECTION = {
   INCOMING: "واردة",

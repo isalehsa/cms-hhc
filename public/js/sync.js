@@ -7,6 +7,7 @@
 import { store, reload } from "./state.js";
 import * as db from "./db.js";
 import { enDigits } from "./ui.js";
+import { DOC_TO_REQ_TYPE } from "./meta.js";
 
 // ---------- كشف الغرامات والعقوبات في النص ----------
 // الأنماط مرتبة من الأشد أثراً إلى الأخف — يُعتمد أول تطابق لتحديد الأثر (1-5)
@@ -89,10 +90,10 @@ async function ensureArticleRequirement(reg, a, pen) {
     code,
     title: `${a.number} — ${(a.title || reg.name).slice(0, 120)}`,
     summary: (a.text || "").slice(0, 1500),
-    type: "REGULATION",
+    type: DOC_TO_REQ_TYPE[reg.category] || "REGULATION",
     category: "GOVERNANCE",
     criticality,
-    authorityId: null,
+    authorityId: reg.authorityId || null,
     ownerDeptId: deptIdByName(a.owning_department),
     issueDate: null,
     nextReviewDate: null,
