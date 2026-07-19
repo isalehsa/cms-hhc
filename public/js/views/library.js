@@ -12,9 +12,9 @@ import { renderRegulations } from "./regulations.js";
 const CRIT_ROLE = { CRITICAL: "critical", HIGH: "serious", MEDIUM: "warning", LOW: "good" };
 const ST_ROLE = { ACTIVE: "good", UPDATED: "good", UNDER_REVIEW: "warning", CANCELLED: "neutral" };
 
-const filters = { search: "", category: "", criticality: "", status: "", dept: "" };
-// تبويبا المكتبة: المتطلبات + التحليل الذكي (مدمج هنا)
-const tabState = { tab: "reqs" };
+const filters = { search: "", category: "", criticality: "", status: "", dept: "", doc: "" };
+// تبويبا المكتبة: موسوعة الوثائق (المصدر) + المكتبة المفصلة (انعكاس بنود الوثائق متطلباتٍ)
+const tabState = { tab: "analysis" };
 
 function tabsHtml(editable) {
   return `
@@ -22,10 +22,10 @@ function tabsHtml(editable) {
       <h1>📖 مكتبة الالتزام</h1>
       <div class="row">
         <div class="subtabs">
-          <button class="subtab ${tabState.tab === "reqs" ? "active" : ""}" data-tab="reqs" title="عرض المتطلبات النظامية المسجلة في المكتبة">📋 المتطلبات</button>
-          <button class="subtab ${tabState.tab === "analysis" ? "active" : ""}" data-tab="analysis" title="تحليل الأنظمة واللوائح بالذكاء الاصطناعي واستخراج موادها وغراماتها">🤖 التحليل الذكي</button>
+          <button class="subtab ${tabState.tab === "analysis" ? "active" : ""}" data-tab="analysis" title="موسوعة الوثائق النظامية: إضافة الوثائق وتحليلها بالذكاء الاصطناعي — المصدر الذي تنعكس منه المكتبة المفصلة">📚 الوثائق</button>
+          <button class="subtab ${tabState.tab === "reqs" ? "active" : ""}" data-tab="reqs" title="المكتبة المفصلة: المتطلبات النظامية بنداً بنداً — انعكاس مواد الوثائق مع الإدارة المالكة والربط بالمخاطر">📋 المكتبة المفصلة</button>
         </div>
-        ${tabState.tab === "reqs" && editable ? '<button id="add-req" title="إضافة متطلب نظامي جديد إلى مكتبة الالتزام">＋ متطلب جديد</button>' : ""}
+        ${tabState.tab === "reqs" && editable ? '<button id="add-req" title="إضافة متطلب نظامي يدوياً إلى المكتبة المفصلة">＋ متطلب جديد</button>' : ""}
       </div>
     </div>`;
 }
@@ -52,12 +52,14 @@ export function renderLibrary(el, nav, refresh, params = {}) {
     renderRegulations($("#lib-analysis", el), nav, refresh, params);
     return;
   }
+  const docName = (id) => store.regulations.find((x) => x.id === id)?.name || "";
   const rows = store.requirements.filter((r) => {
     if (filters.search && !`${r.code} ${r.title} ${r.summary || ""}`.includes(filters.search)) return false;
     if (filters.category && r.category !== filters.category) return false;
     if (filters.criticality && r.criticality !== filters.criticality) return false;
     if (filters.status && r.status !== filters.status) return false;
     if (filters.dept && r.ownerDeptId !== filters.dept) return false;
+    if (filters.doc && r.regulationId !== filters.doc) return false;
     return true;
   });
 
@@ -70,6 +72,7 @@ export function renderLibrary(el, nav, refresh, params = {}) {
         ${sel("f-crit", CRITICALITY, filters.criticality, { empty: "كل درجات الأهمية" })}
         ${sel("f-status", REQ_STATUS, filters.status, { empty: "كل الحالات" })}
         ${sel("f-dept", deptOptions(), filters.dept, { empty: "كل الإدارات" })}
+        ${sel("f-doc", store.regulations.map((x) => ({ id: x.id, name: x.name })), filters.doc, { empty: "كل الوثائق المصدر" })}
       </div>
       <div style="overflow-x:auto">
         <table>
@@ -86,7 +89,10 @@ export function renderLibrary(el, nav, refresh, params = {}) {
                 const planCount = store.planItems.filter((x) => x.requirementId === r.id).length;
                 return `<tr class="rowlink" data-open="${r.id}">
                   <td><strong>${esc(r.code)}</strong></td>
-                  <td><strong>${esc(r.title)}</strong><div class="muted clamp">${esc(r.summary || "")}</div></td>
+                  <td><strong>${esc(r.title)}</strong>
+                    ${r.regulationId && docName(r.regulationId) ? ` <span class="chip" data-tip="بند منعكس من الوثيقة: ${esc(docName(r.regulationId))}">📚 ${esc(docName(r.regulationId).slice(0, 30))}</span>` : ""}
+                    ${r.penalty ? ` <span class="chip chip-penalty" data-tip="${esc(r.penalty)}">⚖ غرامة</span>` : ""}
+                    <div class="muted clamp">${esc(r.summary || "")}</div></td>
                   <td>${esc(authName(r.authorityId))}</td>
                   <td>${esc(REQ_TYPES[r.type] || r.type || "—")}</td>
                   <td>${esc(REQ_CATEGORIES[r.category] || r.category || "—")}</td>
@@ -111,6 +117,7 @@ export function renderLibrary(el, nav, refresh, params = {}) {
   $("#f-crit", el).onchange = (e) => { filters.criticality = e.target.value; rerender(); };
   $("#f-status", el).onchange = (e) => { filters.status = e.target.value; rerender(); };
   $("#f-dept", el).onchange = (e) => { filters.dept = e.target.value; rerender(); };
+  $("#f-doc", el).onchange = (e) => { filters.doc = e.target.value; rerender(); };
   $("#add-req", el)?.addEventListener("click", () => openForm(null, rerender));
   el.querySelectorAll("[data-open]").forEach((tr) => {
     tr.addEventListener("click", () => openDetail(tr.dataset.open, nav, rerender));
@@ -252,7 +259,9 @@ export function openDetail(id, nav, done) {
       <div><span class="muted">آخر تحديث</span><br/>${fmtDate(r.lastUpdated)}</div>
       <div><span class="muted">المراجعة القادمة</span><br/>${fmtDate(r.nextReviewDate)}</div>
     </div>
+    ${r.regulationId ? `<p class="muted">📚 بند منعكس من الوثيقة: <strong>${esc(store.regulations.find((x) => x.id === r.regulationId)?.name || "وثيقة محذوفة")}</strong>${r.sourceKey ? ` — ${esc(r.sourceKey.split("::")[1] || "")}` : ""}</p>` : ""}
     ${r.summary ? `<p class="pre-line">${esc(r.summary)}</p>` : ""}
+    ${r.penalty ? `<p><span class="penalty-chip">⚖ ${esc(r.penalty)}</span></p>` : ""}
     ${r.attachmentUrl ? `<p>📎 <a href="${esc(r.attachmentUrl)}" target="_blank" rel="noopener">المرفق</a></p>` : ""}
     ${r.approvedById ? `<p class="muted">✔ معتمد</p>` : editable && canApprove(user) ? '<button class="secondary small" id="d-approve">✔ اعتماد المتطلب</button>' : '<p class="muted">بانتظار الاعتماد</p>'}
 

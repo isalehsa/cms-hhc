@@ -1,8 +1,9 @@
-// محرك التحديث الآلي لسجل المخاطر — يربط مكتبة الالتزام والتحليل الذكي بالمخاطر:
-// 1) كل نظام مكتمل التحليل يُنشأ له متطلب في مكتبة الالتزام آلياً إن لم يوجد
-// 2) تُشتق مخاطر من المواد المنطبقة وفق الغرامات والعقوبات والمخالفات المذكورة في نصوصها
-// 3) كل متطلب في المكتبة بلا خطر مرتبط يُنشأ له خطر عدم التزام تلقائي
-// المحرك آمن التكرار: لا يُنشئ سجلاً موجوداً (مفتاح مصدر ثابت لكل مادة/متطلب)
+// محرك الانعكاس الآلي — المتطلبات النظامية انعكاس لبنود ومواد الوثائق التشريعية:
+// 1) كل بند/مادة منطبقة في وثيقة محلَّلة تنعكس متطلباً مستقلاً في المكتبة المفصلة
+//    (بالإدارة المالكة والأهمية المشتقة من درجة الخطر والغرامات)
+// 2) تُشتق مخاطر من البنود عالية الخطر أو ذات الغرامات وتُربط بمتطلباتها
+// 3) كل متطلب يدوي بلا خطر مرتبط يُنشأ له خطر عدم التزام تلقائي
+// المحرك آمن التكرار: لا يُنشئ سجلاً موجوداً (مفتاح مصدر ثابت لكل بند)
 import { store, reload } from "./state.js";
 import * as db from "./db.js";
 import { enDigits } from "./ui.js";
@@ -73,60 +74,56 @@ export function estimateFine(text) {
 
 const CRIT_IMPACT = { CRITICAL: 5, HIGH: 4, MEDIUM: 3, LOW: 2 };
 
-// ---------- إنشاء متطلب آلي من نظام محلَّل ----------
-async function ensureRequirement(reg, articles) {
-  if (reg.requirementId) {
-    const existing = store.requirements.find((r) => r.id === reg.requirementId);
-    if (existing) return { req: existing, created: false };
-  }
-  const applies = articles.filter((a) => a.applicability === "تنطبق");
-  const high = applies.filter((a) => a.risk_level === "عالي").length;
-  const hasPenalty = applies.some((a) => detectPenalty(`${a.penalty || ""} ${a.text || ""}`).found);
-  const criticality = high > 0 ? (hasPenalty ? "CRITICAL" : "HIGH") : hasPenalty ? "HIGH" : "MEDIUM";
+// خريطة درجة خطر البند إلى أهمية المتطلب
+const RISK_TO_CRIT = { "عالي": "HIGH", "متوسط": "MEDIUM", "منخفض": "LOW" };
 
-  // الإدارة المالكة الأكثر تكراراً بين المواد المنطبقة
-  const freq = {};
-  for (const a of applies) freq[a.owning_department] = (freq[a.owning_department] || 0) + 1;
-  const topDept = Object.entries(freq).sort((x, y) => y[1] - x[1])[0]?.[0];
-
+// ---------- انعكاس بند واحد متطلباً في المكتبة المفصلة ----------
+async function ensureArticleRequirement(reg, a, pen) {
+  const sourceKey = `${reg.id}::${a.number}`;
+  const existing = store.requirements.find((q) => q.sourceKey === sourceKey);
+  if (existing) return { req: existing, created: false };
+  // بند بغرامة قصوى (سجن/إلغاء ترخيص/ملايين) = متطلب حرج
+  const criticality = pen.found && pen.impact === 5 ? "CRITICAL" : RISK_TO_CRIT[a.risk_level] || "MEDIUM";
   const code = await db.nextCode("REQ");
   const req = await db.setRow("requirements", code, {
     code,
-    title: reg.name,
-    summary: reg.description || `أُنشئ آلياً من التحليل الذكي — ${articles.length} مادة مستخرجة، منها ${high} بخطر عالٍ`,
+    title: `${a.number} — ${(a.title || reg.name).slice(0, 120)}`,
+    summary: (a.text || "").slice(0, 1500),
     type: "REGULATION",
     category: "GOVERNANCE",
     criticality,
     authorityId: null,
-    ownerDeptId: deptIdByName(topDept),
+    ownerDeptId: deptIdByName(a.owning_department),
     issueDate: null,
     nextReviewDate: null,
-    status: "UNDER_REVIEW",
+    status: "ACTIVE",
     attachmentUrl: null,
+    penalty: (a.penalty || pen.snippet || "").slice(0, 300),
     createdById: store.user?.uid || null,
     approvedById: null,
     source: "AUTO_REGULATION",
     regulationId: reg.id,
+    sourceKey,
     lastUpdated: db.now(),
     createdAt: db.now(),
   });
-  await db.updateRegulation(reg.id, { requirementId: code });
-  await db.audit("CREATE", "Requirement", code, `إنشاء متطلب آلياً من تحليل النظام: ${reg.name}`);
   store.requirements.push(req);
-  const regRow = store.regulations.find((r) => r.id === reg.id);
-  if (regRow) regRow.requirementId = code;
+  await db.audit("CREATE", "Requirement", code, `انعكاس البند ${a.number} من «${reg.name}» متطلباً في المكتبة المفصلة`);
   return { req, created: true };
 }
 
-// ---------- اشتقاق المخاطر من مواد نظام محلَّل ----------
-// تُنشأ مخاطر للمواد المنطبقة ذات الخطر العالي أو التي تنص على غرامة/عقوبة/مخالفة
-async function deriveRisksFromRegulation(reg, req) {
-  let created = 0;
+// ---------- انعكاس وثيقة محلَّلة: بنودها متطلبات، وبنود الغرامات/الخطر العالي مخاطر ----------
+async function reflectRegulation(reg) {
+  let createdReqs = 0;
+  let createdRisks = 0;
   for (const a of reg.articles) {
     if (a.applicability !== "تنطبق") continue;
     const pen = detectPenalty(`${a.penalty || ""}\n${a.text || ""}`);
+    const { req, created } = await ensureArticleRequirement(reg, a, pen);
+    if (created) createdReqs++;
+
     if (!pen.found && a.risk_level !== "عالي") continue;
-    // مفتاح المصدر ثابت عبر إعادة التحليل (رقم المادة لا معرّفها المتغير)
+    // مفتاح المصدر ثابت عبر إعادة التحليل (رقم البند لا معرّفه المتغير)
     const sourceKey = `${reg.id}::${a.number}`;
     if (store.risks.some((r) => r.sourceKey === sourceKey)) continue;
 
@@ -160,27 +157,24 @@ async function deriveRisksFromRegulation(reg, req) {
       updatedAt: db.now(),
     });
     store.risks.push(risk);
-    created++;
+    createdRisks++;
     await db.audit("CREATE", "Risk", rcode, `اشتقاق خطر آلياً من ${a.number} في «${reg.name}» وفق الغرامات/العقوبات المذكورة`);
   }
-  return created;
+  return { createdReqs, createdRisks };
 }
 
 // ---------- دمج نظام واحد بعد اكتمال تحليله (يُستدعى من وحدة التحليل الذكي) ----------
 export async function autoIntegrateRegulation(regId) {
   const reg = await db.getRegulation(regId);
-  const summary = { requirementCreated: false, createdRisks: 0 };
-  if (!reg || reg.status !== "ready" || !reg.articles.length) return summary;
+  if (!reg || reg.status !== "ready" || !reg.articles.length) return { createdReqs: 0, createdRisks: 0 };
   await reload("requirements", "risks");
-  const { req, created } = await ensureRequirement(reg, reg.articles);
-  summary.requirementCreated = created;
-  summary.createdRisks = await deriveRisksFromRegulation(reg, req);
-  if (summary.requirementCreated || summary.createdRisks) {
+  const summary = await reflectRegulation(reg);
+  if (summary.createdReqs || summary.createdRisks) {
     await db.notify({
-      title: "تحديث آلي بعد التحليل الذكي",
-      message: `«${reg.name}»: ${summary.requirementCreated ? "أُضيف متطلب لمكتبة الالتزام و" : ""}أُنشئ ${summary.createdRisks} خطر في سجل المخاطر وفق الغرامات والمخالفات`,
+      title: "انعكاس آلي بعد التحليل الذكي",
+      message: `«${reg.name}»: انعكست بنودها ${summary.createdReqs} متطلباً في المكتبة المفصلة و${summary.createdRisks} خطراً وفق الغرامات والمخالفات`,
       type: "RISK_AUTO",
-      link: "risks",
+      link: "library",
       roleTarget: "COMPLIANCE_MANAGER",
     });
     await reload("requirements", "risks", "notifications");
@@ -188,11 +182,14 @@ export async function autoIntegrateRegulation(regId) {
   return summary;
 }
 
-// ---------- خطر عدم التزام عام لكل متطلب بلا مخاطر ----------
+// ---------- خطر عدم التزام عام لكل متطلب يدوي بلا مخاطر ----------
+// المتطلبات المنعكسة من البنود (لها sourceKey) تُدار مخاطرها من reflectRegulation
+// حسب الغرامات ودرجة الخطر — فلا تُغرق السجل بمخاطر عامة لكل بند
 async function coverBareRequirements() {
   let created = 0;
   for (const q of store.requirements) {
     if (q.status === "CANCELLED") continue;
+    if (q.sourceKey) continue;
     if (store.risks.some((r) => r.requirementId === q.id)) continue;
     const impact = CRIT_IMPACT[q.criticality] || 3;
     const rcode = await db.nextCode("RSK");
@@ -234,13 +231,13 @@ export async function runAutoSync(onProgress = () => {}) {
   const summary = { createdReqs: 0, createdRisks: 0 };
   await reload("requirements", "risks");
 
-  onProgress("فحص الأنظمة المحلَّلة…");
+  onProgress("فحص الوثائق المحلَّلة وانعكاس بنودها…");
   const regs = await db.allRegulations().catch(() => []);
   for (const reg of regs) {
     if (reg.status !== "ready" || !reg.articles.length) continue;
-    const { req, created } = await ensureRequirement(reg, reg.articles);
-    if (created) summary.createdReqs++;
-    summary.createdRisks += await deriveRisksFromRegulation(reg, req);
+    const res = await reflectRegulation(reg);
+    summary.createdReqs += res.createdReqs;
+    summary.createdRisks += res.createdRisks;
   }
 
   onProgress("فحص متطلبات مكتبة الالتزام…");
