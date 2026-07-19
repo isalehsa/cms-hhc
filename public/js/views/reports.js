@@ -6,7 +6,7 @@ import {
   riskLevel, CRITICALITY, REQ_TYPES, REQ_CATEGORIES, REQ_STATUS,
   RISK_STATUS, MON_TYPES, MON_FREQ, MON_STATUS, MON_RESULT, NC_LEVELS,
   PLAN_STATUS, PLAN_SOURCES, PLAN_TYPES, SA_STATUS, SA_ANSWERS, FND_SEVERITY, FND_STATUS, FND_SOURCES,
-  COR_DIRECTION, COR_PRIORITY, COR_STATUS, DISCLOSURE_TYPES, DISCLOSURE_STATUS,
+  COR_DIRECTION, COR_PRIORITY, COR_STATUS, DISCLOSURE_TYPES, DISCLOSURE_STATUS, TRAINING_TYPES, TRAINING_STATUS,
 } from "../meta.js";
 
 // ---------- تعريف التقارير ----------
@@ -20,6 +20,7 @@ const REPORTS = [
   { key: "findings", icon: "🛠", title: "تقرير الملاحظات وخطط التصحيح", desc: "الملاحظات المفتوحة والمغلقة وتقدم الإجراءات التصحيحية" },
   { key: "correspondence", icon: "📨", title: "تقرير سجل المراسلات", desc: "المراسلات الواردة والصادرة مع الجهات وحالات الرد عليها" },
   { key: "disclosures", icon: "🗂", title: "تقرير سجل الإفصاحات", desc: "إفصاحات تعارض المصالح والهدايا والإفصاحات المالية وقرارات معالجتها" },
+  { key: "training", icon: "🎓", title: "تقرير التدريب والتوعية", desc: "برامج التدريب وحملات التوعية وأعداد المتدربين ونسب الإنجاز" },
 ];
 
 export function renderReports(el) {
@@ -128,6 +129,18 @@ function tableFor(key) {
           d.code, DISCLOSURE_TYPES[d.type] || d.type, d.title, d.discloserName || userName(d.discloserId),
           deptName(d.departmentId), fmtDate(d.date), d.value || "", d.relatedParty || "",
           d.decision || "", DISCLOSURE_STATUS[d.status] || d.status,
+        ]),
+      };
+    case "training":
+      return {
+        head: ["الرقم", "النوع", "العنوان", "الجمهور", "المتطلب", "المسؤول", "التاريخ", "المستهدفون", "المنجزون", "الإنجاز %", "الحالة"],
+        rows: store.trainings.map((t) => [
+          t.code, TRAINING_TYPES[t.type] || t.type, t.title,
+          t.audienceType === "all" ? "المنشأة كاملة" : deptName(t.departmentId),
+          reqLabel(t.requirementId), userName(t.ownerId), fmtDate(t.date),
+          t.targetCount || 0, t.completedCount || 0,
+          t.targetCount ? Math.round(((t.completedCount || 0) / t.targetCount) * 100) : 0,
+          TRAINING_STATUS[t.status] || t.status,
         ]),
       };
     default:

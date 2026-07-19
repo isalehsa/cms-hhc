@@ -232,6 +232,46 @@ export const PLAN_TYPES = {
   OTHER: "أخرى",
 };
 
+// المحاور الرئيسية لخطة الالتزام — تُنظَّم الخطة السنوية في تبويبات بحسبها
+export const PLAN_AXES = {
+  FOLLOWUP: { label: "المتابعة", icon: "📌", desc: "متابعة تنفيذ الالتزامات والمبادرات والتقارير الدورية" },
+  VERIFICATION: { label: "التحقق", icon: "✔", desc: "الفحص الذاتي والتحقق من مدى الالتزام بالمتطلبات" },
+  GUIDANCE: { label: "الإرشاد", icon: "🧭", desc: "السياسات والأدلة والاستشارات ومتابعة المستجدات التنظيمية" },
+  CONTROL: { label: "الرقابة", icon: "🛡", desc: "المراقبة الرقابية ومعالجة المخاطر والضوابط" },
+  TRAINING: { label: "التدريب والتوعية", icon: "🎓", desc: "برامج التدريب وحملات التوعية ونشر ثقافة الالتزام" },
+  IMPROVEMENT: { label: "التطوير المستمر", icon: "🚀", desc: "تطوير الأنظمة والأتمتة وتحسين كفاءة برنامج الالتزام" },
+};
+
+// إسناد افتراضي لنوع المبادرة إلى محورها (يُستخدم للمبادرات القديمة أو غير المصنّفة)
+export const PLAN_TYPE_AXIS = {
+  OPERATION: "FOLLOWUP", REPORTING: "FOLLOWUP",
+  ASSESSMENT: "VERIFICATION",
+  POLICY: "GUIDANCE", REGULATORY: "GUIDANCE",
+  MONITORING: "CONTROL", RISK_TREATMENT: "CONTROL",
+  AWARENESS: "TRAINING",
+  SYSTEM: "IMPROVEMENT",
+  OTHER: "FOLLOWUP",
+};
+
+// ---------- التدريب والتوعية ----------
+export const TRAINING_TYPES = {
+  WORKSHOP: "ورشة عمل",
+  LECTURE: "محاضرة",
+  COURSE: "دورة تدريبية",
+  MANDATORY: "تدريب إلزامي",
+  BULLETIN: "نشرة توعوية",
+  CAMPAIGN: "حملة توعية",
+  QUIZ: "اختبار توعية",
+  ONBOARDING: "تعريف الموظفين الجدد",
+};
+
+export const TRAINING_STATUS = {
+  PLANNED: "مخطط",
+  IN_PROGRESS: "قيد التنفيذ",
+  COMPLETED: "منفذ",
+  CANCELLED: "ملغى",
+};
+
 // ---------- الفحص الذاتي ----------
 export const SA_STATUS = {
   DRAFT: "مسودة",

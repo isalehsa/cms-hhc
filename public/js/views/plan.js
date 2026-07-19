@@ -6,37 +6,57 @@ import {
   $, esc, toast, modal, confirmBox, fld, txt, area, sel, dateInp, val, num,
   fmtDate, isoFromInput, statusBadgeFrom, progressBar, emptyMsg,
 } from "../ui.js";
-import { PLAN_STATUS, PLAN_SOURCES, PLAN_TYPES, riskLevel } from "../meta.js";
+import { PLAN_STATUS, PLAN_SOURCES, PLAN_TYPES, PLAN_AXES, PLAN_TYPE_AXIS, riskLevel } from "../meta.js";
 import { canEdit } from "../auth.js";
 
 const ST_ROLE = { NOT_STARTED: "neutral", IN_PROGRESS: "warning", COMPLETED: "good", DELAYED: "critical" };
 const filters = { year: new Date().getFullYear(), quarter: "", dept: "", status: "", type: "" };
+const tabState = { axis: "ALL" };
+
+// محور المبادرة: الحقل الصريح، وإلا يُشتق من نوعها
+export const axisOf = (p) => p.axis || PLAN_TYPE_AXIS[p.planType || "OTHER"] || "FOLLOWUP";
 
 export function renderPlan(el, nav, refresh) {
   const editable = canEdit(store.user);
+  const rerender = () => renderPlan(el, nav, refresh);
   const years = [...new Set([new Date().getFullYear(), ...store.planItems.map((p) => p.year)])].filter(Boolean).sort();
-  const rows = store.planItems
-    .filter((p) => {
-      if (filters.year && p.year !== Number(filters.year)) return false;
-      if (filters.quarter && p.quarter !== Number(filters.quarter)) return false;
-      if (filters.dept && p.departmentId !== filters.dept) return false;
-      if (filters.status && p.status !== filters.status) return false;
-      if (filters.type && (p.planType || "OTHER") !== filters.type) return false;
-      return true;
-    })
-    .sort((a, b) => (a.quarter || 0) - (b.quarter || 0));
 
+  // نطاق السنة/الربع/الإدارة/الحالة/النوع مشترك، والمحور يُطبَّق عبر التبويب
+  const inScope = store.planItems.filter((p) => {
+    if (filters.year && p.year !== Number(filters.year)) return false;
+    if (filters.quarter && p.quarter !== Number(filters.quarter)) return false;
+    if (filters.dept && p.departmentId !== filters.dept) return false;
+    if (filters.status && p.status !== filters.status) return false;
+    if (filters.type && (p.planType || "OTHER") !== filters.type) return false;
+    return true;
+  });
+  const rows = (tabState.axis === "ALL" ? inScope : inScope.filter((p) => axisOf(p) === tabState.axis))
+    .sort((a, b) => (a.quarter || 0) - (b.quarter || 0));
   const avg = rows.length ? Math.round(rows.reduce((s, p) => s + (p.progress || 0), 0) / rows.length) : 0;
+
+  // شريط تبويبات المحاور مع عدّاد كل محور ضمن النطاق الحالي
+  const axisCount = (key) => inScope.filter((p) => axisOf(p) === key).length;
+  const axisTabs = `
+    <div class="subtabs plan-axes">
+      <button class="subtab ${tabState.axis === "ALL" ? "active" : ""}" data-axis="ALL" title="عرض جميع مبادرات الخطة">🗂 الكل (${inScope.length})</button>
+      ${Object.entries(PLAN_AXES).map(([k, a]) =>
+        `<button class="subtab ${tabState.axis === k ? "active" : ""}" data-axis="${k}" title="${esc(a.desc)}">${a.icon} ${esc(a.label)} (${axisCount(k)})</button>`
+      ).join("")}
+    </div>`;
+
+  const axisMeta = PLAN_AXES[tabState.axis];
 
   el.innerHTML = `
     <div class="page-head">
       <h1>📅 الخطة السنوية للالتزام</h1>
       <div class="row">
         ${editable ? `
-          <button id="gen-plan" class="secondary" title="توليد مبادرات تلقائياً من المتطلبات الحرجة والمخاطر العالية ونتائج المراقبة">⚙ توليد تلقائي</button>
+          <button id="gen-plan" class="secondary" title="توليد مبادرات تلقائياً من المتطلبات والمخاطر والمراقبة إضافةً لمبادرات المحاور الأساسية">⚙ توليد تلقائي</button>
           <button id="add-plan">＋ مبادرة جديدة</button>` : ""}
       </div>
     </div>
+    ${axisTabs}
+    ${axisMeta ? `<p class="muted" style="margin:6px 2px 12px">${axisMeta.icon} <strong>${esc(axisMeta.label)}</strong> — ${esc(axisMeta.desc)}</p>` : ""}
     <section class="card">
       <div class="row filters">
         ${sel("f-year", years.map(String), String(filters.year), { empty: "كل السنوات" })}
@@ -45,19 +65,21 @@ export function renderPlan(el, nav, refresh) {
         ${sel("f-dept", deptOptions(), filters.dept, { empty: "كل الإدارات" })}
         ${sel("f-status", PLAN_STATUS, filters.status, { empty: "كل الحالات" })}
         <span class="grow"></span>
-        <span class="muted">متوسط الإنجاز: <strong>${avg}%</strong></span>
+        <span class="muted">عدد المبادرات: <strong>${rows.length}</strong> · متوسط الإنجاز: <strong>${avg}%</strong></span>
       </div>
       <div style="overflow-x:auto">
         <table>
           <thead><tr>
-            <th>المبادرة / النشاط</th><th>النوع</th><th>المصدر</th><th>الربع</th><th>الإدارة</th><th>المسؤول</th>
+            <th>المبادرة / النشاط</th><th>المحور</th><th>النوع</th><th>المصدر</th><th>الربع</th><th>الإدارة</th><th>المسؤول</th>
             <th>المخرجات المتوقعة</th><th>الإنجاز</th><th>الحالة</th>
           </tr></thead>
           <tbody>
             ${rows
-              .map(
-                (p) => `<tr class="rowlink" data-open="${p.id}">
+              .map((p) => {
+                const ax = PLAN_AXES[axisOf(p)];
+                return `<tr class="rowlink" data-open="${p.id}">
                   <td><strong>${esc(p.title)}</strong>${p.requirementId ? `<div class="muted clamp">${esc(reqLabel(p.requirementId))}</div>` : ""}</td>
+                  <td><span class="chip">${ax ? ax.icon + " " + esc(ax.label) : "—"}</span></td>
                   <td><span class="chip">${esc(PLAN_TYPES[p.planType] || "أخرى")}</span></td>
                   <td>${esc(PLAN_SOURCES[p.source] || p.source || "—")}</td>
                   <td>الربع ${p.quarter || "—"} / ${p.year || "—"}</td>
@@ -66,16 +88,15 @@ export function renderPlan(el, nav, refresh) {
                   <td class="muted clamp">${esc(p.expectedOutput || "—")}</td>
                   <td style="min-width:130px">${progressBar(p.progress)}</td>
                   <td>${statusBadgeFrom(PLAN_STATUS, p.status, ST_ROLE)}</td>
-                </tr>`
-              )
-              .join("") || `<tr><td colspan="9">${emptyMsg("لا توجد مبادرات — استخدم التوليد التلقائي أو أضف يدوياً")}</td></tr>`}
+                </tr>`;
+              })
+              .join("") || `<tr><td colspan="10">${emptyMsg(tabState.axis === "ALL" ? "لا توجد مبادرات — استخدم التوليد التلقائي أو أضف يدوياً" : `لا توجد مبادرات في محور «${axisMeta?.label}» ضمن هذا النطاق`)}</td></tr>`}
           </tbody>
         </table>
       </div>
-      <p class="muted">عدد النتائج: ${rows.length}</p>
     </section>`;
 
-  const rerender = () => renderPlan(el, nav, refresh);
+  el.querySelectorAll("[data-axis]").forEach((b) => (b.onclick = () => { tabState.axis = b.dataset.axis; rerender(); }));
   $("#f-year", el).onchange = (e) => { filters.year = e.target.value; rerender(); };
   $("#f-q", el).onchange = (e) => { filters.quarter = e.target.value; rerender(); };
   $("#f-type", el).onchange = (e) => { filters.type = e.target.value; rerender(); };
@@ -96,6 +117,7 @@ function openForm(item, done) {
     <h2>${isNew ? "إضافة مبادرة" : "تعديل المبادرة"}</h2>
     ${fld("المبادرة / النشاط *", txt("p-title", item?.title))}
     <div class="form-grid">
+      ${fld("المحور", sel("p-axis", Object.fromEntries(Object.entries(PLAN_AXES).map(([k, a]) => [k, `${a.icon} ${a.label}`])), item ? axisOf(item) : (tabState.axis !== "ALL" ? tabState.axis : "FOLLOWUP")))}
       ${fld("نوع المبادرة", sel("p-type", PLAN_TYPES, item?.planType || "OPERATION"))}
       ${fld("السنة", num("p-year", item?.year || year, 2024, 2040))}
       ${fld("الربع المستهدف", sel("p-q", { 1: "الربع الأول", 2: "الربع الثاني", 3: "الربع الثالث", 4: "الربع الرابع" }, String(item?.quarter || 1)))}
@@ -133,6 +155,7 @@ function openForm(item, done) {
     const status = progress >= 100 ? "COMPLETED" : val("p-status", ov);
     const data = {
       title,
+      axis: val("p-axis", ov),
       planType: val("p-type", ov),
       year: Number(val("p-year", ov)) || new Date().getFullYear(),
       quarter: Number(val("p-q", ov)) || 1,

@@ -294,6 +294,10 @@ td select { min-width: 110px; font-size: 0.86rem; width: auto; }
 .subtab.active { background: var(--primary-grad); color: #fff; box-shadow: 0 4px 14px rgba(13, 82, 67, 0.3); }
 .pre-line { white-space: pre-line; }
 
+/* تبويبات محاور الخطة — تلتف على الأسطر عند ضيق الشاشة */
+.subtabs.plan-axes { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.subtabs.plan-axes .subtab { font-size: 0.85rem; }
+
 /* ---------- لوحة التحكم ---------- */
 .stats { display: flex; gap: 14px; flex-wrap: wrap; margin: 12px 0 18px; }
 .stat {

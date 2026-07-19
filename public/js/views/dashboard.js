@@ -24,6 +24,7 @@ function calendarEvents() {
   for (const f of store.findings) if (f.status !== "CLOSED") add(f.dueDate, "🛠", f.code, `استحقاق خطة التصحيح: ${f.code} — ${f.title}`, "findings");
   for (const a of store.assessments) if (["SENT", "SUBMITTED"].includes(a.status)) add(a.dueDate, "📋", "فحص", `استحقاق الفحص الذاتي: ${a.title}`, "assessments");
   for (const c of store.correspondence) if (c.status === "OPEN") add(c.dueDate, "📨", c.code, `استحقاق الرد على المراسلة: ${c.code} — ${c.subject}`, "correspondence");
+  for (const t of store.trainings) if (["PLANNED", "IN_PROGRESS"].includes(t.status)) add(t.dueDate || t.date, "🎓", t.code, `نشاط تدريب/توعية: ${t.code} — ${t.title}`, "training");
   return evs;
 }
 
