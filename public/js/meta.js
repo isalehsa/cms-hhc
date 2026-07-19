@@ -129,6 +129,25 @@ export const DOC_TO_REQ_TYPE = {
   GUIDELINE: "GUIDELINE", STANDARD: "STANDARD", DECISION: "REGULATION", OTHER: "REGULATION",
 };
 
+// ---------- سجل الإفصاحات ----------
+export const DISCLOSURE_TYPES = {
+  CONFLICT: "تعارض مصالح",
+  GIFTS: "هدايا وضيافة",
+  OUTSIDE: "أعمال ومصالح خارجية",
+  FINANCIAL: "إفصاح مالي",
+  RELATED_PARTY: "أطراف ذات علاقة",
+  WHISTLEBLOW: "بلاغ مخالفة",
+  OTHER: "أخرى",
+};
+
+export const DISCLOSURE_STATUS = {
+  PENDING: "بانتظار المراجعة",
+  UNDER_REVIEW: "قيد المراجعة",
+  APPROVED: "معتمد / لا تعارض",
+  MITIGATED: "معالَج بإجراء",
+  REJECTED: "مرفوض",
+};
+
 // ---------- سجل المراسلات ----------
 export const COR_DIRECTION = {
   INCOMING: "واردة",
@@ -197,6 +216,20 @@ export const PLAN_SOURCES = {
   MONITORING: "نتيجة مراقبة",
   ASSESSMENT: "فحص ذاتي",
   MANUAL: "يدوي",
+};
+
+// نوع مبادرة الخطة — لجعل الخطة السنوية شاملة لكل أعمال الالتزام
+export const PLAN_TYPES = {
+  POLICY: "تحديث سياسات وإجراءات",
+  OPERATION: "عمليات وأنشطة إدارية",
+  AWARENESS: "توعية وتدريب",
+  MONITORING: "مراقبة وفحص",
+  ASSESSMENT: "فحص ذاتي",
+  RISK_TREATMENT: "معالجة مخاطر",
+  SYSTEM: "تطوير أنظمة وأتمتة",
+  REPORTING: "رفع تقارير",
+  REGULATORY: "متابعة تنظيمية وإفصاحات",
+  OTHER: "أخرى",
 };
 
 // ---------- الفحص الذاتي ----------

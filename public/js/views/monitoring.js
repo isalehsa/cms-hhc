@@ -4,7 +4,7 @@ import { store, reload, deptName, userName, reqLabel, riskLabel, deptOptions, us
 import * as db from "../db.js";
 import {
   $, esc, toast, modal, confirmBox, fld, txt, area, sel, dateInp, val,
-  fmtDate, isoFromInput, levelBadge, statusBadgeFrom, emptyMsg, keepFocus,
+  fmtDate, isoFromInput, levelBadge, statusBadgeFrom, emptyMsg, keepFocus, progressBar, distBar,
 } from "../ui.js";
 import { MON_TYPES, MON_FREQ, MON_STATUS, MON_RESULT, NC_LEVELS } from "../meta.js";
 import { canEdit } from "../auth.js";
@@ -12,9 +12,37 @@ import { canEdit } from "../auth.js";
 const ST_ROLE = { PLANNED: "neutral", IN_PROGRESS: "warning", COMPLETED: "good", CLOSED: "good" };
 const RES_ROLE = { COMPLIANT: "good", PARTIAL: "warning", NON_COMPLIANT: "critical" };
 const filters = { search: "", status: "", result: "", dept: "" };
+const tabState = { tab: "list" }; // list | depts
 
 export function renderMonitoring(el, nav, refresh) {
   const editable = canEdit(store.user);
+  const rerender = () => renderMonitoring(el, nav, refresh);
+  const head = `
+    <div class="page-head">
+      <h1>🔍 برنامج مراقبة الالتزام</h1>
+      <div class="row">
+        <div class="subtabs">
+          <button class="subtab ${tabState.tab === "list" ? "active" : ""}" data-tab="list" title="عرض جميع الأنشطة الرقابية في قائمة">📋 القائمة</button>
+          <button class="subtab ${tabState.tab === "depts" ? "active" : ""}" data-tab="depts" title="توزيع أنشطة المراقبة على الإدارات مع نسب الإنجاز والنتائج">🏢 حسب الإدارات</button>
+        </div>
+        ${editable ? '<button id="add-mon" title="إضافة نشاط مراقبة جديد">＋ نشاط مراقبة جديد</button>' : ""}
+      </div>
+    </div>`;
+
+  const bindCommon = () => {
+    el.querySelectorAll("[data-tab]").forEach((b) => (b.onclick = () => { tabState.tab = b.dataset.tab; rerender(); }));
+    $("#add-mon", el)?.addEventListener("click", () => openForm(null, rerender));
+  };
+
+  if (tabState.tab === "depts") {
+    el.innerHTML = head + renderByDepartments();
+    bindCommon();
+    el.querySelectorAll("[data-dept]").forEach((b) =>
+      b.addEventListener("click", () => { filters.dept = b.dataset.dept; tabState.tab = "list"; rerender(); })
+    );
+    return;
+  }
+
   const rows = store.monitoring.filter((m) => {
     if (filters.search && !`${m.code} ${m.name} ${m.scope || ""}`.includes(filters.search)) return false;
     if (filters.status && m.status !== filters.status) return false;
@@ -23,11 +51,7 @@ export function renderMonitoring(el, nav, refresh) {
     return true;
   });
 
-  el.innerHTML = `
-    <div class="page-head">
-      <h1>🔍 برنامج مراقبة الالتزام</h1>
-      ${editable ? '<button id="add-mon">＋ نشاط مراقبة جديد</button>' : ""}
-    </div>
+  el.innerHTML = head + `
     <section class="card">
       <div class="row filters">
         <input type="text" id="f-search" class="grow" placeholder="بحث…" value="${esc(filters.search)}" />
@@ -60,18 +84,55 @@ export function renderMonitoring(el, nav, refresh) {
           </tbody>
         </table>
       </div>
-      <p class="muted">عدد النتائج: ${rows.length} من ${store.monitoring.length}</p>
+      <p class="muted">عدد النتائج: ${rows.length} من ${store.monitoring.length}${filters.dept ? ` · <span class="link-item" id="clear-dept" style="display:inline;cursor:pointer;color:var(--primary-dark)">إلغاء تصفية الإدارة ✕</span>` : ""}</p>
     </section>`;
 
-  const rerender = () => renderMonitoring(el, nav, refresh);
+  bindCommon();
   $("#f-search", el).addEventListener("input", (e) => { filters.search = e.target.value; keepFocus(rerender); });
   $("#f-status", el).onchange = (e) => { filters.status = e.target.value; rerender(); };
   $("#f-result", el).onchange = (e) => { filters.result = e.target.value; rerender(); };
   $("#f-dept", el).onchange = (e) => { filters.dept = e.target.value; rerender(); };
-  $("#add-mon", el)?.addEventListener("click", () => openForm(null, rerender));
+  $("#clear-dept", el)?.addEventListener("click", () => { filters.dept = ""; rerender(); });
   el.querySelectorAll("[data-open]").forEach((tr) =>
     tr.addEventListener("click", () => openDetail(tr.dataset.open, nav, rerender))
   );
+}
+
+// عرض المراقبة موزّعة على الإدارات: بطاقة لكل إدارة بعدد الأنشطة ونسبة الإنجاز وتوزيع النتائج
+function renderByDepartments() {
+  const groups = store.departments
+    .map((d) => ({ dept: d, items: store.monitoring.filter((m) => m.targetDeptId === d.id) }))
+    .filter((g) => g.items.length);
+  const unassigned = store.monitoring.filter((m) => !m.targetDeptId || !store.departments.some((d) => d.id === m.targetDeptId));
+  if (unassigned.length) groups.push({ dept: { id: "", name: "غير محددة الإدارة" }, items: unassigned });
+
+  if (!groups.length) return `<section class="card">${emptyMsg("لا توجد أنشطة مراقبة بعد")}</section>`;
+
+  return `<div class="report-grid">${groups
+    .map((g) => {
+      const done = g.items.filter((m) => ["COMPLETED", "CLOSED"].includes(m.status)).length;
+      const pct = Math.round((done / g.items.length) * 100);
+      const res = { COMPLIANT: 0, PARTIAL: 0, NON_COMPLIANT: 0 };
+      for (const m of g.items) if (m.result && res[m.result] !== undefined) res[m.result]++;
+      const nc = res.NON_COMPLIANT;
+      return `<section class="card" style="cursor:pointer" data-dept="${g.dept.id}" title="عرض أنشطة ${esc(g.dept.name)} في القائمة">
+        <div class="row" style="justify-content:space-between">
+          <h2 style="font-size:1rem">🏢 ${esc(g.dept.name)}</h2>
+          ${nc ? `<span class="lvl lvl-critical"><span class="dot"></span>${nc} عدم التزام</span>` : done === g.items.length ? '<span class="lvl lvl-good"><span class="dot"></span>مكتملة</span>' : ""}
+        </div>
+        <div class="stats" style="margin:8px 0">
+          <div class="stat"><div class="num">${g.items.length}</div><div class="lbl">نشاط</div></div>
+          <div class="stat"><div class="num">${pct}%</div><div class="lbl">الإنجاز</div><div class="sub">${done}/${g.items.length}</div></div>
+        </div>
+        ${progressBar(pct)}
+        ${distBar([
+          { label: "ملتزم", count: res.COMPLIANT, role: "good" },
+          { label: "جزئي", count: res.PARTIAL, role: "warning" },
+          { label: "غير ملتزم", count: res.NON_COMPLIANT, role: "critical" },
+        ])}
+      </section>`;
+    })
+    .join("")}</div>`;
 }
 
 function openForm(mon, done) {
