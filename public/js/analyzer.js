@@ -2,6 +2,7 @@
 // المسار الأساسي: Claude API مباشرة من المتصفح (مخرجات مقيدة بمخطط JSON عبر استدعاء أداة إجباري)
 // المسار الاحتياطي: محلّل نصي بالأنماط عند عدم توفر مفتاح API
 import { DEPARTMENTS, RISK_LEVELS, APPLICABILITY } from "./meta.js";
+import { enDigits } from "./ui.js";
 
 export const DEFAULT_MODEL = "claude-opus-4-8";
 
@@ -81,7 +82,9 @@ ${total > 1 ? `النص المعطى هو الجزء ${part} من ${total} من 
 قواعد صارمة:
 - استخرج كل مادة وبند على حدة، والتزم بترقيم النص الأصلي في حقل number.
 - انسخ نص المادة كاملاً في حقل text دون تلخيص أو حذف.
-- لا تدمج مادتين في عنصر واحد.
+- لا تدمج مادتين في عنصر واحد، ولا تقسّم المادة الواحدة إلى أكثر من عنصر حتى لو تعددت فقراتها.
+- لا تُدرج الديباجة أو عناوين الأبواب والفصول أو تواريخ النشر كمواد مستقلة — مواد النظام المرقمة فقط.
+- لا تكرر أي مادة: كل رقم مادة يظهر مرة واحدة فقط في النتيجة.
 - سجّل النتيجة كاملة عبر أداة record_articles.
 ${orgContext ? `\nسياق المنشأة (استخدمه لتحديد الانطباق والإدارة المالكة):\n${orgContext}` : ""}`;
 }
@@ -234,6 +237,52 @@ async function analyzeChunk(text, orgContext, settings, onProgress, part, total,
   }
 }
 
+// ---------- إزالة المواد المكررة ----------
+// عند تحليل النصوص الطويلة على أجزاء قد يستخرج جزءان نفس المادة الواقعة عند حدّهما،
+// فيتضخم عدد المواد — نوحّد رقم المادة ونُبقي النسخة الأكمل من كل تكرار
+
+// توحيد رقم المادة للمقارنة: أرقام إنجليزية، بلا ألقاب (المادة/البند) ولا فواصل
+function numberKey(n) {
+  return enDigits(String(n || ""))
+    .replace(/[()[\]{}\-–—.:،,/\\]/g, " ")
+    .replace(/(المادة|مادة|البند|بند|الفقرة|فقرة)/g, " ")
+    .replace(/\s+/g, "")
+    .trim();
+}
+
+export function dedupeArticles(articles) {
+  const seen = new Map(); // مفتاح الرقم → موضعه في النتيجة
+  const out = [];
+  let removed = 0;
+  for (const a of articles) {
+    const key = numberKey(a.number);
+    if (!key || !seen.has(key)) {
+      if (key) seen.set(key, out.length);
+      out.push({ ...a });
+      continue;
+    }
+    const prev = out[seen.get(key)];
+    const t1 = (prev.text || "").replace(/\s+/g, " ").trim();
+    const t2 = (a.text || "").replace(/\s+/g, " ").trim();
+    const sameArticle =
+      t1.slice(0, 80) === t2.slice(0, 80) || t1.includes(t2.slice(0, 60)) || t2.includes(t1.slice(0, 60));
+    if (sameArticle) {
+      // نفس المادة تكررت عند حد جزأين — نُبقي النسخة الأطول ونحتفظ بالغرامة إن وُجدت
+      if (t2.length > t1.length) out[seen.get(key)] = { ...a, penalty: a.penalty || prev.penalty };
+      else prev.penalty = prev.penalty || a.penalty;
+      removed++;
+    } else {
+      // رقم مكرر بنصين مختلفين (ترقيم متشابه في فصول مختلفة؟) — نُبقيهما مع تعليم للمراجعة
+      out.push({
+        ...a,
+        needs_review: true,
+        rationale: `${a.rationale || ""} — ⚠ رقم مادة مكرر في النص، تحقق يدوياً`.trim(),
+      });
+    }
+  }
+  return { articles: out, removed };
+}
+
 // محلّل احتياطي بالأنماط: يستخرج المواد ويترك التصنيف بقيم افتراضية للمراجعة اليدوية
 const HEADING_RE =
   /^\s*(?:(المادة|مادة|البند|بند|الفصل|الباب)\s*[:\-()]?\s*([٠-٩\d]+(?:[\/\-.][٠-٩\d]+)*|ال[أا]ولى|الثانية|الثالثة|الرابعة|الخامسة|السادسة|السابعة|الثامنة|التاسعة|العاشرة|[ء-ي]+\s+عشرة?|العشرون|الثلاثون|[ء-ي]+\s+وال[ء-ي]+)|([٠-٩\d]+(?:[\-.][٠-٩\d]+)*)\s*[-–.)])/;
@@ -308,24 +357,26 @@ export async function analyzeRegulation(regulationText, orgContext, settings, on
         articles.push(...part);
       }
       if (articles.length > 0) {
+        const { articles: cleaned, removed } = dedupeArticles(articles);
+        const notes = [];
+        if (chunks.length > 1) notes.push(`النص طويل فقُسّم آلياً إلى ${chunks.length} أجزاء ودُمجت النتائج`);
+        if (removed > 0) notes.push(`أُزيلت ${removed} مادة مكررة عند حدود الأجزاء`);
         return {
           method: "ai",
-          articles,
-          warning: chunks.length > 1
-            ? `النص طويل فقُسّم آلياً إلى ${chunks.length} أجزاء ودُمجت النتائج (${articles.length} مادة) — تحقق من عدم تكرار المواد عند حدود الأجزاء`
-            : null,
+          articles: cleaned,
+          warning: notes.length ? `${notes.join("، ")} — ${cleaned.length} مادة نهائية` : null,
         };
       }
       // مخرجات فارغة من النموذج — نلجأ للمحلل الاحتياطي
-      return { method: "heuristic", articles: analyzeHeuristically(regulationText) };
+      return { method: "heuristic", articles: dedupeArticles(analyzeHeuristically(regulationText)).articles };
     } catch (err) {
       console.error("AI analysis failed, falling back to heuristic:", err);
       return {
         method: "heuristic",
-        articles: analyzeHeuristically(regulationText),
+        articles: dedupeArticles(analyzeHeuristically(regulationText)).articles,
         warning: `تعذّر التحليل بالذكاء الاصطناعي (${err.message}) — تم استخدام المحلل الاحتياطي`,
       };
     }
   }
-  return { method: "heuristic", articles: analyzeHeuristically(regulationText) };
+  return { method: "heuristic", articles: dedupeArticles(analyzeHeuristically(regulationText)).articles };
 }
