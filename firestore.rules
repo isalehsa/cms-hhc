@@ -89,6 +89,11 @@ service cloud.firestore {
       allow write: if isEditor();
     }
 
+    match /trainings/{id} {
+      allow read: if signedIn();
+      allow write: if isEditor();
+    }
+
     match /findings/{id} {
       allow read: if signedIn();
       allow create, delete: if isEditor();

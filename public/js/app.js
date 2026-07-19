@@ -16,6 +16,7 @@ import { renderAssessments } from "./views/assessments.js";
 import { renderFindings } from "./views/findings.js";
 import { renderCorrespondence } from "./views/correspondence.js";
 import { renderDisclosures } from "./views/disclosures.js";
+import { renderTraining } from "./views/training.js";
 import { renderReports } from "./views/reports.js";
 import { settings, aiEnabled } from "./views/regulations.js";
 import { renderAdmin } from "./views/admin.js";
@@ -27,6 +28,7 @@ const VIEWS = {
   risks: { icon: "⚠️", label: "سجل المخاطر", render: renderRisks },
   monitoring: { icon: "🔍", label: "برنامج المراقبة", render: renderMonitoring },
   plan: { icon: "📅", label: "الخطة السنوية", render: renderPlan },
+  training: { icon: "🎓", label: "التدريب والتوعية", render: renderTraining },
   assessments: { icon: "📋", label: "الفحص الذاتي", render: renderAssessments },
   findings: { icon: "🛠", label: "الملاحظات والتصحيح", render: renderFindings },
   correspondence: { icon: "📨", label: "سجل المراسلات", render: renderCorrespondence },
