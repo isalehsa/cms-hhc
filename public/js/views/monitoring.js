@@ -1,6 +1,6 @@
 // برنامج مراقبة الالتزام — أنشطة رقابية مبنية على المخاطر والمتطلبات
 // تسجيل النتيجة يولّد ملاحظة تلقائية عند عدم الالتزام
-import { store, reload, deptName, userName, reqLabel, riskLabel, deptOptions, userOptions, reqOptions, riskOptions } from "../state.js";
+import { store, reload, deptName, userName, reqLabel, riskLabel, deptOptions, userOptions, riskOptions } from "../state.js";
 import * as db from "../db.js";
 import {
   $, esc, toast, modal, confirmBox, fld, txt, area, sel, dateInp, val,
@@ -25,13 +25,16 @@ export function renderMonitoring(el, nav, refresh) {
           <button class="subtab ${tabState.tab === "list" ? "active" : ""}" data-tab="list" title="عرض جميع الأنشطة الرقابية في قائمة">📋 القائمة</button>
           <button class="subtab ${tabState.tab === "depts" ? "active" : ""}" data-tab="depts" title="توزيع أنشطة المراقبة على الإدارات مع نسب الإنجاز والنتائج">🏢 حسب الإدارات</button>
         </div>
-        ${editable ? '<button id="add-mon" title="إضافة نشاط مراقبة جديد">＋ نشاط مراقبة جديد</button>' : ""}
+        ${editable ? `
+          <button id="gen-mon" class="secondary" title="اختر إدارة ليولّد النظام نشاط مراقبة لكل متطلب من متطلباتها في المكتبة">⚙ توليد من متطلبات إدارة</button>
+          <button id="add-mon" title="إضافة نشاط مراقبة جديد">＋ نشاط مراقبة جديد</button>` : ""}
       </div>
     </div>`;
 
   const bindCommon = () => {
     el.querySelectorAll("[data-tab]").forEach((b) => (b.onclick = () => { tabState.tab = b.dataset.tab; rerender(); }));
     $("#add-mon", el)?.addEventListener("click", () => openForm(null, rerender));
+    $("#gen-mon", el)?.addEventListener("click", () => openGenerateForm(rerender));
   };
 
   if (tabState.tab === "depts") {
@@ -135,6 +138,97 @@ function renderByDepartments() {
     .join("")}</div>`;
 }
 
+// خيارات المتطلبات المرتبطة بإدارة: متطلبات الإدارة المالكة أولاً، ثم البقية للمرونة
+function reqOptionsForDept(deptId, selected) {
+  const own = store.requirements.filter((r) => r.ownerDeptId === deptId && r.status !== "CANCELLED");
+  const opt = (r) => `<option value="${esc(r.id)}" ${r.id === selected ? "selected" : ""}>${esc(r.code)} — ${esc(r.title)}</option>`;
+  if (!deptId) {
+    return `<option value="">— اختر الإدارة أولاً —</option>` +
+      store.requirements.map((r) => opt(r)).join("");
+  }
+  const others = store.requirements.filter((r) => r.ownerDeptId !== deptId && r.status !== "CANCELLED");
+  return `<option value="">— بلا ربط —</option>` +
+    (own.length ? `<optgroup label="متطلبات هذه الإدارة (${own.length})">${own.map(opt).join("")}</optgroup>` : "") +
+    (others.length ? `<optgroup label="متطلبات أخرى">${others.map(opt).join("")}</optgroup>` : "");
+}
+
+// توليد نشاط مراقبة لكل متطلب في إدارة مختارة — «اختر الإدارة والنظام يجلب متطلباتها»
+function openGenerateForm(done) {
+  const ov = modal(
+    `
+    <h2>⚙ توليد أنشطة مراقبة من متطلبات إدارة</h2>
+    <p class="muted">اختر الإدارة المستهدفة، وسيُنشئ النظام نشاط مراقبة لكل متطلب مرتبط بها في مكتبة الالتزام (لا يُنشأ نشاط لمتطلب له نشاط قائم لنفس الإدارة).</p>
+    <div class="form-grid">
+      ${fld("الإدارة المستهدفة *", sel("g-dept", deptOptions(), "", { empty: "— اختر —" }))}
+      ${fld("نوع الفحص", sel("g-type", MON_TYPES, "DESK"))}
+      ${fld("التكرار", sel("g-freq", MON_FREQ, "QUARTERLY"))}
+      ${fld("مسؤول الفحص", sel("g-assignee", userOptions(), "", { empty: "— اختر —" }))}
+    </div>
+    <p class="muted" id="g-hint">—</p>
+    <div class="row" style="margin-top:14px">
+      <button id="g-save">توليد الأنشطة</button>
+      <button class="secondary" id="g-cancel">إلغاء</button>
+    </div>`,
+    { wide: true }
+  );
+  const deptReqs = () => {
+    const d = val("g-dept", ov);
+    return d ? store.requirements.filter((r) => r.ownerDeptId === d && r.status !== "CANCELLED") : [];
+  };
+  const refreshHint = () => {
+    const d = val("g-dept", ov);
+    const reqs = deptReqs();
+    const already = store.monitoring.filter((m) => m.targetDeptId === d).map((m) => m.requirementId);
+    const toCreate = reqs.filter((r) => !already.includes(r.id));
+    $("#g-hint", ov).textContent = !d
+      ? "اختر الإدارة لعرض عدد المتطلبات."
+      : reqs.length
+        ? `لإدارة «${deptName(d)}» ${reqs.length} متطلب — سيُنشأ ${toCreate.length} نشاط جديد (${reqs.length - toCreate.length} لها أنشطة سابقاً).`
+        : `لا توجد متطلبات مسجلة لإدارة «${deptName(d)}» في المكتبة.`;
+  };
+  $("#g-dept", ov).onchange = refreshHint;
+
+  $("#g-cancel", ov).onclick = () => ov.remove();
+  $("#g-save", ov).onclick = async () => {
+    const deptId = val("g-dept", ov);
+    if (!deptId) return toast("اختر الإدارة المستهدفة", true);
+    const already = store.monitoring.filter((m) => m.targetDeptId === deptId).map((m) => m.requirementId);
+    const reqs = deptReqs().filter((r) => !already.includes(r.id));
+    if (!reqs.length) return toast("لا توجد متطلبات جديدة لهذه الإدارة تحتاج نشاط مراقبة", true);
+    const type = val("g-type", ov), freq = val("g-freq", ov), assignee = val("g-assignee", ov) || null;
+    const btn = $("#g-save", ov);
+    btn.disabled = true;
+    try {
+      for (const r of reqs) {
+        const code = await db.nextCode("MON");
+        await db.setRow("monitoring", code, {
+          code,
+          name: `مراقبة الالتزام بـ ${r.code} — ${r.title}`.slice(0, 120),
+          requirementId: r.id,
+          riskId: null,
+          type, frequency: freq,
+          targetDeptId: deptId,
+          assigneeId: assignee,
+          startDate: null, endDate: null,
+          status: "PLANNED",
+          scope: `فحص التزام الإدارة بالمتطلب ${r.code}`,
+          result: null, notes: null, nonComplianceLevel: null,
+          recommendations: null, correctionPlan: null,
+          createdAt: db.now(), updatedAt: db.now(),
+        });
+      }
+      await db.audit("CREATE", "Monitoring", null, `توليد ${reqs.length} نشاط مراقبة من متطلبات ${deptName(deptId)}`);
+      await reload("monitoring");
+      ov.remove();
+      toast(`أُنشئ ${reqs.length} نشاط مراقبة لإدارة ${deptName(deptId)}`);
+      done();
+    } catch (err) {
+      btn.disabled = false;
+      toast(err.message, true);
+    }
+  };
+}
+
 function openForm(mon, done) {
   const isNew = !mon;
   const ov = modal(
@@ -142,16 +236,17 @@ function openForm(mon, done) {
     <h2>${isNew ? "إضافة نشاط مراقبة" : `تعديل ${esc(mon.code)}`}</h2>
     <div class="form-grid">
       ${fld("اسم نشاط المراقبة *", txt("m-name", mon?.name))}
-      ${fld("المتطلب المرتبط", sel("m-req", reqOptions(), mon?.requirementId, { empty: "— بلا ربط —" }))}
+      ${fld("الإدارة المستهدفة", sel("m-dept", deptOptions(), mon?.targetDeptId, { empty: "— اختر —" }))}
+      ${fld("المتطلب المرتبط", `<select id="m-req">${reqOptionsForDept(mon?.targetDeptId || "", mon?.requirementId)}</select>`)}
       ${fld("الخطر المرتبط", sel("m-risk", riskOptions(), mon?.riskId, { empty: "— بلا ربط —" }))}
       ${fld("نوع الفحص", sel("m-type", MON_TYPES, mon?.type || "DESK"))}
       ${fld("التكرار", sel("m-freq", MON_FREQ, mon?.frequency || "QUARTERLY"))}
-      ${fld("الإدارة المستهدفة", sel("m-dept", deptOptions(), mon?.targetDeptId, { empty: "— اختر —" }))}
       ${fld("مسؤول الفحص", sel("m-assignee", userOptions(), mon?.assigneeId, { empty: "— اختر —" }))}
       ${fld("تاريخ البداية", dateInp("m-start", mon?.startDate))}
       ${fld("تاريخ النهاية", dateInp("m-end", mon?.endDate))}
       ${fld("الحالة", sel("m-status", MON_STATUS, mon?.status || "PLANNED"))}
     </div>
+    <p class="muted" id="m-req-hint">اختر الإدارة المستهدفة ليجلب النظام متطلباتها من مكتبة الالتزام تلقائياً.</p>
     ${fld("نطاق الفحص", area("m-scope", mon?.scope, "", 2))}
     <div class="row" style="margin-top:14px">
       <button id="m-save">حفظ</button>
@@ -159,6 +254,26 @@ function openForm(mon, done) {
     </div>`,
     { wide: true }
   );
+
+  // عند تغيير الإدارة: إعادة تعبئة قائمة المتطلبات بمتطلبات تلك الإدارة، واقتراح اسم النشاط
+  const updateReqs = () => {
+    const deptId = val("m-dept", ov);
+    $("#m-req", ov).innerHTML = reqOptionsForDept(deptId, "");
+    const own = store.requirements.filter((r) => r.ownerDeptId === deptId && r.status !== "CANCELLED");
+    const hint = $("#m-req-hint", ov);
+    if (deptId) {
+      hint.textContent = own.length
+        ? `جُلب ${own.length} متطلب من مكتبة الالتزام لإدارة «${deptName(deptId)}» — اختر المتطلب المستهدف.`
+        : `لا توجد متطلبات مسجلة لإدارة «${deptName(deptId)}» في المكتبة — يمكنك الربط بمتطلب آخر أو تركه.`;
+    } else {
+      hint.textContent = "اختر الإدارة المستهدفة ليجلب النظام متطلباتها من مكتبة الالتزام تلقائياً.";
+    }
+    if (isNew && !val("m-name", ov) && deptId) {
+      $("#m-name", ov).value = `مراقبة التزام ${deptName(deptId)}`;
+    }
+  };
+  $("#m-dept", ov).onchange = updateReqs;
+
   $("#m-cancel", ov).onclick = () => ov.remove();
   $("#m-save", ov).onclick = async () => {
     const name = val("m-name", ov);
