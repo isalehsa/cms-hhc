@@ -29,9 +29,9 @@ const VIEWS = {
   assessments: { icon: "📋", label: "الفحص الذاتي", render: renderAssessments },
   findings: { icon: "🛠", label: "الملاحظات والتصحيح", render: renderFindings },
   correspondence: { icon: "📨", label: "سجل المراسلات", render: renderCorrespondence },
-  // التحليل الذكي مدمج داخل مكتبة الالتزام كتبويب فرعي — المسار يبقى للروابط القديمة
+  // موسوعة الوثائق مدمجة داخل مكتبة الالتزام كتبويب فرعي — المسار يبقى للروابط القديمة
   regulations: {
-    icon: "🤖", label: "التحليل الذكي", hidden: true,
+    icon: "📚", label: "الوثائق", hidden: true,
     render: (el, navFn, refresh, params = {}) => renderLibrary(el, navFn, refresh, { ...params, tab: "analysis" }),
   },
   reports: { icon: "📊", label: "التقارير", render: renderReports },
