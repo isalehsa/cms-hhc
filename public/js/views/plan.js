@@ -6,11 +6,11 @@ import {
   $, esc, toast, modal, confirmBox, fld, txt, area, sel, dateInp, val, num,
   fmtDate, isoFromInput, statusBadgeFrom, progressBar, emptyMsg,
 } from "../ui.js";
-import { PLAN_STATUS, PLAN_SOURCES, riskLevel } from "../meta.js";
+import { PLAN_STATUS, PLAN_SOURCES, PLAN_TYPES, riskLevel } from "../meta.js";
 import { canEdit } from "../auth.js";
 
 const ST_ROLE = { NOT_STARTED: "neutral", IN_PROGRESS: "warning", COMPLETED: "good", DELAYED: "critical" };
-const filters = { year: new Date().getFullYear(), quarter: "", dept: "", status: "" };
+const filters = { year: new Date().getFullYear(), quarter: "", dept: "", status: "", type: "" };
 
 export function renderPlan(el, nav, refresh) {
   const editable = canEdit(store.user);
@@ -21,6 +21,7 @@ export function renderPlan(el, nav, refresh) {
       if (filters.quarter && p.quarter !== Number(filters.quarter)) return false;
       if (filters.dept && p.departmentId !== filters.dept) return false;
       if (filters.status && p.status !== filters.status) return false;
+      if (filters.type && (p.planType || "OTHER") !== filters.type) return false;
       return true;
     })
     .sort((a, b) => (a.quarter || 0) - (b.quarter || 0));
@@ -40,6 +41,7 @@ export function renderPlan(el, nav, refresh) {
       <div class="row filters">
         ${sel("f-year", years.map(String), String(filters.year), { empty: "كل السنوات" })}
         ${sel("f-q", { 1: "الربع الأول", 2: "الربع الثاني", 3: "الربع الثالث", 4: "الربع الرابع" }, String(filters.quarter), { empty: "كل الأرباع" })}
+        ${sel("f-type", PLAN_TYPES, filters.type, { empty: "كل الأنواع" })}
         ${sel("f-dept", deptOptions(), filters.dept, { empty: "كل الإدارات" })}
         ${sel("f-status", PLAN_STATUS, filters.status, { empty: "كل الحالات" })}
         <span class="grow"></span>
@@ -48,7 +50,7 @@ export function renderPlan(el, nav, refresh) {
       <div style="overflow-x:auto">
         <table>
           <thead><tr>
-            <th>المبادرة / النشاط</th><th>المصدر</th><th>الربع</th><th>الإدارة</th><th>المسؤول</th>
+            <th>المبادرة / النشاط</th><th>النوع</th><th>المصدر</th><th>الربع</th><th>الإدارة</th><th>المسؤول</th>
             <th>المخرجات المتوقعة</th><th>الإنجاز</th><th>الحالة</th>
           </tr></thead>
           <tbody>
@@ -56,6 +58,7 @@ export function renderPlan(el, nav, refresh) {
               .map(
                 (p) => `<tr class="rowlink" data-open="${p.id}">
                   <td><strong>${esc(p.title)}</strong>${p.requirementId ? `<div class="muted clamp">${esc(reqLabel(p.requirementId))}</div>` : ""}</td>
+                  <td><span class="chip">${esc(PLAN_TYPES[p.planType] || "أخرى")}</span></td>
                   <td>${esc(PLAN_SOURCES[p.source] || p.source || "—")}</td>
                   <td>الربع ${p.quarter || "—"} / ${p.year || "—"}</td>
                   <td>${esc(deptName(p.departmentId))}</td>
@@ -65,7 +68,7 @@ export function renderPlan(el, nav, refresh) {
                   <td>${statusBadgeFrom(PLAN_STATUS, p.status, ST_ROLE)}</td>
                 </tr>`
               )
-              .join("") || `<tr><td colspan="8">${emptyMsg("لا توجد مبادرات — استخدم التوليد التلقائي أو أضف يدوياً")}</td></tr>`}
+              .join("") || `<tr><td colspan="9">${emptyMsg("لا توجد مبادرات — استخدم التوليد التلقائي أو أضف يدوياً")}</td></tr>`}
           </tbody>
         </table>
       </div>
@@ -75,6 +78,7 @@ export function renderPlan(el, nav, refresh) {
   const rerender = () => renderPlan(el, nav, refresh);
   $("#f-year", el).onchange = (e) => { filters.year = e.target.value; rerender(); };
   $("#f-q", el).onchange = (e) => { filters.quarter = e.target.value; rerender(); };
+  $("#f-type", el).onchange = (e) => { filters.type = e.target.value; rerender(); };
   $("#f-dept", el).onchange = (e) => { filters.dept = e.target.value; rerender(); };
   $("#f-status", el).onchange = (e) => { filters.status = e.target.value; rerender(); };
   $("#add-plan", el)?.addEventListener("click", () => openForm(null, rerender));
@@ -92,6 +96,7 @@ function openForm(item, done) {
     <h2>${isNew ? "إضافة مبادرة" : "تعديل المبادرة"}</h2>
     ${fld("المبادرة / النشاط *", txt("p-title", item?.title))}
     <div class="form-grid">
+      ${fld("نوع المبادرة", sel("p-type", PLAN_TYPES, item?.planType || "OPERATION"))}
       ${fld("السنة", num("p-year", item?.year || year, 2024, 2040))}
       ${fld("الربع المستهدف", sel("p-q", { 1: "الربع الأول", 2: "الربع الثاني", 3: "الربع الثالث", 4: "الربع الرابع" }, String(item?.quarter || 1)))}
       ${fld("الإدارة المعنية", sel("p-dept", deptOptions(), item?.departmentId, { empty: "— اختر —" }))}
@@ -128,6 +133,7 @@ function openForm(item, done) {
     const status = progress >= 100 ? "COMPLETED" : val("p-status", ov);
     const data = {
       title,
+      planType: val("p-type", ov),
       year: Number(val("p-year", ov)) || new Date().getFullYear(),
       quarter: Number(val("p-q", ov)) || 1,
       departmentId: val("p-dept", ov) || null,
@@ -166,48 +172,72 @@ async function autoGenerate(done) {
   const has = (field, id) => existing.some((p) => p[field] === id);
   const candidates = [];
 
-  // 1) متطلبات حرجة/عالية بلا مبادرة
+  const tag = (id) => `AUTO:${id}`; // مفتاح لمنع تكرار المبادرات المولّدة تلقائياً
+
+  // 1) متطلبات حرجة/عالية بلا مبادرة — تحقق التزام (مراقبة)
   for (const r of store.requirements) {
     if (!["CRITICAL", "HIGH"].includes(r.criticality) || r.status === "CANCELLED") continue;
     if (has("requirementId", r.id)) continue;
     candidates.push({
       title: `التحقق من الالتزام بالمتطلب ${r.code} — ${r.title}`.slice(0, 120),
+      planType: "MONITORING",
       source: "REQUIREMENT", requirementId: r.id, riskId: null, monitoringId: null,
       departmentId: r.ownerDeptId || null,
       expectedOutput: "تقرير التزام معتمد بالمتطلب",
     });
   }
-  // 2) مخاطر عالية بلا مبادرة
+  // 2) مخاطر عالية بلا مبادرة — معالجة مخاطر
   for (const k of store.risks) {
     const lvl = riskLevel(k.residualLikelihood ?? k.likelihood, k.residualImpact ?? k.impact);
     if (!["CRITICAL", "HIGH"].includes(lvl.key) || k.status === "CLOSED") continue;
     if (has("riskId", k.id)) continue;
     candidates.push({
       title: `معالجة الخطر ${k.code} — ${k.title}`.slice(0, 120),
+      planType: "RISK_TREATMENT",
       source: "RISK", requirementId: k.requirementId || null, riskId: k.id, monitoringId: null,
       departmentId: k.ownerDeptId || null,
       expectedOutput: "خفض مستوى الخطر المتبقي وتوثيق الضوابط",
     });
   }
-  // 3) نتائج مراقبة غير ملتزمة بلا مبادرة
+  // 3) نتائج مراقبة غير ملتزمة بلا مبادرة — عمليات تصحيح
   for (const m of store.monitoring) {
     if (m.result !== "NON_COMPLIANT" && m.result !== "PARTIAL") continue;
     if (has("monitoringId", m.id)) continue;
     candidates.push({
       title: `متابعة تصحيح نتائج: ${m.name}`.slice(0, 120),
+      planType: "OPERATION",
       source: "MONITORING", requirementId: m.requirementId || null, riskId: m.riskId || null, monitoringId: m.id,
       departmentId: m.targetDeptId || null,
       expectedOutput: "إغلاق الملاحظات وتحقيق الالتزام الكامل",
     });
   }
 
+  // 4) مبادرات خطة شاملة ثابتة (توعية، سياسات، فحص ذاتي، تقرير سنوي) — تُنشأ مرة كل سنة
+  const fixed = [
+    { key: "AWARENESS", planType: "AWARENESS", title: "برنامج توعية وتدريب الالتزام السنوي", output: "تنفيذ حملات توعية وورش تدريبية لجميع الإدارات" },
+    { key: "POLICY", planType: "POLICY", title: "مراجعة وتحديث سياسات وإجراءات الالتزام", output: "اعتماد النسخ المحدثة من السياسات والأدلة" },
+    { key: "SELF_ASSESS", planType: "ASSESSMENT", title: "جولة الفحص الذاتي السنوية للإدارات", output: "استكمال فحوص الالتزام الذاتية لكل الإدارات" },
+    { key: "ANNUAL_REPORT", planType: "REPORTING", title: "إعداد تقرير الالتزام السنوي للإدارة العليا", output: "رفع تقرير الالتزام السنوي المعتمد" },
+    { key: "REG_WATCH", planType: "REGULATORY", title: "متابعة المستجدات التنظيمية والإفصاحات الدورية", output: "تحديث مكتبة الالتزام وتقديم الإفصاحات في مواعيدها" },
+  ];
+  for (const f of fixed) {
+    if (existing.some((p) => p.autoKey === tag(f.key))) continue;
+    candidates.push({
+      title: f.title, planType: f.planType, autoKey: tag(f.key),
+      source: "MANUAL", requirementId: null, riskId: null, monitoringId: null,
+      departmentId: null, expectedOutput: f.output,
+    });
+  }
+
   if (!candidates.length) return toast("لا توجد عناصر جديدة للتوليد — الخطة تغطي كل المصادر الحالية");
-  if (!(await confirmBox(`سيُنشأ ${candidates.length} مبادرة جديدة في خطة ${year} من المتطلبات والمخاطر ونتائج المراقبة. متابعة؟`))) return;
+  if (!(await confirmBox(`سيُنشأ ${candidates.length} مبادرة جديدة في خطة ${year} تغطي المتطلبات والمخاطر والمراقبة إضافةً لمبادرات التوعية والسياسات والفحص الذاتي والتقارير. متابعة؟`))) return;
 
   try {
     const manager = store.users.find((u) => u.role === "COMPLIANCE_MANAGER") || null;
     for (const c of candidates) {
       await db.addRow("planItems", {
+        planType: "OTHER",
+        autoKey: null,
         ...c,
         year,
         quarter: Math.min(4, Math.floor(new Date().getMonth() / 3) + 2),

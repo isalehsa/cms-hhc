@@ -67,7 +67,11 @@ function openCreate(done) {
       ${fld("تاريخ الاستحقاق", dateInp("s-due"))}
     </div>
     ${fld("عنوان الفحص", txt("s-title", "", "يُولَّد تلقائياً إن تُرك فارغاً"))}
-    <h3>الأسئلة (كل سؤال مرتبط بمتطلب)</h3>
+    <div class="row" style="justify-content:space-between;align-items:center">
+      <h3 style="margin:8px 0">الأسئلة (كل سؤال مرتبط بمتطلب)</h3>
+      <button class="secondary small" id="q-auto" title="توليد سؤال لكل متطلب في مكتبة الالتزام مملوك للإدارة المختارة — ثمرة أتمتة تحليل الوثائق">🤖 توليد من مكتبة الالتزام</button>
+    </div>
+    <p class="muted" id="q-auto-hint">اختر الإدارة أولاً ثم «توليد من مكتبة الالتزام» لإنشاء الأسئلة تلقائياً من متطلباتها، أو أضفها يدوياً.</p>
     <div id="q-list"></div>
     <button class="secondary small" id="q-add">＋ إضافة سؤال</button>
     <div class="row" style="margin-top:14px">
@@ -78,23 +82,57 @@ function openCreate(done) {
     { wide: true }
   );
 
-  const addQ = () => {
+  const addQ = (text = "", reqId = "") => {
     const div = document.createElement("div");
     div.className = "q-row card sub";
     div.innerHTML = `
       <div class="row">
-        <input type="text" class="grow q-text" placeholder="نص السؤال…" />
+        <input type="text" class="grow q-text" placeholder="نص السؤال…" value="${esc(text)}" />
         <button class="danger small q-del">✕</button>
       </div>
       <select class="q-req"><option value="">— المتطلب المرتبط —</option>
-        ${reqOptions().map((o) => `<option value="${esc(o.id)}">${esc(o.name)}</option>`).join("")}
+        ${reqOptions().map((o) => `<option value="${esc(o.id)}" ${o.id === reqId ? "selected" : ""}>${esc(o.name)}</option>`).join("")}
       </select>`;
     $("#q-list", ov).appendChild(div);
     div.querySelector(".q-del").onclick = () => div.remove();
+    return div;
   };
   addQ();
-  $("#q-add", ov).onclick = addQ;
+  $("#q-add", ov).onclick = () => addQ();
   $("#s-cancel", ov).onclick = () => ov.remove();
+
+  // توليد الأسئلة تلقائياً من متطلبات مكتبة الالتزام المملوكة للإدارة المختارة
+  $("#q-auto", ov).onclick = () => {
+    const deptId = val("s-dept", ov);
+    if (!deptId) return toast("اختر الإدارة المستهدفة أولاً", true);
+    const reqs = store.requirements.filter(
+      (r) => r.ownerDeptId === deptId && r.status !== "CANCELLED"
+    );
+    if (!reqs.length) return toast("لا توجد متطلبات مسجلة لهذه الإدارة في مكتبة الالتزام", true);
+    // نُبقي الأسئلة المعبّأة يدوياً ونتجاهل الصفوف الفارغة، ونمنع تكرار المتطلب
+    const existingReqIds = new Set(
+      [...ov.querySelectorAll(".q-row")]
+        .filter((row) => row.querySelector(".q-text").value.trim())
+        .map((row) => row.querySelector(".q-req").value)
+        .filter(Boolean)
+    );
+    [...ov.querySelectorAll(".q-row")].forEach((row) => {
+      if (!row.querySelector(".q-text").value.trim()) row.remove();
+    });
+    let added = 0;
+    for (const r of reqs) {
+      if (existingReqIds.has(r.id)) continue;
+      addQ(`هل تلتزم الإدارة بمتطلب «${r.title}» (${r.code})؟`, r.id);
+      added++;
+    }
+    if (!added) return toast("جميع متطلبات هذه الإدارة مضافة بالفعل", true);
+    if (!val("s-title", ov)) {
+      // عنوان مقترح
+      const t = $("#s-title", ov);
+      if (t) t.value = `الفحص الذاتي — ${deptName(deptId)} — ${val("s-period", ov) || new Date().getFullYear()}`;
+    }
+    toast(`أُضيف ${added} سؤالاً من مكتبة الالتزام`);
+  };
 
   const save = async (send) => {
     const deptId = val("s-dept", ov);

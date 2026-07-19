@@ -15,6 +15,7 @@ import { renderPlan } from "./views/plan.js";
 import { renderAssessments } from "./views/assessments.js";
 import { renderFindings } from "./views/findings.js";
 import { renderCorrespondence } from "./views/correspondence.js";
+import { renderDisclosures } from "./views/disclosures.js";
 import { renderReports } from "./views/reports.js";
 import { settings, aiEnabled } from "./views/regulations.js";
 import { renderAdmin } from "./views/admin.js";
@@ -29,6 +30,7 @@ const VIEWS = {
   assessments: { icon: "📋", label: "الفحص الذاتي", render: renderAssessments },
   findings: { icon: "🛠", label: "الملاحظات والتصحيح", render: renderFindings },
   correspondence: { icon: "📨", label: "سجل المراسلات", render: renderCorrespondence },
+  disclosures: { icon: "🗂", label: "سجل الإفصاحات", render: renderDisclosures },
   // موسوعة الوثائق مدمجة داخل مكتبة الالتزام كتبويب فرعي — المسار يبقى للروابط القديمة
   regulations: {
     icon: "📚", label: "الوثائق", hidden: true,
