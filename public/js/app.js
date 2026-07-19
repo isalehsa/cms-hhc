@@ -155,13 +155,17 @@ function openSettings() {
       بدون مفتاح يعمل المحلل النصي الاحتياطي.</p>
     ${fld("مفتاح Claude API", `<input type="password" id="set-key" placeholder="sk-ant-..." value="${esc(settings.apiKey)}" />`)}
     ${fld("النموذج", txt("set-model", settings.model, DEFAULT_MODEL))}
+    ${fld("وسيط API (اختياري)", `<input type="text" id="set-base" placeholder="https://api.anthropic.com" value="${esc(settings.apiBase)}" />`)}
+    <p class="muted" style="margin-top:2px">استخدمه فقط إذا ظهر خطأ «فشل الاتصال بالشبكة» (Failed to fetch) عند التحليل —
+      يعني أن شبكتك أو مانع الإعلانات يحجب <code>api.anthropic.com</code>. اترك الحقل فارغاً للاتصال المباشر.
+      ⚠️ الوسيط يمرّر مفتاحك، فلا تستخدم إلا وسيطاً تثق به.</p>
     <div class="row" style="margin-top:14px">
       <button id="set-save">حفظ</button>
       <button class="secondary" id="set-cancel">إلغاء</button>
     </div>`);
   $("#set-cancel", ov).onclick = () => ov.remove();
   $("#set-save", ov).onclick = () => {
-    settings.save($("#set-key", ov).value.trim(), val("set-model", ov));
+    settings.save($("#set-key", ov).value.trim(), val("set-model", ov), val("set-base", ov));
     ov.remove();
     toast(aiEnabled() ? "حُفظ — التحليل الذكي مفعّل" : "حُفظ — التحليل الذكي غير مفعّل");
   };
