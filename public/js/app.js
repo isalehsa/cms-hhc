@@ -2,7 +2,7 @@
 import { configReady } from "./firebase-config.js";
 import * as db from "./db.js";
 import * as authApi from "./auth.js";
-import { canEdit, canApprove } from "./auth.js";
+import { canEdit, canApprove, isClusterOfficer } from "./auth.js";
 import { store, loadAll, reload } from "./state.js";
 import { $, esc, toast, modal, fld, txt, val, spinnerHtml, fmtDate, initTooltips } from "./ui.js";
 import { runAutoSync } from "./sync.js";
@@ -17,6 +17,8 @@ import { renderFindings } from "./views/findings.js";
 import { renderCorrespondence } from "./views/correspondence.js";
 import { renderDisclosures } from "./views/disclosures.js";
 import { renderTraining } from "./views/training.js";
+import { renderMaturity } from "./views/maturity.js";
+import { renderDirectory } from "./views/directory.js";
 import { renderReports } from "./views/reports.js";
 import { settings, aiEnabled } from "./views/regulations.js";
 import { renderAdmin } from "./views/admin.js";
@@ -33,6 +35,8 @@ const VIEWS = {
   findings: { icon: "🛠", label: "الملاحظات والتصحيح", render: renderFindings },
   correspondence: { icon: "📨", label: "سجل المراسلات", render: renderCorrespondence },
   disclosures: { icon: "🗂", label: "سجل الإفصاحات", render: renderDisclosures },
+  maturity: { icon: "📊", label: "تقييم نضج التجمعات", render: renderMaturity, clusterVisible: true },
+  directory: { icon: "📇", label: "دليل التواصل", render: renderDirectory },
   // موسوعة الوثائق مدمجة داخل مكتبة الالتزام كتبويب فرعي — المسار يبقى للروابط القديمة
   regulations: {
     icon: "📚", label: "الوثائق", hidden: true,
@@ -47,6 +51,8 @@ const main = $("#app");
 
 function nav(view, params = {}) {
   currentView = VIEWS[view] ? view : "dashboard";
+  // مسؤول التزام التجمع محصور في الوحدات المتاحة له (التقييم الذاتي والنتائج)
+  if (isClusterOfficer(store.user) && !VIEWS[currentView]?.clusterVisible) currentView = "maturity";
   location.hash = currentView;
   renderShellNav();
   const r = VIEWS[currentView].render;
@@ -68,7 +74,12 @@ function renderShell() {
     </div>
     <nav id="side-nav">
       ${Object.entries(VIEWS)
-        .filter(([k, v]) => !v.hidden && (k !== "admin" || canApprove(u)))
+        .filter(([k, v]) => {
+          if (v.hidden) return false;
+          // مسؤول التزام التجمع يرى فقط أداة التقييم الذاتي والنتائج الربعية
+          if (isClusterOfficer(u)) return v.clusterVisible === true;
+          return k !== "admin" || canApprove(u);
+        })
         .map(([k, v]) => `<button class="nav-item" data-view="${k}"><span>${v.icon}</span> ${v.label}</button>`)
         .join("")}
     </nav>
@@ -233,7 +244,8 @@ function init() {
       store.regulations = await db.listRegulations().catch(() => []);
       renderShell();
       const hash = location.hash.replace("#", "");
-      nav(VIEWS[hash] ? hash : "dashboard");
+      const home = isClusterOfficer(user) ? "maturity" : "dashboard";
+      nav(VIEWS[hash] ? hash : home);
       toast(`مرحباً، ${user.name}`);
       // تحديث سجل المخاطر آلياً في الخلفية وفق الإضافات الحديثة في المكتبة والتحليلات
       if (canEdit(user)) {

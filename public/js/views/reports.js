@@ -7,6 +7,7 @@ import {
   RISK_STATUS, MON_TYPES, MON_FREQ, MON_STATUS, MON_RESULT, NC_LEVELS,
   PLAN_STATUS, PLAN_SOURCES, PLAN_TYPES, SA_STATUS, SA_ANSWERS, FND_SEVERITY, FND_STATUS, FND_SOURCES,
   COR_DIRECTION, COR_PRIORITY, COR_STATUS, DISCLOSURE_TYPES, DISCLOSURE_STATUS, TRAINING_TYPES, TRAINING_STATUS,
+  MATURITY_MODEL, MATURITY_STATUS, maturityLevel,
 } from "../meta.js";
 
 // ---------- تعريف التقارير ----------
@@ -21,6 +22,7 @@ const REPORTS = [
   { key: "correspondence", icon: "📨", title: "تقرير سجل المراسلات", desc: "المراسلات الواردة والصادرة مع الجهات وحالات الرد عليها" },
   { key: "disclosures", icon: "🗂", title: "تقرير سجل الإفصاحات", desc: "إفصاحات تعارض المصالح والهدايا والإفصاحات المالية وقرارات معالجتها" },
   { key: "training", icon: "🎓", title: "تقرير التدريب والتوعية", desc: "برامج التدريب وحملات التوعية وأعداد المتدربين ونسب الإنجاز" },
+  { key: "maturity", icon: "📊", title: "تقرير نضج التجمعات الصحية", desc: "نتائج تقييم نضج الالتزام بالتجمعات حسب المحاور والمستوى" },
 ];
 
 export function renderReports(el) {
@@ -142,6 +144,33 @@ function tableFor(key) {
           t.targetCount ? Math.round(((t.completedCount || 0) / t.targetCount) * 100) : 0,
           TRAINING_STATUS[t.status] || t.status,
         ]),
+      };
+    case "maturity": {
+      const critScore = (c, useReview) => (useReview && c.reviewScore != null ? c.reviewScore : (c.selfScore || 0));
+      const pctOf = (m) => {
+        const crits = (m.domains || []).flatMap((d) => d.criteria);
+        const max = crits.length * 3;
+        return max ? Math.round((crits.reduce((s, c) => s + critScore(c, m.status === "REVIEWED"), 0) / max) * 100) : 0;
+      };
+      return {
+        head: ["الرقم", "التجمع", "الفترة", ...MATURITY_MODEL.map((d) => d.name), "الإجمالي %", "المستوى", "الحالة"],
+        rows: store.maturity.map((m) => {
+          const useReview = m.status === "REVIEWED";
+          const domCells = MATURITY_MODEL.map((dm) => {
+            const dom = (m.domains || []).find((d) => d.name === dm.name);
+            if (!dom) return "—";
+            const max = dom.criteria.length * 3;
+            return max ? Math.round((dom.criteria.reduce((s, c) => s + critScore(c, useReview), 0) / max) * 100) + "%" : "—";
+          });
+          const tot = pctOf(m);
+          return [m.code, deptName(m.clusterId), `ر${m.quarter}/${m.year}`, ...domCells, tot, maturityLevel(tot).label, MATURITY_STATUS[m.status] || m.status];
+        }),
+      };
+    }
+    case "directory":
+      return {
+        head: ["التجمع", "الاسم", "المسمى", "الجوال", "البريد الإلكتروني", "البريد الرسمي للإدارة", "ملاحظات"],
+        rows: store.directory.map((c) => [c.cluster || "", c.name || "", c.title || "", c.mobile || "", c.email || "", c.officialEmail || "", c.comment || ""]),
       };
     default:
       return { head: [], rows: [] };

@@ -50,6 +50,7 @@ async function buildProfile(fbUser) {
 export const canEdit = (u) => EDITOR_ROLES.includes(u?.role);
 export const canApprove = (u) => APPROVER_ROLES.includes(u?.role);
 export const isDeptOwner = (u) => u?.role === "DEPT_OWNER";
+export const isClusterOfficer = (u) => u?.role === "CLUSTER_OFFICER";
 
 export async function login(email, password) {
   try {

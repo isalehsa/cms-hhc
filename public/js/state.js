@@ -12,6 +12,8 @@ export const store = {
   correspondence: [],
   disclosures: [],
   trainings: [],
+  maturity: [],
+  directory: [],
   departments: [],
   authorities: [],
   users: [],
@@ -22,7 +24,7 @@ export const store = {
 
 export async function loadAll(force = false) {
   if (store.loaded && !force) return store;
-  const [requirements, risks, monitoring, planItems, assessments, findings, correspondence, disclosures, trainings, departments, authorities, users, notifications] =
+  const [requirements, risks, monitoring, planItems, assessments, findings, correspondence, disclosures, trainings, maturity, directory, departments, authorities, users, notifications] =
     await Promise.all([
       listCol("requirements", "code").catch(() => []),
       listCol("risks", "code").catch(() => []),
@@ -33,13 +35,15 @@ export async function loadAll(force = false) {
       listCol("correspondence", "code").catch(() => []),
       listCol("disclosures", "code").catch(() => []),
       listCol("trainings", "code").catch(() => []),
+      listCol("maturity", "code").catch(() => []),
+      listCol("directory").catch(() => []),
       listCol("departments", "name").catch(() => []),
       listCol("authorities", "name").catch(() => []),
       listCol("users").catch(() => []),
       listCol("notifications").catch(() => []),
     ]);
   Object.assign(store, {
-    requirements, risks, monitoring, planItems, assessments, findings, correspondence, disclosures, trainings,
+    requirements, risks, monitoring, planItems, assessments, findings, correspondence, disclosures, trainings, maturity, directory,
     departments, authorities, users, notifications, loaded: true,
   });
   return store;
@@ -47,7 +51,7 @@ export async function loadAll(force = false) {
 
 // إعادة تحميل مجموعة واحدة بعد التعديل
 export async function reload(...cols) {
-  const orderFields = { requirements: "code", risks: "code", monitoring: "code", findings: "code", correspondence: "code", disclosures: "code", trainings: "code", departments: "name", authorities: "name" };
+  const orderFields = { requirements: "code", risks: "code", monitoring: "code", findings: "code", correspondence: "code", disclosures: "code", trainings: "code", maturity: "code", departments: "name", authorities: "name" };
   await Promise.all(
     cols.map(async (c) => {
       store[c] = await listCol(c, orderFields[c] || null).catch(() => []);
@@ -82,4 +86,7 @@ export const deptOptions = () =>
     .sort((a, b) => (a.sector || "").localeCompare(b.sector || "", "ar") || (a.name || "").localeCompare(b.name || "", "ar"))
     .map((d) => ({ id: d.id, name: d.sector && d.type !== "SECTOR" ? `${d.sector} › ${d.name}` : d.name }));
 export const authOptions = () => store.authorities.map((a) => ({ id: a.id, name: a.name }));
+// التجمعات الصحية = الإدارات من نوع CLUSTER
+export const clusterOptions = () =>
+  store.departments.filter((d) => d.type === "CLUSTER" && d.active !== false).map((d) => ({ id: d.id, name: d.name }));
 export const userOptions = () => store.users.filter((u) => u.active !== false).map((u) => ({ id: u.id, name: u.name || u.email }));
