@@ -74,6 +74,12 @@ export const monLabel = (id) => {
 export const reqOptions = () => store.requirements.map((r) => ({ id: r.id, name: `${r.code} — ${r.title}` }));
 export const riskOptions = () => store.risks.map((r) => ({ id: r.id, name: `${r.code} — ${r.title}` }));
 export const monOptions = () => store.monitoring.map((m) => ({ id: m.id, name: `${m.code} — ${m.name}` }));
-export const deptOptions = () => store.departments.map((d) => ({ id: d.id, name: d.name }));
+// خيارات الإدارات: تستبعد المعطّلة، وتُرتَّب حسب القطاع ثم الاسم لتجميع كل قطاع معاً
+export const deptOptions = () =>
+  store.departments
+    .filter((d) => d.active !== false)
+    .slice()
+    .sort((a, b) => (a.sector || "").localeCompare(b.sector || "", "ar") || (a.name || "").localeCompare(b.name || "", "ar"))
+    .map((d) => ({ id: d.id, name: d.sector && d.type !== "SECTOR" ? `${d.sector} › ${d.name}` : d.name }));
 export const authOptions = () => store.authorities.map((a) => ({ id: a.id, name: a.name }));
 export const userOptions = () => store.users.filter((u) => u.active !== false).map((u) => ({ id: u.id, name: u.name || u.email }));

@@ -4,7 +4,7 @@ import * as db from "../db.js";
 import {
   $, esc, toast, modal, confirmBox, fld, txt, sel, val, fmtDate, emptyMsg,
 } from "../ui.js";
-import { ROLES } from "../meta.js";
+import { ROLES, DEPT_TYPES, ORG_SECTORS, HEALTH_CLUSTERS } from "../meta.js";
 import { canApprove, createAuthUser } from "../auth.js";
 
 export function renderAdmin(el, nav, refresh) {
@@ -44,6 +44,34 @@ export function renderAdmin(el, nav, refresh) {
     </section>
 
     <section class="card">
+      <div class="row" style="justify-content:space-between;align-items:flex-start">
+        <div><h2>🏢 الإدارات والقطاعات (${store.departments.length})</h2>
+          <p class="muted">الهيكل التنظيمي المستخدم في ربط المتطلبات والمخاطر والأنشطة بالإدارات.</p></div>
+        <div class="row">
+          <button class="secondary" id="seed-org" title="إنشاء قطاعات وإدارات شركة الصحة القابضة وإدارات التزام التجمعات الصحية العشرين دفعة واحدة">⚙ استيراد الهيكل الافتراضي</button>
+          <button id="add-dept" title="إضافة إدارة أو قطاع جديد">＋ إضافة إدارة</button>
+        </div>
+      </div>
+      <div style="overflow-x:auto">
+        <table>
+          <thead><tr><th>الإدارة / القطاع</th><th>القطاع التابع له</th><th>النوع</th><th>الحالة</th><th></th></tr></thead>
+          <tbody>
+            ${[...store.departments]
+              .sort((a, b) => (a.sector || "").localeCompare(b.sector || "", "ar") || (a.name || "").localeCompare(b.name || "", "ar"))
+              .map((d) => `<tr>
+                <td><strong>${esc(d.name)}</strong></td>
+                <td class="muted">${esc(d.sector || "—")}</td>
+                <td>${esc(DEPT_TYPES[d.type] || "إدارة")}</td>
+                <td>${d.active !== false ? '<span class="lvl lvl-good"><span class="dot"></span>نشطة</span>' : '<span class="lvl lvl-neutral"><span class="dot"></span>معطّلة</span>'}</td>
+                <td><button class="secondary small" data-editdept="${d.id}" title="تعديل">تعديل</button></td>
+              </tr>`)
+              .join("") || `<tr><td colspan="5">${emptyMsg("لا توجد إدارات — استخدم «استيراد الهيكل الافتراضي» أو أضف يدوياً")}</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
       <h2>📜 سجل التدقيق (آخر 100 حركة)</h2>
       <div style="overflow-x:auto">
         <table>
@@ -57,6 +85,11 @@ export function renderAdmin(el, nav, refresh) {
   $("#add-user", el).onclick = () => openUserForm(null, rerender);
   el.querySelectorAll("[data-edit]").forEach((b) =>
     b.addEventListener("click", () => openUserForm(store.users.find((u) => u.id === b.dataset.edit), rerender))
+  );
+  $("#add-dept", el)?.addEventListener("click", () => openDeptForm(null, rerender));
+  $("#seed-org", el)?.addEventListener("click", () => seedOrgStructure(rerender));
+  el.querySelectorAll("[data-editdept]").forEach((b) =>
+    b.addEventListener("click", () => openDeptForm(store.departments.find((d) => d.id === b.dataset.editdept), rerender))
   );
 
   // سجل التدقيق يُحمَّل عند الطلب (قد يكون كبيراً)
@@ -77,6 +110,91 @@ export function renderAdmin(el, nav, refresh) {
     const body = $("#audit-body", el);
     if (body) body.innerHTML = rows || `<tr><td colspan="5">${emptyMsg("لا توجد حركات")}</td></tr>`;
   }).catch(() => {});
+}
+
+// ---------- إدارة الإدارات والقطاعات ----------
+function openDeptForm(d, done) {
+  const isNew = !d;
+  const sectors = [...new Set(store.departments.map((x) => x.sector).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ar"));
+  const ov = modal(`
+    <h2>${isNew ? "إضافة إدارة / قطاع" : `تعديل ${esc(d.name)}`}</h2>
+    <div class="form-grid">
+      ${fld("الاسم *", txt("d-name", d?.name))}
+      ${fld("القطاع التابع له", `<input type="text" id="d-sector" list="sector-list" value="${esc(d?.sector || "")}" placeholder="اكتب أو اختر قطاعاً" />
+        <datalist id="sector-list">${sectors.map((s) => `<option value="${esc(s)}">`).join("")}</datalist>`)}
+      ${fld("النوع", sel("d-type", DEPT_TYPES, d?.type || "DEPARTMENT"))}
+      ${fld("الحالة", sel("d-active", { yes: "نشطة", no: "معطّلة" }, d?.active === false ? "no" : "yes"))}
+    </div>
+    <div class="row" style="margin-top:14px">
+      <button id="d-save">حفظ</button>
+      ${!isNew ? '<button class="danger" id="d-del" title="حذف الإدارة">حذف</button>' : ""}
+      <button class="secondary" id="d-cancel">إلغاء</button>
+    </div>`);
+  $("#d-cancel", ov).onclick = () => ov.remove();
+  $("#d-del", ov)?.addEventListener("click", async () => {
+    ov.remove();
+    const used = store.requirements.some((r) => r.ownerDeptId === d.id) || store.risks.some((r) => r.ownerDeptId === d.id);
+    if (!(await confirmBox(`حذف «${d.name}»؟${used ? " تنبيه: هناك سجلات مرتبطة بها ستفقد الربط." : ""}`))) return;
+    await db.removeRow("departments", d.id);
+    await db.audit("DELETE", "Department", d.id, `حذف إدارة: ${d.name}`);
+    await reload("departments");
+    toast("تم الحذف");
+    done();
+  });
+  $("#d-save", ov).onclick = async () => {
+    const name = val("d-name", ov);
+    if (!name) return toast("الاسم إلزامي", true);
+    const data = {
+      name,
+      sector: val("d-sector", ov) || null,
+      type: val("d-type", ov),
+      active: val("d-active", ov) === "yes",
+    };
+    try {
+      if (isNew) {
+        await db.addRow("departments", { ...data, createdAt: db.now() });
+        await db.audit("CREATE", "Department", null, `إضافة إدارة: ${name}`);
+      } else {
+        await db.updateRow("departments", d.id, data);
+        await db.audit("UPDATE", "Department", d.id, `تعديل إدارة: ${name}`);
+      }
+      await reload("departments");
+      ov.remove();
+      toast("تم الحفظ");
+      done();
+    } catch (err) {
+      toast(err.message, true);
+    }
+  };
+}
+
+// بذر الهيكل التنظيمي: القطاعات وإداراتها + إدارات التزام التجمعات الصحية — دون تكرار الموجود
+async function seedOrgStructure(done) {
+  const existing = new Set(store.departments.map((d) => (d.name || "").trim()));
+  const rows = [];
+  const add = (name, sector, type) => {
+    if (existing.has(name.trim())) return;
+    existing.add(name.trim());
+    rows.push({ name, sector: sector || null, type, active: true, createdAt: db.now() });
+  };
+  for (const s of ORG_SECTORS) {
+    if (s.type !== "OFFICE") add(s.name, null, "SECTOR"); // القطاع نفسه كوحدة
+    for (const dep of s.depts) add(dep, s.name, s.type || "DEPARTMENT");
+  }
+  for (const cluster of HEALTH_CLUSTERS) add(`إدارة الالتزام — ${cluster}`, "التجمعات الصحية", "CLUSTER");
+
+  if (!rows.length) return toast("الهيكل موجود بالكامل — لا شيء جديد للاستيراد");
+  if (!(await confirmBox(`سيُضاف ${rows.length} وحدة تنظيمية (قطاعات، إدارات، وإدارات التزام التجمعات الصحية العشرين) دون المساس بالموجود. متابعة؟`))) return;
+  try {
+    toast("جاري استيراد الهيكل…");
+    await db.bulkAdd("departments", rows);
+    await db.audit("CREATE", "Department", null, `استيراد الهيكل التنظيمي الافتراضي (${rows.length} وحدة)`);
+    await reload("departments");
+    toast(`اكتمل الاستيراد — أُضيف ${rows.length} وحدة تنظيمية`);
+    done();
+  } catch (err) {
+    toast(err.message, true);
+  }
 }
 
 function openUserForm(u, done) {
