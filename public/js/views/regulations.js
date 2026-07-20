@@ -3,7 +3,7 @@
 import { store, authName, authOptions, reqLabel } from "../state.js";
 import * as db from "../db.js";
 import {
-  $, esc, toast, modal, confirmBox, fld, txt, area, val,
+  $, esc, toast, modal, confirmBox, fld, txt, area, sel, val,
   fmtDate, emptyMsg, spinnerHtml, keepFocus,
 } from "../ui.js";
 import { DEPARTMENTS, RISK_LEVELS, APPLICABILITY, DOC_CATEGORIES, DOC_SECTORS } from "../meta.js";
