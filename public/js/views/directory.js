@@ -28,10 +28,12 @@ const waLink = (raw, msg) => `https://wa.me/${waNumber(raw)}${msg ? `?text=${enc
 export function renderDirectory(el, nav, refresh) {
   const editable = canEdit(store.user);
   const all = store.directory;
-  const clusters = [...new Set([...HEALTH_CLUSTERS, ...all.map((c) => c.cluster).filter(Boolean)])];
+  // قائمة الفلتر من التجمعات الموجودة فعلياً في البيانات فقط (بعد إزالة المسافات) لتطابق الجهات
+  const clusters = [...new Set(all.map((c) => (c.cluster || "").trim()).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, "ar"));
   const rows = all.filter((c) => {
     if (filters.search && !`${c.name || ""} ${c.title || ""} ${c.cluster || ""} ${c.email || ""} ${c.mobile || ""}`.includes(filters.search)) return false;
-    if (filters.cluster && c.cluster !== filters.cluster) return false;
+    if (filters.cluster && (c.cluster || "").trim() !== filters.cluster) return false;
     return true;
   });
   // نُبقي فقط المحدد الظاهر
@@ -138,7 +140,9 @@ export function renderDirectory(el, nav, refresh) {
 
 function openForm(c, done) {
   const isNew = !c;
-  const clusters = [...new Set([...HEALTH_CLUSTERS, ...store.directory.map((x) => x.cluster).filter(Boolean)])];
+  // التجمعات الموجودة في البيانات أولاً (لتوحيد التسمية)، ثم قائمة التجمعات الرسمية كخيار احتياطي
+  const existing = [...new Set(store.directory.map((x) => (x.cluster || "").trim()).filter(Boolean))];
+  const clusters = [...existing, ...HEALTH_CLUSTERS.filter((h) => !existing.includes(h))];
   const ov = modal(`
     <h2>${isNew ? "إضافة جهة اتصال" : `تعديل ${esc(c.name || "")}`}</h2>
     <div class="form-grid">
