@@ -23,14 +23,19 @@ const local = {
   analyzing: {},
 };
 
+// نظّف أي مفتاح سرّي بقي مخزَّناً على القرص من إصدار سابق (كان في localStorage)
+try { localStorage.removeItem("chcc_api_key"); } catch { /* لا شيء */ }
+
 export const settings = {
-  get apiKey() { return localStorage.getItem("chcc_api_key") || ""; },
+  // المفتاح سرّي: يُحفظ في sessionStorage فقط — يزول بإغلاق التبويب ولا يبقى على القرص،
+  // ما يقلّص نافذة تعرّضه للسرقة. الحل الكامل هو تمرير الطلبات عبر وسيط خادمي يحفظ المفتاح.
+  get apiKey() { return sessionStorage.getItem("chcc_api_key") || ""; },
   get model() { return localStorage.getItem("chcc_model") || DEFAULT_MODEL; },
   // وسيط API اختياري لمن تحجب شبكته api.anthropic.com — يُمرِّر الطلب كما هو
   get apiBase() { return localStorage.getItem("chcc_api_base") || ""; },
   save(apiKey, model, apiBase) {
-    if (apiKey) localStorage.setItem("chcc_api_key", apiKey);
-    else localStorage.removeItem("chcc_api_key");
+    if (apiKey) sessionStorage.setItem("chcc_api_key", apiKey);
+    else sessionStorage.removeItem("chcc_api_key");
     if (model && model !== DEFAULT_MODEL) localStorage.setItem("chcc_model", model);
     else localStorage.removeItem("chcc_model");
     if (apiBase) localStorage.setItem("chcc_api_base", apiBase.trim());

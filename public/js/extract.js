@@ -2,6 +2,8 @@
 // ملفات PDF بلا طبقة نصية (ممسوحة ضوئياً) تُعالج تلقائياً بتقنية OCR (tesseract.js)
 // المكتبات: pdf.js (تُحمَّل عند الحاجة) + mammoth و Tesseract (سكربتات عامة من index.html)
 
+// إصدار مثبّت (لا نطاق) لتقليل خطر سلسلة التوريد. ملاحظة: لا يمكن فرض SRI على
+// import() الديناميكي؛ الحل الأمتن هو استضافة الملف محلياً ضمن التطبيق.
 const PDFJS_URL = "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs";
 const PDFJS_WORKER_URL =
   "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs";

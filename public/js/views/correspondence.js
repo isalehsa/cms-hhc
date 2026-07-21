@@ -3,7 +3,7 @@
 import { store, reload, deptName, authName, userName, reqLabel, deptOptions, authOptions, userOptions, reqOptions } from "../state.js";
 import * as db from "../db.js";
 import {
-  $, esc, toast, modal, confirmBox, fld, txt, area, sel, dateInp, val,
+  $, esc, safeUrl, toast, modal, confirmBox, fld, txt, area, sel, dateInp, val,
   fmtDate, daysUntil, isoFromInput, statusBadgeFrom, emptyMsg, keepFocus,
 } from "../ui.js";
 import { COR_DIRECTION, COR_PRIORITY, COR_STATUS } from "../meta.js";
@@ -193,7 +193,7 @@ export function openDetail(id, nav, done) {
     ${c.requirementId ? `<p><strong>المتطلب المرتبط:</strong> <span class="link-item" data-nav="library">📖 ${esc(reqLabel(c.requirementId))}</span></p>` : ""}
     ${c.summary ? `<p class="pre-line"><strong>الملخص:</strong> ${esc(c.summary)}</p>` : ""}
     ${c.replyNotes ? `<p class="pre-line"><strong>الرد / الإجراء:</strong> ${esc(c.replyNotes)}</p>` : ""}
-    ${c.attachmentUrl ? `<p>📎 <a href="${esc(c.attachmentUrl)}" target="_blank" rel="noopener">المرفق</a></p>` : ""}
+    ${c.attachmentUrl ? `<p>📎 <a href="${safeUrl(c.attachmentUrl)}" target="_blank" rel="noopener">المرفق</a></p>` : ""}
     <div class="row" style="margin-top:14px">
       ${editable ? `
         <button id="c-edit" title="تعديل بيانات هذه المراسلة">تعديل</button>

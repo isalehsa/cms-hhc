@@ -2,7 +2,7 @@
 import { store, reload, deptName, authName, deptOptions, authOptions } from "../state.js";
 import * as db from "../db.js";
 import {
-  $, esc, toast, modal, confirmBox, fld, txt, area, sel, dateInp, val,
+  $, esc, safeUrl, toast, modal, confirmBox, fld, txt, area, sel, dateInp, val,
   fmtDate, daysUntil, isoFromInput, levelBadge, statusBadgeFrom, emptyMsg, chip, keepFocus,
 } from "../ui.js";
 import { REQ_TYPES, REQ_CATEGORIES, CRITICALITY, REQ_STATUS } from "../meta.js";
@@ -262,7 +262,7 @@ export function openDetail(id, nav, done) {
     ${r.regulationId ? `<p class="muted">📚 بند منعكس من الوثيقة: <strong>${esc(store.regulations.find((x) => x.id === r.regulationId)?.name || "وثيقة محذوفة")}</strong>${r.sourceKey ? ` — ${esc(r.sourceKey.split("::")[1] || "")}` : ""}</p>` : ""}
     ${r.summary ? `<p class="pre-line">${esc(r.summary)}</p>` : ""}
     ${r.penalty ? `<p><span class="penalty-chip">⚖ ${esc(r.penalty)}</span></p>` : ""}
-    ${r.attachmentUrl ? `<p>📎 <a href="${esc(r.attachmentUrl)}" target="_blank" rel="noopener">المرفق</a></p>` : ""}
+    ${r.attachmentUrl ? `<p>📎 <a href="${safeUrl(r.attachmentUrl)}" target="_blank" rel="noopener">المرفق</a></p>` : ""}
     ${r.approvedById ? `<p class="muted">✔ معتمد</p>` : editable && canApprove(user) ? '<button class="secondary small" id="d-approve">✔ اعتماد المتطلب</button>' : '<p class="muted">بانتظار الاعتماد</p>'}
 
     <div class="grid-2" style="margin-top:14px">

@@ -1,7 +1,8 @@
 rules_version = '2';
 
 // قواعد أمان نظام إدارة الالتزام (CMS)
-// القراءة: أي مستخدم مسجَّل دخول
+// القراءة: مستخدم مسجَّل دخول له وثيقة دور نشطة في users/{uid} فقط
+//   (يمنع مَن يسجّل ذاتياً بلا دور من الاطلاع على البيانات الحساسة)
 // الكتابة: حسب الدور في وثيقة users/{uid}:
 //   ADMIN / COMPLIANCE_MANAGER / SPECIALIST — تحرير كامل للمحتوى
 //   DEPT_OWNER — تحديث الفحص الذاتي والملاحظات الخاصة بإدارته فقط
@@ -25,126 +26,158 @@ service cloud.firestore {
       return hasRoleDoc() ? me().role.upper() : 'AUDITOR';
     }
 
+    // مستخدم موثّق له وثيقة دور غير معطَّلة — الحد الأدنى للقراءة
+    function activeUser() {
+      return signedIn() && hasRoleDoc() && me().get('active', true) != false;
+    }
+
     function isEditor() {
-      return signedIn() && myRole() in ['ADMIN', 'COMPLIANCE_MANAGER', 'SPECIALIST'];
+      return activeUser() && myRole() in ['ADMIN', 'COMPLIANCE_MANAGER', 'SPECIALIST'];
     }
 
     function isApprover() {
-      return signedIn() && myRole() in ['ADMIN', 'COMPLIANCE_MANAGER'];
+      return activeUser() && myRole() in ['ADMIN', 'COMPLIANCE_MANAGER'];
+    }
+
+    function isAdmin() {
+      return activeUser() && myRole() == 'ADMIN';
     }
 
     function isDeptOwnerOf(deptId) {
-      return signedIn() && myRole() == 'DEPT_OWNER' && hasRoleDoc() && me().departmentId == deptId;
+      return activeUser() && myRole() == 'DEPT_OWNER' && me().departmentId == deptId;
+    }
+
+    function isClusterOfficerOf(clusterId) {
+      return activeUser() && myRole() == 'CLUSTER_OFFICER' && me().departmentId == clusterId;
+    }
+
+    // الدور المطلوب في المستند بعد الكتابة (افتراضه AUDITOR إن غاب)
+    function newRole() {
+      return request.resource.data.get('role', 'AUDITOR').upper();
     }
 
     match /users/{uid} {
-      allow read: if signedIn();
-      allow write: if isApprover();
+      allow read: if activeUser();
+      // منح/تعديل دور ADMIN محصور بـ ADMIN وحده — يمنع مدير الالتزام من ترقية نفسه
+      allow create, update: if isApprover() && (isAdmin() || newRole() != 'ADMIN');
+      allow delete: if isApprover() && (isAdmin() || resource.data.get('role', 'AUDITOR').upper() != 'ADMIN');
     }
 
     match /departments/{id} {
-      allow read: if signedIn();
+      allow read: if activeUser();
       allow write: if isApprover();
     }
 
     match /authorities/{id} {
-      allow read: if signedIn();
+      allow read: if activeUser();
       allow write: if isEditor();
     }
 
     match /requirements/{id} {
-      allow read: if signedIn();
+      allow read: if activeUser();
       allow write: if isEditor();
     }
 
     match /risks/{id} {
-      allow read: if signedIn();
+      allow read: if activeUser();
       allow write: if isEditor();
     }
 
     match /monitoring/{id} {
-      allow read: if signedIn();
+      allow read: if activeUser();
       allow write: if isEditor();
     }
 
     match /planItems/{id} {
-      allow read: if signedIn();
+      allow read: if activeUser();
       allow write: if isEditor();
     }
 
     match /assessments/{id} {
-      allow read: if signedIn();
+      allow read: if activeUser();
       allow create, delete: if isEditor();
-      // مالك الإدارة يجيب على فحص إدارته (تحديث الأسئلة والتعليق والإرسال للمراجعة)
-      allow update: if isEditor() || isDeptOwnerOf(resource.data.departmentId);
+      // مالك الإدارة يجيب على فحص إدارته ويرسله للمراجعة فقط —
+      // لا يغيّر الإدارة ولا يعتمد المراجعة (REVIEWED) بنفسه
+      allow update: if isEditor() || (
+        isDeptOwnerOf(resource.data.departmentId)
+        && request.resource.data.departmentId == resource.data.departmentId
+        && request.resource.data.get('status', 'DRAFT') in ['SENT', 'DRAFT', 'SUBMITTED']
+      );
     }
 
     match /correspondence/{id} {
-      allow read: if signedIn();
+      allow read: if activeUser();
       allow write: if isEditor();
     }
 
     match /disclosures/{id} {
-      allow read: if signedIn();
+      allow read: if activeUser();
       allow write: if isEditor();
     }
 
     match /trainings/{id} {
-      allow read: if signedIn();
+      allow read: if activeUser();
       allow write: if isEditor();
     }
 
     match /directory/{id} {
-      allow read: if signedIn();
+      allow read: if activeUser();
       allow write: if isEditor();
     }
 
-    // تقييم نضج التجمعات: مسؤول التزام التجمع يقيّم تجمعه، والمحرر (الشركة) يراجع
+    // تقييم نضج التجمعات: مسؤول التزام التجمع يقيّم تجمعه فقط، والمحرر (الشركة) يراجع
     match /maturity/{id} {
-      allow read: if signedIn();
-      allow create, update: if isEditor() || (signedIn() && myRole() == 'CLUSTER_OFFICER');
+      allow read: if activeUser();
+      allow create: if isEditor() || isClusterOfficerOf(request.resource.data.clusterId);
+      allow update: if isEditor() || (
+        isClusterOfficerOf(resource.data.clusterId)
+        && request.resource.data.clusterId == resource.data.clusterId
+      );
       allow delete: if isEditor();
     }
 
     match /findings/{id} {
-      allow read: if signedIn();
+      allow read: if activeUser();
       allow create, delete: if isEditor();
-      // مالك الإدارة يحدّث تقدم الإجراءات التصحيحية لملاحظات إدارته
-      allow update: if isEditor() || isDeptOwnerOf(resource.data.departmentId);
+      // مالك الإدارة يحدّث تقدم الإجراءات التصحيحية لملاحظات إدارته فقط (دون نقلها لإدارة أخرى)
+      allow update: if isEditor() || (
+        isDeptOwnerOf(resource.data.departmentId)
+        && request.resource.data.departmentId == resource.data.departmentId
+      );
     }
 
     match /counters/{id} {
-      allow read: if signedIn();
+      allow read: if activeUser();
       allow write: if isEditor();
     }
 
     match /reports/{id} {
-      allow read: if signedIn();
-      allow create: if signedIn();
+      allow read: if activeUser();
+      allow create: if activeUser();
       allow update, delete: if isApprover();
     }
 
     match /notifications/{id} {
-      allow read: if signedIn();
-      allow create: if signedIn();
+      allow read: if activeUser();
+      allow create: if activeUser();
       // تعليم كمقروء فقط لغير المحررين
-      allow update: if isEditor() || (signedIn() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']));
+      allow update: if isEditor() || (activeUser() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']));
       allow delete: if isApprover();
     }
 
-    // سجل التدقيق: إنشاء فقط — لا تعديل ولا حذف (Audit Trail غير قابل للعبث)
+    // سجل التدقيق: إنشاء فقط باسم صاحب الجلسة — لا انتحال ولا تعديل ولا حذف (Audit Trail غير قابل للعبث)
     match /auditLog/{id} {
-      allow read: if signedIn();
-      allow create: if signedIn();
+      allow read: if activeUser();
+      allow create: if activeUser() && request.resource.data.get('userId', request.auth.uid) == request.auth.uid;
       allow update, delete: if false;
     }
 
     match /regulations/{regId} {
-      allow read: if signedIn();
+      allow read: if activeUser();
       allow write: if isEditor();
 
       match /articles/{articleId} {
-        allow read: if signedIn();
+        allow read: if activeUser();
         allow write: if isEditor();
       }
     }

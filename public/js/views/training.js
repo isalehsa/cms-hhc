@@ -3,7 +3,7 @@
 import { store, reload, deptName, userName, reqLabel, deptOptions, userOptions, reqOptions } from "../state.js";
 import * as db from "../db.js";
 import {
-  $, esc, toast, modal, confirmBox, fld, txt, area, sel, dateInp, val, num,
+  $, esc, safeUrl, toast, modal, confirmBox, fld, txt, area, sel, dateInp, val, num,
   fmtDate, daysUntil, isoFromInput, statusBadgeFrom, progressBar, emptyMsg, keepFocus, distBar,
 } from "../ui.js";
 import { TRAINING_TYPES, TRAINING_STATUS } from "../meta.js";
@@ -203,7 +203,7 @@ export function openDetail(id, nav, done) {
     <div style="margin:10px 0">${progressBar(pct)}</div>
     ${t.requirementId ? `<p><strong>المتطلب المرتبط:</strong> <span class="link-item" data-nav="library">📖 ${esc(reqLabel(t.requirementId))}</span></p>` : ""}
     ${t.notes ? `<p class="pre-line"><strong>الوصف:</strong> ${esc(t.notes)}</p>` : ""}
-    ${t.materialsUrl ? `<p>📎 <a href="${esc(t.materialsUrl)}" target="_blank" rel="noopener">المادة التدريبية</a></p>` : ""}
+    ${t.materialsUrl ? `<p>📎 <a href="${safeUrl(t.materialsUrl)}" target="_blank" rel="noopener">المادة التدريبية</a></p>` : ""}
     <div class="row" style="margin-top:14px">
       ${editable ? `
         <button id="t-edit" title="تعديل بيانات النشاط">تعديل</button>

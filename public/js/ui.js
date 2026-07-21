@@ -33,6 +33,18 @@ export function esc(s) {
   );
 }
 
+// رابط آمن لسمة href: يسمح بـ http/https/mailto/tel فقط ويمنع javascript: وغيرها
+// (esc وحدها لا تمنع «javascript:alert(1)» لأنها لا تحتوي رموز HTML — فينفَّذ عند النقر)
+export function safeUrl(u) {
+  const raw = String(u ?? "").trim();
+  if (!raw) return "";
+  try {
+    const parsed = new URL(raw, location.origin);
+    if (["http:", "https:", "mailto:", "tel:"].includes(parsed.protocol)) return esc(raw);
+  } catch { /* رابط غير صالح */ }
+  return "#";
+}
+
 export function toast(msg, isError = false) {
   const el = $("#toast");
   el.textContent = msg;

@@ -4,7 +4,7 @@
 import { store, reload, deptName, clusterOptions } from "../state.js";
 import * as db from "../db.js";
 import {
-  $, esc, toast, modal, confirmBox, fld, sel, area, val,
+  $, esc, safeUrl, toast, modal, confirmBox, fld, sel, area, val,
   fmtDate, statusBadgeFrom, levelBadge, progressBar, emptyMsg,
 } from "../ui.js";
 import { MATURITY_MODEL, MATURITY_SCALE, MATURITY_STATUS, maturityLevel } from "../meta.js";
@@ -208,7 +208,7 @@ export function openDetail(id, done) {
         : (c.reviewScore != null ? `<span class="chip chip-auto">مراجعة: ${c.reviewScore}</span>` : "");
       const evCell = canSelfEdit
         ? `<input type="text" class="mt-ev" data-d="${di}" data-c="${ci}" placeholder="رابط الدليل الداعم" value="${esc(c.evidence || "")}" />`
-        : (c.evidence ? `<a href="${esc(c.evidence)}" target="_blank" rel="noopener">📎 دليل</a>` : '<span class="muted">لا دليل</span>');
+        : (c.evidence ? `<a href="${safeUrl(c.evidence)}" target="_blank" rel="noopener">📎 دليل</a>` : '<span class="muted">لا دليل</span>');
       return `<tr>
         <td>${esc(c.text)}</td>
         <td>${scoreCell}</td>

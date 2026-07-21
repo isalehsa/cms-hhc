@@ -3,7 +3,7 @@
 import { store, reload, deptName, reqLabel, deptOptions, reqOptions } from "../state.js";
 import * as db from "../db.js";
 import {
-  $, esc, toast, modal, confirmBox, fld, txt, area, sel, dateInp, val,
+  $, esc, safeUrl, toast, modal, confirmBox, fld, txt, area, sel, dateInp, val,
   fmtDate, isoFromInput, statusBadgeFrom, emptyMsg,
 } from "../ui.js";
 import { SA_STATUS, SA_ANSWERS } from "../meta.js";
@@ -211,7 +211,7 @@ export function openDetail(id, nav, done) {
             : ans
               ? `<p>${statusBadgeFrom(SA_ANSWERS, ans, ANS_ROLE)}
                  ${q.response?.comment ? ` — ${esc(q.response.comment)}` : ""}
-                 ${q.response?.evidence ? ` — <a href="${esc(q.response.evidence)}" target="_blank" rel="noopener">📎 الدليل</a>` : ""}</p>`
+                 ${q.response?.evidence ? ` — <a href="${safeUrl(q.response.evidence)}" target="_blank" rel="noopener">📎 الدليل</a>` : ""}</p>`
               : '<p class="muted">لم تُجب بعد</p>'
         }
       </div>`;
