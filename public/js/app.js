@@ -91,6 +91,7 @@ function renderShell() {
         <button class="secondary small" id="btn-refresh" title="إعادة تحميل جميع البيانات من الخادم">↻</button>
         <button class="secondary small" id="btn-logout" title="تسجيل الخروج من النظام">خروج</button>
       </div>
+      <div class="copyright">جميع الحقوق محفوظة لصالح الميموني</div>
     </div>`;
 
   $("#btn-logout").onclick = () => authApi.logout();

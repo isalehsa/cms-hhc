@@ -110,6 +110,7 @@ body {
 }
 
 .side-foot { border-top: 1px solid var(--border-soft); padding-top: 14px; display: flex; flex-direction: column; gap: 10px; }
+.copyright { text-align: center; font-size: 0.72rem; color: var(--muted, #8a8f98); opacity: 0.8; padding-top: 6px; }
 .user-chip {
   background: rgba(20, 112, 92, 0.1);
   border: 1px solid rgba(20, 112, 92, 0.14);
