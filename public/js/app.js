@@ -2,9 +2,10 @@
 import { configReady } from "./firebase-config.js";
 import * as db from "./db.js";
 import * as authApi from "./auth.js";
-import { canEdit, canApprove } from "./auth.js";
+import { canEdit, canApprove, isClusterOfficer } from "./auth.js";
 import { store, loadAll, reload } from "./state.js";
-import { $, esc, toast, modal, fld, txt, val, spinnerHtml, fmtDate } from "./ui.js";
+import { $, esc, toast, modal, fld, txt, val, spinnerHtml, fmtDate, initTooltips } from "./ui.js";
+import { runAutoSync } from "./sync.js";
 import { ROLES } from "./meta.js";
 import { renderDashboard } from "./views/dashboard.js";
 import { renderLibrary } from "./views/library.js";
@@ -13,6 +14,11 @@ import { renderMonitoring } from "./views/monitoring.js";
 import { renderPlan } from "./views/plan.js";
 import { renderAssessments } from "./views/assessments.js";
 import { renderFindings } from "./views/findings.js";
+import { renderCorrespondence } from "./views/correspondence.js";
+import { renderDisclosures } from "./views/disclosures.js";
+import { renderTraining } from "./views/training.js";
+import { renderMaturity } from "./views/maturity.js";
+import { renderDirectory } from "./views/directory.js";
 import { renderReports } from "./views/reports.js";
 import { settings, aiEnabled } from "./views/regulations.js";
 import { renderAdmin } from "./views/admin.js";
@@ -24,11 +30,16 @@ const VIEWS = {
   risks: { icon: "⚠️", label: "سجل المخاطر", render: renderRisks },
   monitoring: { icon: "🔍", label: "برنامج المراقبة", render: renderMonitoring },
   plan: { icon: "📅", label: "الخطة السنوية", render: renderPlan },
+  training: { icon: "🎓", label: "التدريب والتوعية", render: renderTraining },
   assessments: { icon: "📋", label: "الفحص الذاتي", render: renderAssessments },
   findings: { icon: "🛠", label: "الملاحظات والتصحيح", render: renderFindings },
-  // التحليل الذكي مدمج داخل مكتبة الالتزام كتبويب فرعي — المسار يبقى للروابط القديمة
+  correspondence: { icon: "📨", label: "سجل المراسلات", render: renderCorrespondence },
+  disclosures: { icon: "🗂", label: "سجل الإفصاحات", render: renderDisclosures },
+  maturity: { icon: "📊", label: "تقييم نضج التجمعات", render: renderMaturity, clusterVisible: true },
+  directory: { icon: "📇", label: "دليل التواصل", render: renderDirectory },
+  // موسوعة الوثائق مدمجة داخل مكتبة الالتزام كتبويب فرعي — المسار يبقى للروابط القديمة
   regulations: {
-    icon: "🤖", label: "التحليل الذكي", hidden: true,
+    icon: "📚", label: "الوثائق", hidden: true,
     render: (el, navFn, refresh, params = {}) => renderLibrary(el, navFn, refresh, { ...params, tab: "analysis" }),
   },
   reports: { icon: "📊", label: "التقارير", render: renderReports },
@@ -40,6 +51,8 @@ const main = $("#app");
 
 function nav(view, params = {}) {
   currentView = VIEWS[view] ? view : "dashboard";
+  // مسؤول التزام التجمع محصور في الوحدات المتاحة له (التقييم الذاتي والنتائج)
+  if (isClusterOfficer(store.user) && !VIEWS[currentView]?.clusterVisible) currentView = "maturity";
   location.hash = currentView;
   renderShellNav();
   const r = VIEWS[currentView].render;
@@ -61,17 +74,22 @@ function renderShell() {
     </div>
     <nav id="side-nav">
       ${Object.entries(VIEWS)
-        .filter(([k, v]) => !v.hidden && (k !== "admin" || canApprove(u)))
+        .filter(([k, v]) => {
+          if (v.hidden) return false;
+          // مسؤول التزام التجمع يرى فقط أداة التقييم الذاتي والنتائج الربعية
+          if (isClusterOfficer(u)) return v.clusterVisible === true;
+          return k !== "admin" || canApprove(u);
+        })
         .map(([k, v]) => `<button class="nav-item" data-view="${k}"><span>${v.icon}</span> ${v.label}</button>`)
         .join("")}
     </nav>
     <div class="side-foot">
       <div class="user-chip" title="${esc(u.email)}">👤 ${esc(u.name)}<br/><small>${esc(ROLES[u.role] || u.role)}</small></div>
       <div class="row">
-        <button class="secondary small" id="btn-notif" title="التنبيهات">🔔<span id="notif-count" class="notif-count hidden"></span></button>
-        ${canEdit(u) ? '<button class="secondary small" id="btn-settings" title="إعدادات التحليل الذكي">⚙</button>' : ""}
-        <button class="secondary small" id="btn-refresh" title="تحديث البيانات">↻</button>
-        <button class="secondary small" id="btn-logout">خروج</button>
+        <button class="secondary small" id="btn-notif" title="عرض التنبيهات الواردة">🔔<span id="notif-count" class="notif-count hidden"></span></button>
+        ${canEdit(u) ? '<button class="secondary small" id="btn-settings" title="إعدادات التحليل الذكي (مفتاح Claude API والنموذج)">⚙</button>' : ""}
+        <button class="secondary small" id="btn-refresh" title="إعادة تحميل جميع البيانات من الخادم">↻</button>
+        <button class="secondary small" id="btn-logout" title="تسجيل الخروج من النظام">خروج</button>
       </div>
       <div class="copyright">جميع الحقوق محفوظة لصالح الميموني</div>
     </div>`;
@@ -153,13 +171,17 @@ function openSettings() {
       بدون مفتاح يعمل المحلل النصي الاحتياطي.</p>
     ${fld("مفتاح Claude API", `<input type="password" id="set-key" placeholder="sk-ant-..." value="${esc(settings.apiKey)}" />`)}
     ${fld("النموذج", txt("set-model", settings.model, DEFAULT_MODEL))}
+    ${fld("وسيط API (اختياري)", `<input type="text" id="set-base" placeholder="https://api.anthropic.com" value="${esc(settings.apiBase)}" />`)}
+    <p class="muted" style="margin-top:2px">استخدمه فقط إذا ظهر خطأ «فشل الاتصال بالشبكة» (Failed to fetch) عند التحليل —
+      يعني أن شبكتك أو مانع الإعلانات يحجب <code>api.anthropic.com</code>. اترك الحقل فارغاً للاتصال المباشر.
+      ⚠️ الوسيط يمرّر مفتاحك، فلا تستخدم إلا وسيطاً تثق به.</p>
     <div class="row" style="margin-top:14px">
       <button id="set-save">حفظ</button>
       <button class="secondary" id="set-cancel">إلغاء</button>
     </div>`);
   $("#set-cancel", ov).onclick = () => ov.remove();
   $("#set-save", ov).onclick = () => {
-    settings.save($("#set-key", ov).value.trim(), val("set-model", ov));
+    settings.save($("#set-key", ov).value.trim(), val("set-model", ov), val("set-base", ov));
     ov.remove();
     toast(aiEnabled() ? "حُفظ — التحليل الذكي مفعّل" : "حُفظ — التحليل الذكي غير مفعّل");
   };
@@ -206,6 +228,7 @@ function renderLogin() {
 
 // ---------- تشغيل ----------
 function init() {
+  initTooltips();
   if (!configReady) return renderSetup();
   authApi.onAuth(async (user) => {
     store.user = user;
@@ -222,8 +245,21 @@ function init() {
       store.regulations = await db.listRegulations().catch(() => []);
       renderShell();
       const hash = location.hash.replace("#", "");
-      nav(VIEWS[hash] ? hash : "dashboard");
+      const home = isClusterOfficer(user) ? "maturity" : "dashboard";
+      nav(VIEWS[hash] ? hash : home);
       toast(`مرحباً، ${user.name}`);
+      // تحديث سجل المخاطر آلياً في الخلفية وفق الإضافات الحديثة في المكتبة والتحليلات
+      if (canEdit(user)) {
+        runAutoSync()
+          .then((s) => {
+            if (s.createdRisks || s.createdReqs) {
+              toast(`تحديث آلي: أُضيف ${s.createdRisks} خطر و${s.createdReqs} متطلب وفق الإضافات الحديثة`);
+              updateNotifBadge();
+              if (["risks", "library", "dashboard"].includes(currentView)) nav(currentView);
+            }
+          })
+          .catch((e) => console.warn("auto-sync failed", e));
+      }
     } catch (err) {
       toast(err.message, true);
       renderLogin();

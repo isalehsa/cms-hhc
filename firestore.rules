@@ -79,6 +79,33 @@ service cloud.firestore {
       allow update: if isEditor() || isDeptOwnerOf(resource.data.departmentId);
     }
 
+    match /correspondence/{id} {
+      allow read: if signedIn();
+      allow write: if isEditor();
+    }
+
+    match /disclosures/{id} {
+      allow read: if signedIn();
+      allow write: if isEditor();
+    }
+
+    match /trainings/{id} {
+      allow read: if signedIn();
+      allow write: if isEditor();
+    }
+
+    match /directory/{id} {
+      allow read: if signedIn();
+      allow write: if isEditor();
+    }
+
+    // تقييم نضج التجمعات: مسؤول التزام التجمع يقيّم تجمعه، والمحرر (الشركة) يراجع
+    match /maturity/{id} {
+      allow read: if signedIn();
+      allow create, update: if isEditor() || (signedIn() && myRole() == 'CLUSTER_OFFICER');
+      allow delete: if isEditor();
+    }
+
     match /findings/{id} {
       allow read: if signedIn();
       allow create, delete: if isEditor();

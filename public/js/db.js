@@ -55,6 +55,16 @@ export async function updateRow(col, id, patch) {
   await updateDoc(doc(db, col, id), { ...patch, updatedAt: now() });
 }
 
+// إضافة عدة وثائق دفعة واحدة (لبذر الهيكل التنظيمي) — بمعرّفات تلقائية
+export async function bulkAdd(col, rows) {
+  for (let i = 0; i < rows.length; i += 400) {
+    const batch = writeBatch(db);
+    for (const data of rows.slice(i, i + 400)) batch.set(doc(collection(db, col)), data);
+    await batch.commit();
+  }
+  return rows.length;
+}
+
 export async function removeRow(col, id) {
   await deleteDoc(doc(db, col, id));
 }
@@ -165,6 +175,10 @@ export async function createRegulation(fields) {
     name: fields.name,
     description: fields.description || "",
     text: fields.text,
+    category: fields.category || "REGULATION", // فئة الوثيقة (نظام/لائحة/سياسة…)
+    docNumber: fields.docNumber || "",
+    authorityId: fields.authorityId || null,
+    sector: fields.sector || "",
     requirementId: fields.requirementId || null, // ربط بمتطلب في مكتبة الالتزام
     status: "pending",
     analysis_method: null,
@@ -202,6 +216,7 @@ export async function addArticle(regId, fields) {
     risk_level: fields.risk_level || "متوسط",
     owning_department: fields.owning_department || "الالتزام",
     rationale: fields.rationale || "",
+    penalty: fields.penalty || "",
     needs_review: fields.needs_review ?? false,
     links: [],
     edited_by: fields.edited_by || null,
@@ -216,7 +231,7 @@ export async function addArticle(regId, fields) {
 export async function updateArticle(regId, articleId, patch, editor) {
   const allowed = [
     "number", "title", "text", "applicability", "risk_level",
-    "owning_department", "rationale", "needs_review",
+    "owning_department", "rationale", "penalty", "needs_review",
   ];
   const clean = {};
   for (const key of allowed) if (key in patch) clean[key] = patch[key];

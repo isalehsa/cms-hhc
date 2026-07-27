@@ -1,17 +1,18 @@
 // وحدة التحليل الذكي — رفع نص/ملف النظام واستخراج المواد وتصنيفها آلياً (Claude API + OCR)
 // مدمجة مع مكتبة الالتزام: يمكن ربط كل تحليل بمتطلب وإنشاء متطلب من التحليل
-import { store, reload, reqOptions, reqLabel } from "../state.js";
+import { store, authName, authOptions, reqLabel } from "../state.js";
 import * as db from "../db.js";
 import {
   $, esc, toast, modal, confirmBox, fld, txt, area, sel, val,
-  fmtDate, emptyMsg, spinnerHtml,
+  fmtDate, emptyMsg, spinnerHtml, keepFocus,
 } from "../ui.js";
-import { DEPARTMENTS, RISK_LEVELS, APPLICABILITY } from "../meta.js";
+import { DEPARTMENTS, RISK_LEVELS, APPLICABILITY, DOC_CATEGORIES, DOC_SECTORS } from "../meta.js";
 import { findRelated } from "../similarity.js";
 import { analyzeRegulation, DEFAULT_MODEL } from "../analyzer.js";
 import { extractText } from "../extract.js";
 import { downloadWorkbook } from "../export.js";
 import { canEdit } from "../auth.js";
+import { autoIntegrateRegulation } from "../sync.js";
 
 const local = {
   view: "list", // list | detail
@@ -25,11 +26,15 @@ const local = {
 export const settings = {
   get apiKey() { return localStorage.getItem("chcc_api_key") || ""; },
   get model() { return localStorage.getItem("chcc_model") || DEFAULT_MODEL; },
-  save(apiKey, model) {
+  // وسيط API اختياري لمن تحجب شبكته api.anthropic.com — يُمرِّر الطلب كما هو
+  get apiBase() { return localStorage.getItem("chcc_api_base") || ""; },
+  save(apiKey, model, apiBase) {
     if (apiKey) localStorage.setItem("chcc_api_key", apiKey);
     else localStorage.removeItem("chcc_api_key");
     if (model && model !== DEFAULT_MODEL) localStorage.setItem("chcc_model", model);
     else localStorage.removeItem("chcc_model");
+    if (apiBase) localStorage.setItem("chcc_api_base", apiBase.trim());
+    else localStorage.removeItem("chcc_api_base");
   },
 };
 export const aiEnabled = () => Boolean(settings.apiKey);
@@ -43,12 +48,10 @@ export async function renderRegulations(el, nav, refresh, params = {}) {
   if (params.createFor) {
     local.view = "list";
     renderList();
-    // تعبئة النموذج من متطلب المكتبة
+    // فتح نافذة الإضافة معبأة من متطلب المكتبة
     const r = params.createFor;
-    $("#reg-name", el).value = r.title;
-    $("#reg-req", el).value = r.id;
-    if (r.summary) $("#reg-text", el).value = r.summary;
-    toast("اكتمل الربط بالمتطلب — الصق النص الكامل أو حمّل الملف ثم حلّل");
+    openDocModal(null, { name: r.title, text: r.summary || "" });
+    toast("عُبّئت النافذة من المتطلب — الصق النص الكامل أو حمّل الملف ثم حلّل");
     return;
   }
   if (local.view === "detail" && local.current) {
@@ -74,85 +77,176 @@ function statusBadge(reg) {
 function renderList() {
   const el = elRef;
   const editable = canEdit(store.user);
-  const addForm = editable
-    ? `
-    <section class="card">
-      <h2>تحليل نظام / لائحة جديدة</h2>
-      <p class="muted">الصق النص أو حمّل ملف PDF/Word وسيستخرج النظام جميع المواد ويصنفها
-        (الانطباق، درجة الخطر، الإدارة المالكة) آلياً.
-        ${aiEnabled() ? "" : "⚠️ التحليل الذكي غير مفعّل (أضف مفتاح API من ⚙) — سيُستخدم التقسيم النصي المبدئي."}</p>
-      <div class="form-grid">
-        ${fld("اسم النظام / اللائحة *", txt("reg-name", "", "مثال: لائحة حوكمة البيانات"))}
-        ${fld("ربط بمتطلب في مكتبة الالتزام", sel("reg-req", reqOptions(), "", { empty: "— بلا ربط —" }))}
-        ${fld("وصف مختصر", txt("reg-desc", "", "اختياري"))}
-        ${fld("سياق المنشأة", txt("reg-context", "", "مثال: شركة صحية قابضة، بيانات مرضى"))}
-      </div>
-      <label>ملف النظام (PDF أو Word) — اختياري</label>
-      <div class="row">
-        <input type="file" id="reg-file" class="grow" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
-        <span id="reg-file-status" class="muted"></span>
-      </div>
-      ${fld("النص الكامل *", area("reg-text", "", "الصق النص الكامل هنا، أو حمّل ملفاً أعلاه…", 7))}
-      <div class="row" style="margin-top:10px">
-        <button id="add-reg-btn">تحليل وإضافة</button>
-        <span class="muted">التحليل يجري داخل هذه الصفحة — لا تغلقها قبل اكتماله.</span>
-      </div>
-    </section>`
-    : "";
+  const reqCount = (regId) => store.requirements.filter((q) => q.regulationId === regId).length;
 
   el.innerHTML = `
-    ${addForm}
     <section class="card">
-      <h2>التحليلات المسجلة (${store.regulations.length})</h2>
-      ${store.regulations
-        .map(
-          (r) => `
-          <div class="reg-list-item">
-            <div>
-              <div class="name" data-open="${r.id}">${esc(r.name)}</div>
-              <div class="muted">${esc(r.description || "")} · ${r.articles_count} مادة/بند · ${fmtDate(r.created_at)}
-                ${r.requirementId ? ` · 📖 ${esc(reqLabel(r.requirementId))}` : ""}</div>
-            </div>
-            <div class="row">
-              ${statusBadge(r)}
-              ${canEdit(store.user) ? `<button class="danger small" data-del="${r.id}">حذف</button>` : ""}
-            </div>
-          </div>`
-        )
-        .join("") || emptyMsg("لا توجد تحليلات بعد")}
+      <div class="row" style="justify-content:space-between;align-items:flex-start">
+        <div>
+          <h2>📚 موسوعة الوثائق النظامية (${store.regulations.length})</h2>
+          <p class="muted">جميع الأنظمة واللوائح والتشريعات في مكان واحد — كل وثيقة تُحلَّل وتنعكس بنودها
+            متطلباتٍ في المكتبة المفصلة وترتبط بالمخاطر وفق الغرامات والعقوبات.</p>
+        </div>
+        ${editable ? '<button id="add-doc" title="إضافة وثيقة نظامية جديدة وتحليلها — تُفتح نافذة الإدخال">＋ إضافة وثيقة</button>' : ""}
+      </div>
+      <div style="overflow-x:auto">
+        <table>
+          <thead><tr>
+            <th>#</th><th>فئة الوثيقة</th><th>رقم الوثيقة</th><th>اسم الوثيقة</th><th>الجهة</th><th>القطاع</th>
+            <th>عدد البنود</th><th>الحالة</th><th>آخر تحديث</th>${editable ? "<th></th>" : ""}
+          </tr></thead>
+          <tbody>
+            ${store.regulations
+              .map((r, i) => {
+                const rc = reqCount(r.id);
+                return `<tr class="rowlink" data-open="${r.id}">
+                  <td class="muted">${i + 1}</td>
+                  <td><span class="chip">${esc(DOC_CATEGORIES[r.category] || "—")}</span></td>
+                  <td>${esc(r.docNumber || "—")}</td>
+                  <td><strong>${esc(r.name)}</strong>
+                    ${rc ? ` <span class="chip" data-tip="بنود هذه الوثيقة المنعكسة متطلبات في المكتبة المفصلة">📋 ${rc} متطلب</span>` : ""}
+                    ${r.requirementId ? ` <span class="chip" data-tip="متطلب مرتبط بالوثيقة">📖 ${esc(reqLabel(r.requirementId).slice(0, 40))}</span>` : ""}
+                    <div class="muted clamp">${esc(r.description || "")}</div></td>
+                  <td>${esc(authName(r.authorityId))}</td>
+                  <td>${esc(r.sector || "—")}</td>
+                  <td>${r.articles_count}</td>
+                  <td>${statusBadge(r)}</td>
+                  <td>${fmtDate(r.updated_at || r.created_at)}</td>
+                  ${editable ? `<td class="row" style="flex-wrap:nowrap">
+                    <button class="secondary small" data-editdoc="${r.id}" title="تعديل بيانات الوثيقة أو إعادة تحليلها بنص جديد">✎ تعديل</button>
+                    <button class="danger small" data-del="${r.id}" title="حذف هذه الوثيقة وجميع بنودها">حذف</button>
+                  </td>` : ""}
+                </tr>`;
+              })
+              .join("") || `<tr><td colspan="${editable ? 10 : 9}">${emptyMsg("لا توجد وثائق بعد — ابدأ بزر «إضافة وثيقة»")}</td></tr>`}
+          </tbody>
+        </table>
+      </div>
     </section>`;
 
-  $("#add-reg-btn", el)?.addEventListener("click", addRegulation);
-  $("#reg-file", el)?.addEventListener("change", extractFromFile);
+  $("#add-doc", el)?.addEventListener("click", () => openDocModal(null));
+  el.querySelectorAll("[data-editdoc]").forEach((btn) => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      openDocModal(store.regulations.find((r) => r.id === btn.dataset.editdoc));
+    };
+  });
   el.querySelectorAll("[data-del]").forEach((btn) => {
-    btn.onclick = async () => {
-      if (!(await confirmBox("حذف هذا التحليل وجميع مواده؟"))) return;
+    btn.onclick = async (e) => {
+      e.stopPropagation();
+      if (!(await confirmBox("حذف هذه الوثيقة وجميع موادها؟ المتطلبات والمخاطر المنعكسة منها لن تُحذف لكنها ستفقد الربط."))) return;
       try {
         await db.deleteRegulation(btn.dataset.del);
         store.regulations = await db.listRegulations();
         renderList();
-        toast("تم الحذف");
+        toast("حُذفت الوثيقة");
       } catch (err) { toast(err.message, true); }
     };
   });
-  el.querySelectorAll("[data-open]").forEach((n) => (n.onclick = () => openRegulation(n.dataset.open)));
+  el.querySelectorAll("[data-open]").forEach((tr) => (tr.onclick = () => openRegulation(tr.dataset.open)));
 }
 
-async function extractFromFile() {
-  const input = $("#reg-file", elRef);
-  const status = $("#reg-file-status", elRef);
+// نافذة إضافة وثيقة جديدة وتحليلها، أو تعديل وثيقة قائمة (مع خيار إعادة التحليل بنص جديد)
+function openDocModal(reg, preset = {}) {
+  const isNew = !reg;
+  const ov = modal(
+    `
+    <h2>${isNew ? "📚 إضافة وثيقة نظامية وتحليلها" : `✎ تعديل الوثيقة: ${esc(reg.name)}`}</h2>
+    ${isNew ? `<p class="muted">الصق النص أو حمّل ملف PDF/Word — يستخرج الذكاء الاصطناعي جميع البنود ويصنفها
+      (الانطباق، الخطر، الإدارة المالكة، الغرامات)، ثم تنعكس البنود المنطبقة متطلباتٍ في المكتبة المفصلة
+      وترتبط بالمخاطر آلياً.
+      ${aiEnabled() ? "" : "⚠️ التحليل الذكي غير مفعّل (أضف مفتاح API من ⚙) — سيُستخدم التقسيم النصي المبدئي."}</p>` : ""}
+    <div class="form-grid">
+      ${fld("اسم الوثيقة *", txt("doc-name", reg?.name || preset.name || "", "مثال: لائحة حوكمة البيانات"))}
+      ${fld("فئة الوثيقة", sel("doc-cat", DOC_CATEGORIES, reg?.category || "REGULATION"))}
+      ${fld("رقم الوثيقة", txt("doc-number", reg?.docNumber || "", "مثال: م/128 أو 1445/45"))}
+      ${fld("الجهة المصدرة", sel("doc-auth", authOptions(), reg?.authorityId, { empty: "— اختر —" }))}
+      ${fld("القطاع", sel("doc-sector", DOC_SECTORS, reg?.sector || "", { empty: "— اختر —" }))}
+      ${fld("وصف مختصر", txt("doc-desc", reg?.description || "", "اختياري"))}
+      ${isNew ? fld("سياق المنشأة", txt("doc-context", "", "مثال: شركة صحية قابضة، بيانات مرضى")) : ""}
+    </div>
+    <label>${isNew ? "ملف الوثيقة (PDF أو Word) — اختياري" : "🔄 إعادة التحليل بنص جديد (اختياري): حمّل ملفاً أو الصق نصاً — سيستبدل البنود الحالية"}</label>
+    <div class="row">
+      <input type="file" id="doc-file" class="grow" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+      <span id="doc-file-status" class="muted"></span>
+    </div>
+    ${fld(isNew ? "النص الكامل *" : "النص الجديد (اتركه فارغاً للإبقاء على البنود الحالية)", area("doc-text", preset.text || "", isNew ? "الصق النص الكامل هنا، أو حمّل ملفاً أعلاه…" : "الصق النص الجديد هنا فقط إذا أردت إعادة التحليل…", 7))}
+    ${isNew ? '<p class="muted">التحليل يجري داخل هذه الصفحة — لا تغلقها قبل اكتماله.</p>' : ""}
+    <div class="row" style="margin-top:14px">
+      <button id="doc-save" title="${isNew ? "حفظ الوثيقة وبدء التحليل والانعكاس الآلي للمتطلبات والمخاطر" : "حفظ التعديلات — وإعادة التحليل إن أدخلت نصاً جديداً"}">${isNew ? "حفظ وتحليل" : "حفظ"}</button>
+      <button class="secondary" id="doc-cancel">إلغاء</button>
+    </div>`,
+    { wide: true }
+  );
+
+  $("#doc-cancel", ov).onclick = () => ov.remove();
+  $("#doc-file", ov)?.addEventListener("change", () => extractFromFile(ov));
+  $("#doc-save", ov).onclick = async () => {
+    const name = val("doc-name", ov);
+    if (!name) return toast("اسم الوثيقة إلزامي", true);
+    const meta = {
+      name,
+      description: val("doc-desc", ov),
+      category: val("doc-cat", ov),
+      docNumber: val("doc-number", ov),
+      authorityId: val("doc-auth", ov) || null,
+      sector: val("doc-sector", ov),
+    };
+    const text = $("#doc-text", ov).value.trim();
+    try {
+      if (isNew) {
+        if (!text) return toast("النص الكامل إلزامي — الصقه أو حمّل ملفاً", true);
+        const orgContext = val("doc-context", ov);
+        $("#doc-save", ov).disabled = true;
+        const reg2 = await db.createRegulation({ ...meta, text });
+        await db.audit("CREATE", "Regulation", reg2.id, `إضافة وثيقة للتحليل: ${name}`);
+        ov.remove();
+        toast("أُضيفت الوثيقة — بدأ التحليل");
+        runAnalysis(reg2.id, text, orgContext);
+        await openRegulation(reg2.id);
+      } else {
+        if (text && !(await confirmBox("أدخلت نصاً جديداً — إعادة التحليل ستستبدل البنود الحالية بما فيها تعديلاتك. متابعة؟"))) return;
+        $("#doc-save", ov).disabled = true;
+        await db.updateRegulation(reg.id, text ? { ...meta, text } : meta);
+        await db.audit("UPDATE", "Regulation", reg.id, `تعديل بيانات الوثيقة: ${name}${text ? " + إعادة التحليل" : ""}`);
+        store.regulations = await db.listRegulations();
+        ov.remove();
+        if (text) {
+          toast("حُفظت التعديلات — بدأت إعادة التحليل");
+          runAnalysis(reg.id, text, "");
+          await openRegulation(reg.id);
+        } else {
+          toast("تم الحفظ");
+          if (local.view === "list") renderList();
+          else if (local.current?.id === reg.id) {
+            local.current = await db.getRegulation(reg.id);
+            renderDetail();
+          }
+        }
+      }
+    } catch (err) {
+      toast(err.message, true);
+      const btn = $("#doc-save", ov);
+      if (btn) btn.disabled = false;
+    }
+  };
+}
+
+async function extractFromFile(ov) {
+  const input = $("#doc-file", ov);
+  const status = $("#doc-file-status", ov);
   const file = input.files?.[0];
   if (!file) return;
   const setStatus = (msg) => { status.innerHTML = `<span class="spinner"></span> ${esc(msg)}`; };
   setStatus("جاري استخراج النص…");
   try {
     const data = await extractText(file, setStatus);
-    $("#reg-text", elRef).value = data.text;
-    const nameField = $("#reg-name", elRef);
+    $("#doc-text", ov).value = data.text;
+    const nameField = $("#doc-name", ov);
     if (!nameField.value.trim()) nameField.value = file.name.replace(/\.(pdf|docx)$/i, "");
     status.textContent = data.ocr
       ? `✔ ${data.note || "استُخرج بتقنية OCR"}`
-      : `✔ استُخرج ${data.text.length.toLocaleString("ar")} حرفاً`;
+      : `✔ استُخرج ${data.text.length.toLocaleString("en-US")} حرفاً`;
     toast(data.ocr ? "استُخرج النص بالتعرف الضوئي — دقّقه قبل التحليل" : "تم الاستخراج — راجع النص ثم حلّل");
   } catch (err) {
     status.textContent = "";
@@ -172,7 +266,7 @@ async function runAnalysis(regId, text, orgContext) {
     let lastPaint = 0;
     const { method, articles, warning } = await analyzeRegulation(
       text, orgContext,
-      { apiKey: settings.apiKey, model: settings.model },
+      { apiKey: settings.apiKey, model: settings.model, apiBase: settings.apiBase },
       (msg) => {
         local.analyzing[regId] = msg;
         if (Date.now() - lastPaint > 2000) { lastPaint = Date.now(); refreshView(); }
@@ -185,6 +279,17 @@ async function runAnalysis(regId, text, orgContext) {
     await db.audit("UPDATE", "Regulation", regId, `اكتمل تحليل النظام (${articles.length} مادة، ${method === "ai" ? "ذكاء اصطناعي" : "نصي"})`);
     if (warning) toast(warning, method !== "ai"); // تنبيه أحمر فقط عند اللجوء للمحلل الاحتياطي
     else toast("اكتمل التحليل");
+    // الدمج الآلي: إضافة النظام لمكتبة الالتزام واشتقاق المخاطر وفق الغرامات والمخالفات
+    local.analyzing[regId] = "جاري التحديث الآلي للمكتبة وسجل المخاطر…";
+    refreshView();
+    try {
+      const integ = await autoIntegrateRegulation(regId);
+      if (integ.requirementCreated || integ.createdRisks) {
+        toast(`تحديث آلي: ${integ.requirementCreated ? "أُضيف متطلب لمكتبة الالتزام و" : ""}أُنشئ ${integ.createdRisks} خطر في سجل المخاطر`);
+      }
+    } catch (e) {
+      console.warn("auto-integration failed", e);
+    }
   } catch (err) {
     await db.updateRegulation(regId, { status: "failed", analysis_error: err.message }).catch(() => {});
     toast(`فشل التحليل: ${err.message}`, true);
@@ -195,30 +300,6 @@ async function runAnalysis(regId, text, orgContext) {
       local.current = await db.getRegulation(regId).catch(() => local.current);
       renderDetail();
     } else if (local.view === "list") renderList();
-  }
-}
-
-async function addRegulation() {
-  const name = val("reg-name", elRef);
-  const text = $("#reg-text", elRef).value.trim();
-  if (!name || !text) return toast("اسم النظام ونصه الكامل حقلان إلزاميان", true);
-  const btn = $("#add-reg-btn", elRef);
-  btn.disabled = true;
-  try {
-    const orgContext = val("reg-context", elRef);
-    const reg = await db.createRegulation({
-      name,
-      description: val("reg-desc", elRef),
-      text,
-      requirementId: val("reg-req", elRef) || null,
-    });
-    await db.audit("CREATE", "Regulation", reg.id, `إضافة نظام للتحليل: ${name}`);
-    toast("تمت الإضافة — بدأ التحليل");
-    runAnalysis(reg.id, text, orgContext);
-    await openRegulation(reg.id);
-  } catch (err) {
-    toast(err.message, true);
-    btn.disabled = false;
   }
 }
 
@@ -272,8 +353,8 @@ function linksPanelHtml(a) {
       .map(
         (s) => `<div class="row" style="margin:4px 0">
           <span class="grow"><strong>${esc(s.regulation_name)}</strong> — ${esc(s.number)}: ${esc(s.title)}
-          <span class="muted">(تشابه ${Math.round(s.score * 100)}٪)</span></span>
-          <button class="small" data-dolink="${a.id}" data-reg="${s.regulation_id}" data-target="${s.article_id}">ربط</button>
+          <span class="muted">(تشابه ${Math.round(s.score * 100)}%)</span></span>
+          <button class="small" data-dolink="${a.id}" data-reg="${s.regulation_id}" data-target="${s.article_id}" title="ربط هذه المادة بالمادة المقترحة">ربط</button>
         </div>`
       )
       .join("");
@@ -292,6 +373,7 @@ function renderDetail() {
     applies: reg.articles.filter((a) => a.applicability === "تنطبق").length,
     high: reg.articles.filter((a) => a.risk_level === "عالي" && a.applicability === "تنطبق").length,
     review: reg.articles.filter((a) => a.needs_review).length,
+    penalties: reg.articles.filter((a) => a.penalty).length,
   };
 
   const rows = arts
@@ -311,13 +393,14 @@ function renderDetail() {
       const mainRow = `<tr>
         <td><strong>${esc(a.number)}</strong>${a.needs_review ? '<br/><span class="lvl lvl-warning"><span class="dot"></span>للمراجعة</span>' : ""}</td>
         <td><strong>${esc(a.title)}</strong><div class="article-text muted">${esc(a.text)}</div>
+          ${a.penalty ? `<div style="margin-top:4px"><span class="penalty-chip" data-tip="الغرامة/العقوبة المنصوص عليها — تُستخدم لاشتقاق سجل المخاطر آلياً">⚖ ${esc(a.penalty)}</span></div>` : ""}
           ${linkBadges ? `<div style="margin-top:4px">${linkBadges}</div>` : ""}</td>
         ${cells}
         <td class="muted" style="max-width:220px">${esc(a.rationale)}${a.edited_by ? `<br/><em>آخر تعديل: ${esc(a.edited_by)}</em>` : ""}</td>
         ${editable ? `<td>
-          <button class="secondary small" data-links="${a.id}">🔗${a.links?.length ? ` (${a.links.length})` : ""}</button>
-          <button class="secondary small" data-review="${a.id}">${a.needs_review ? "✔" : "🔖"}</button>
-          <button class="danger small" data-delart="${a.id}">✕</button>
+          <button class="secondary small" data-links="${a.id}" title="عرض وربط المواد المشابهة في التحليلات الأخرى">🔗${a.links?.length ? ` (${a.links.length})` : ""}</button>
+          <button class="secondary small" data-review="${a.id}" title="${a.needs_review ? "إنهاء حالة المراجعة لهذه المادة" : "تعليم هذه المادة كبحاجة إلى مراجعة"}">${a.needs_review ? "✔" : "🔖"}</button>
+          <button class="danger small" data-delart="${a.id}" title="حذف هذه المادة من التحليل">✕</button>
         </td>` : ""}
       </tr>`;
       const panelRow = editable && local.openLinks === a.id
@@ -326,17 +409,23 @@ function renderDetail() {
     })
     .join("");
 
+  const reflected = store.requirements.filter((q) => q.regulationId === reg.id).length;
   el.innerHTML = `
-    <p><span class="back-link" id="back">← العودة لقائمة التحليلات</span></p>
+    <p><span class="back-link" id="back">← العودة لموسوعة الوثائق</span></p>
     <section class="card">
       <div class="row" style="justify-content:space-between">
-        <div><h2>${esc(reg.name)}</h2><p class="muted">${esc(reg.description || "")}
-          ${reg.requirementId ? ` · 📖 ${esc(reqLabel(reg.requirementId))}` : ""}</p></div>
+        <div><h2>📚 ${esc(reg.name)}</h2>
+          <p class="muted">
+            <span class="chip">${esc(DOC_CATEGORIES[reg.category] || "وثيقة")}</span>
+            ${reg.docNumber ? ` رقم: ${esc(reg.docNumber)} ·` : ""}
+            ${reg.authorityId ? ` ${esc(authName(reg.authorityId))} ·` : ""}
+            ${reg.sector ? ` قطاع ${esc(reg.sector)} ·` : ""}
+            ${esc(reg.description || "")} · آخر تحديث ${fmtDate(reg.updated_at || reg.created_at)}</p></div>
         <div class="row">
           ${statusBadge(reg)}
-          <button class="secondary small" id="export-reg">⬇ Excel</button>
-          ${editable && !reg.requirementId ? '<button class="secondary small" id="mk-req" title="إنشاء متطلب في مكتبة الالتزام من هذا التحليل">📖 إنشاء متطلب</button>' : ""}
-          ${editable && reg.status !== "processing" ? '<button class="secondary small" id="reanalyze">🔄 إعادة التحليل</button>' : ""}
+          <button class="secondary small" id="export-reg" title="تصدير جميع المواد وتصنيفاتها إلى ملف Excel">⬇ Excel</button>
+          ${editable ? '<button class="secondary small" id="edit-doc" title="تعديل بيانات الوثيقة أو إعادة تحليلها بنص جديد">✎ تعديل</button>' : ""}
+          ${editable && reg.status !== "processing" ? '<button class="secondary small" id="reanalyze" title="إعادة تحليل النص الحالي من جديد — تستبدل التصنيفات والتعديلات الحالية">🔄 إعادة التحليل</button>' : ""}
         </div>
       </div>
       ${reg.analysis_error ? `<p class="muted">⚠️ ${esc(reg.analysis_error)}</p>` : ""}
@@ -345,6 +434,8 @@ function renderDetail() {
         <div class="stat"><div class="num">${counts.applies}</div><div class="lbl">تنطبق</div></div>
         <div class="stat"><div class="num">${counts.total - counts.applies}</div><div class="lbl">لا تنطبق</div></div>
         <div class="stat"><div class="num">${counts.high}</div><div class="lbl">خطر عالٍ (منطبقة)</div></div>
+        <div class="stat"><div class="num">${counts.penalties}</div><div class="lbl">بها غرامات / عقوبات</div></div>
+        <div class="stat"><div class="num">${reflected}</div><div class="lbl">متطلبات منعكسة بالمكتبة</div></div>
         <div class="stat"><div class="num">${counts.review}</div><div class="lbl">بحاجة لمراجعة</div></div>
       </div>
     </section>
@@ -354,7 +445,7 @@ function renderDetail() {
         <select id="f-app"><option value="">كل حالات الانطباق</option>${APPLICABILITY.map((o) => `<option ${local.filters.applicability === o ? "selected" : ""}>${o}</option>`).join("")}</select>
         <select id="f-risk"><option value="">كل درجات الخطر</option>${RISK_LEVELS.map((o) => `<option ${local.filters.risk === o ? "selected" : ""}>${o}</option>`).join("")}</select>
         <select id="f-dept"><option value="">كل الإدارات</option>${DEPARTMENTS.map((o) => `<option ${local.filters.department === o ? "selected" : ""}>${o}</option>`).join("")}</select>
-        ${editable ? '<button class="small" id="add-art">＋ مادة يدوياً</button>' : ""}
+        ${editable ? '<button class="small" id="add-art" title="إضافة مادة أو بند يدوياً إلى هذا التحليل">＋ مادة يدوياً</button>' : ""}
       </div>
       <div style="overflow-x:auto">
         <table>
@@ -376,35 +467,7 @@ function renderDetail() {
       await downloadWorkbook([full], `${reg.name}.xlsx`, true);
     } catch (err) { toast(err.message, true); }
   };
-  $("#mk-req", el)?.addEventListener("click", async () => {
-    try {
-      const code = await db.nextCode("REQ");
-      await db.setRow("requirements", code, {
-        code,
-        title: reg.name,
-        summary: reg.description || `تحليل ذكي: ${reg.articles_count || reg.articles.length} مادة مستخرجة`,
-        type: "REGULATION",
-        category: "GOVERNANCE",
-        criticality: counts.high > 0 ? "HIGH" : "MEDIUM",
-        authorityId: null,
-        ownerDeptId: null,
-        issueDate: null,
-        nextReviewDate: null,
-        status: "UNDER_REVIEW",
-        attachmentUrl: null,
-        createdById: store.user.uid,
-        approvedById: null,
-        lastUpdated: db.now(),
-        createdAt: db.now(),
-      });
-      await db.updateRegulation(reg.id, { requirementId: code });
-      await db.audit("CREATE", "Requirement", code, `إنشاء متطلب من التحليل الذكي: ${reg.name}`);
-      await reload("requirements");
-      local.current = await db.getRegulation(reg.id);
-      renderDetail();
-      toast(`أُنشئ المتطلب ${code} في مكتبة الالتزام`);
-    } catch (err) { toast(err.message, true); }
-  });
+  $("#edit-doc", el)?.addEventListener("click", () => openDocModal(reg));
   $("#reanalyze", el)?.addEventListener("click", async () => {
     if (!(await confirmBox("إعادة التحليل ستستبدل التصنيفات الحالية بما فيها تعديلاتك. متابعة؟"))) return;
     runAnalysis(reg.id, reg.text, "");
@@ -412,7 +475,7 @@ function renderDetail() {
     renderDetail();
   });
 
-  $("#f-search", el)?.addEventListener("input", (e) => { local.filters.search = e.target.value; renderDetail(); });
+  $("#f-search", el)?.addEventListener("input", (e) => { local.filters.search = e.target.value; keepFocus(renderDetail); });
   $("#f-app", el).onchange = (e) => { local.filters.applicability = e.target.value; renderDetail(); };
   $("#f-risk", el).onchange = (e) => { local.filters.risk = e.target.value; renderDetail(); };
   $("#f-dept", el).onchange = (e) => { local.filters.department = e.target.value; renderDetail(); };
