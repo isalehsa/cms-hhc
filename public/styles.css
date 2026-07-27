@@ -72,6 +72,7 @@ body {
 .nav-item.active { background: var(--primary); color: #fff; box-shadow: var(--shadow); }
 
 .side-foot { border-top: 1px solid var(--border); padding-top: 12px; display: flex; flex-direction: column; gap: 10px; }
+.copyright { text-align: center; font-size: 0.72rem; color: var(--muted); opacity: 0.8; padding-top: 6px; }
 .user-chip {
   background: rgba(29, 106, 88, 0.1);
   color: var(--primary-dark);
