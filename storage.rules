@@ -1,0 +1,13 @@
+rules_version = '2';
+
+// قواعد أمان تخزين Firebase — ملفات أدلة تقييم نضج التجمعات
+// القراءة والكتابة لأي مستخدم مسجَّل دخول، مع حد أقصى لحجم الملف
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /maturity/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+        && request.resource.size < 25 * 1024 * 1024;
+    }
+  }
+}

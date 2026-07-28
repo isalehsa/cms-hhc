@@ -9,6 +9,21 @@ import {
 } from "../ui.js";
 import { MATURITY_MODEL, MATURITY_SCALE, MATURITY_STATUS, maturityLevel } from "../meta.js";
 import { canEdit, canApprove, isClusterOfficer } from "../auth.js";
+import { uploadFile, deleteFile } from "../storage.js";
+import { downloadMaturityTemplate, importMaturityExcel } from "../maturity-xlsx.js";
+
+// فتح منتقي ملفات ويعيد الملف المختار (أو null إن أُلغي)
+function pickFile(accept = "") {
+  return new Promise((resolve) => {
+    const inp = document.createElement("input");
+    inp.type = "file";
+    if (accept) inp.accept = accept;
+    inp.style.display = "none";
+    inp.onchange = () => { const f = inp.files[0] || null; inp.remove(); resolve(f); };
+    document.body.appendChild(inp);
+    inp.click();
+  });
+}
 
 const ST_ROLE = { DRAFT: "neutral", SUBMITTED: "warning", REVIEWED: "good" };
 const tabState = { tab: "list" }; // list | results
@@ -17,7 +32,10 @@ const tabState = { tab: "list" }; // list | results
 function blankDomains() {
   return MATURITY_MODEL.map((d) => ({
     name: d.name, ref: d.ref,
-    criteria: d.criteria.map((text) => ({ text, selfScore: 0, reviewScore: null, evidence: "", note: "" })),
+    criteria: d.criteria.map((text) => ({
+      text, selfScore: 0, reviewScore: null, evidence: "", note: "",
+      evidenceFileUrl: "", evidenceFileName: "", evidenceFilePath: "",
+    })),
   }));
 }
 
@@ -206,14 +224,28 @@ export function openDetail(id, done) {
       const reviewCell = canReview
         ? `<select class="mt-review" data-d="${di}" data-c="${ci}"><option value="">— كالذاتي —</option>${[0, 1, 2, 3].map((n) => `<option value="${n}" ${c.reviewScore === n ? "selected" : ""}>${n}</option>`).join("")}</select>`
         : (c.reviewScore != null ? `<span class="chip chip-auto">مراجعة: ${c.reviewScore}</span>` : "");
-      const evCell = canSelfEdit
-        ? `<input type="text" class="mt-ev" data-d="${di}" data-c="${ci}" placeholder="رابط الدليل الداعم" value="${esc(c.evidence || "")}" />`
-        : (c.evidence ? `<a href="${esc(c.evidence)}" target="_blank" rel="noopener">📎 دليل</a>` : '<span class="muted">لا دليل</span>');
+      const fileLink = c.evidenceFileUrl
+        ? `<a href="${esc(c.evidenceFileUrl)}" target="_blank" rel="noopener">📎 ${esc(c.evidenceFileName || "ملف الدليل")}</a>`
+        : "";
+      let evCell;
+      if (canSelfEdit) {
+        evCell = `<input type="text" class="mt-ev" data-d="${di}" data-c="${ci}" placeholder="رابط الدليل الداعم" value="${esc(c.evidence || "")}" />
+          <div class="row" style="margin-top:5px;gap:6px;align-items:center;flex-wrap:wrap">
+            <button type="button" class="secondary mt-upload" data-d="${di}" data-c="${ci}" title="رفع ملف الدليل الداعم لهذا البند">📤 رفع ملف</button>
+            ${fileLink}
+            ${c.evidenceFileUrl ? `<button type="button" class="danger mt-delfile" data-d="${di}" data-c="${ci}" title="إزالة الملف المرفوع">✕</button>` : ""}
+          </div>`;
+      } else {
+        const parts = [];
+        if (c.evidence) parts.push(`<a href="${esc(c.evidence)}" target="_blank" rel="noopener">📎 رابط</a>`);
+        if (fileLink) parts.push(fileLink);
+        evCell = parts.join(" · ") || '<span class="muted">لا دليل</span>';
+      }
       return `<tr>
         <td>${esc(c.text)}</td>
         <td>${scoreCell}</td>
         <td>${reviewCell}</td>
-        <td style="min-width:160px">${evCell}</td>
+        <td style="min-width:180px">${evCell}</td>
       </tr>`;
     }).join("");
     return `<div class="card sub">
@@ -229,6 +261,29 @@ export function openDetail(id, done) {
   }).join("");
 
   const pct = finalPct(m);
+  const repoEditable = canSelfEdit || canReview;
+  const repoBlock = `
+    <div class="card sub">
+      <div class="row" style="justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap">
+        <div style="flex:1;min-width:240px">
+          ${fld("🔗 مستودع الأدلة (رابط واحد)", repoEditable
+            ? `<input type="url" id="mt-repo" placeholder="https://…" value="${esc(m.evidenceRepo || "")}" />`
+            : (m.evidenceRepo
+              ? `<a href="${esc(m.evidenceRepo)}" target="_blank" rel="noopener">${esc(m.evidenceRepo)}</a>`
+              : '<span class="muted">لم يُحدَّد رابط المستودع بعد</span>'))}
+        </div>
+        <div class="row" style="gap:6px;flex-wrap:wrap">
+          ${repoEditable ? '<button class="secondary" id="mt-saverepo" title="حفظ رابط مستودع الأدلة">💾 حفظ الرابط</button>' : ""}
+          <button class="secondary" id="mt-email" title="إرسال بريد إلكتروني يحتوي رسالة ورابط المستودع">✉ إرسال بريد</button>
+        </div>
+      </div>
+      <div class="row" style="margin-top:10px;gap:6px;flex-wrap:wrap">
+        <button class="secondary" id="mt-xls-tpl" title="تنزيل نموذج Excel معبّأ بالقيم الحالية لتعبئته">⬇ تنزيل نموذج Excel</button>
+        ${canSelfEdit ? '<button class="secondary" id="mt-xls-imp" title="رفع ملف Excel معبّأ وعكس التقييم الذاتي والأدلة على النظام">⬆ استيراد التقييم من Excel</button>' : ""}
+        ${canReview ? '<button class="secondary" id="mt-xls-impr" title="رفع ملف Excel وعكس درجات مراجعة الشركة على النظام">⬆ استيراد المراجعة من Excel</button>' : ""}
+      </div>
+    </div>`;
+
   const ov = modal(`
     <div class="row" style="justify-content:space-between">
       <h2>${esc(m.code)} — ${esc(deptName(m.clusterId))}</h2>
@@ -236,6 +291,7 @@ export function openDetail(id, done) {
     </div>
     <p class="muted">الربع ${m.quarter} / ${m.year} · النضج المعتمد: ${levelBadge(maturityLevel(pct).key, `${pct}٪ — ${maturityLevel(pct).label}`)}</p>
     <div class="scale-note muted">مقياس التقييم: ${Object.entries(MATURITY_SCALE).map(([k, v]) => `<strong>${k}</strong>=${esc(v)}`).join(" · ")}</div>
+    ${repoBlock}
     ${domHtml}
     ${canReview ? fld("ملاحظات المراجعة الربعية", area("mt-rnotes", m.reviewNotes, "قرار المراجعة والملاحظات على الأدلة", 2)) : m.reviewNotes ? `<p><strong>ملاحظات المراجعة:</strong> ${esc(m.reviewNotes)}</p>` : ""}
     <div class="row" style="margin-top:14px">
@@ -258,6 +314,87 @@ export function openDetail(id, done) {
     ov.querySelectorAll(".mt-review").forEach((s) => { doms[s.dataset.d].criteria[s.dataset.c].reviewScore = s.value === "" ? null : Number(s.value); });
     return doms;
   };
+  // إعادة فتح النافذة بعد تعديل يُخزَّن مباشرة (رفع ملف / استيراد Excel)
+  const reopen = async () => { await reload("maturity"); ov.remove(); openDetail(m.id, done); };
+
+  // ---- مستودع الأدلة: حفظ الرابط الواحد ----
+  $("#mt-saverepo", ov)?.addEventListener("click", async () => {
+    const url = val("mt-repo", ov);
+    if (url && !/^https?:\/\//i.test(url)) return toast("أدخل رابطاً صحيحاً يبدأ بـ http أو https", true);
+    await db.updateRow("maturity", m.id, { evidenceRepo: url || null });
+    await db.audit("UPDATE", "Maturity", m.code, `تحديث رابط مستودع الأدلة — ${deptName(m.clusterId)}`);
+    m.evidenceRepo = url || null;
+    toast("حُفظ رابط المستودع");
+  });
+
+  // ---- إرسال بريد إلكتروني بمستودع الأدلة ----
+  $("#mt-email", ov)?.addEventListener("click", () => {
+    const repo = (ov.querySelector("#mt-repo")?.value?.trim()) || m.evidenceRepo || "";
+    openEmailModal(m, repo);
+  });
+
+  // ---- تنزيل نموذج Excel ----
+  $("#mt-xls-tpl", ov)?.addEventListener("click", async () => {
+    try { await downloadMaturityTemplate(m, deptName(m.clusterId)); toast("جارٍ تنزيل النموذج"); }
+    catch (err) { toast(err.message, true); }
+  });
+
+  // ---- استيراد التقييم/المراجعة من Excel ----
+  const doImport = async (mode) => {
+    const file = await pickFile(".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    if (!file) return;
+    toast("جارٍ قراءة الملف…");
+    try {
+      const { domains, applied, total } = await importMaturityExcel(file, m, mode);
+      await db.updateRow("maturity", m.id, { domains });
+      await db.audit("UPDATE", "Maturity", m.code, `عكس ${mode === "review" ? "مراجعة" : "تقييم"} من Excel — ${deptName(m.clusterId)}`);
+      toast(`تم عكس ${applied} من ${total} معياراً من الملف`);
+      await reopen();
+    } catch (err) { toast(err.message, true); }
+  };
+  $("#mt-xls-imp", ov)?.addEventListener("click", () => doImport("self"));
+  $("#mt-xls-impr", ov)?.addEventListener("click", () => doImport("review"));
+
+  // ---- رفع ملف دليل داعم لكل بند على حدة ----
+  ov.querySelectorAll(".mt-upload").forEach((btn) => btn.addEventListener("click", async () => {
+    const di = Number(btn.dataset.d), ci = Number(btn.dataset.c);
+    const file = await pickFile();
+    if (!file) return;
+    btn.disabled = true;
+    const original = btn.textContent;
+    btn.textContent = "⏳ جارٍ الرفع…";
+    try {
+      const path = `maturity/${m.id}/${di}-${ci}-${Date.now()}-${file.name}`;
+      const { url, name } = await uploadFile(path, file);
+      const doms = readSelf(); // نحفظ التعديلات الحالية غير المخزّنة قبل إعادة البناء
+      const crit = doms[di].criteria[ci];
+      const oldPath = crit.evidenceFilePath;
+      crit.evidenceFileUrl = url; crit.evidenceFileName = name; crit.evidenceFilePath = path;
+      await db.updateRow("maturity", m.id, { domains: doms });
+      if (oldPath) await deleteFile(oldPath);
+      await db.audit("UPDATE", "Maturity", m.code, `رفع ملف دليل داعم لبند — ${deptName(m.clusterId)}`);
+      toast("رُفع الملف");
+      await reopen();
+    } catch (err) {
+      btn.disabled = false; btn.textContent = original;
+      toast(err.message, true);
+    }
+  }));
+
+  // ---- إزالة ملف دليل مرفوع ----
+  ov.querySelectorAll(".mt-delfile").forEach((btn) => btn.addEventListener("click", async () => {
+    const di = Number(btn.dataset.d), ci = Number(btn.dataset.c);
+    if (!(await confirmBox("إزالة الملف المرفوع لهذا البند؟"))) return;
+    const doms = readSelf();
+    const crit = doms[di].criteria[ci];
+    const oldPath = crit.evidenceFilePath;
+    crit.evidenceFileUrl = ""; crit.evidenceFileName = ""; crit.evidenceFilePath = "";
+    await db.updateRow("maturity", m.id, { domains: doms });
+    if (oldPath) await deleteFile(oldPath);
+    await db.audit("UPDATE", "Maturity", m.code, `إزالة ملف دليل داعم لبند — ${deptName(m.clusterId)}`);
+    toast("أُزيل الملف");
+    await reopen();
+  }));
 
   $("#mt-savedraft", ov)?.addEventListener("click", async () => {
     await db.updateRow("maturity", m.id, { domains: readSelf() });
@@ -283,4 +420,56 @@ export function openDetail(id, done) {
     await db.audit("DELETE", "Maturity", m.code, `حذف تقييم نضج ${m.code}`);
     await reload("maturity"); toast("تم الحذف"); done();
   });
+}
+
+// نافذة إرسال بريد إلكتروني يحتوي رسالة ورابط مستودع الأدلة
+// يفتح تطبيق البريد لدى المستخدم عبر رابط mailto (النظام مستضاف كموقع ثابت بلا خادم بريد)
+function openEmailModal(m, repo = "") {
+  const cluster = deptName(m.clusterId);
+  const subject = `أدلة تقييم نضج الالتزام — ${cluster} — الربع ${m.quarter}/${m.year}`;
+  const body =
+    `السلام عليكم ورحمة الله وبركاته،\n\n` +
+    `مرفق رابط مستودع الأدلة الداعمة لتقييم نضج الالتزام الخاص بـ«${cluster}» للربع ${m.quarter}/${m.year}:\n` +
+    `${repo || "(لم يُحدَّد رابط المستودع بعد — يُرجى تحديده ثم إعادة الإرسال)"}\n\n` +
+    `وتفضلوا بقبول فائق الاحترام والتقدير.`;
+
+  const ov = modal(`
+    <h2>✉ إرسال بريد بمستودع الأدلة</h2>
+    <div class="form-grid">
+      ${fld("إلى (البريد الإلكتروني)", '<input type="email" id="em-to" placeholder="name@example.com" />')}
+      ${fld("الموضوع", `<input type="text" id="em-subject" value="${esc(subject)}" />`)}
+    </div>
+    ${fld("رابط المستودع", `<input type="url" id="em-repo" value="${esc(repo)}" placeholder="https://…" />`)}
+    ${fld("نص الرسالة", area("em-body", body, "", 7))}
+    <p class="muted">سيُفتح تطبيق البريد لديك برسالة جاهزة تتضمّن الرابط — راجعها ثم أرسلها.</p>
+    <div class="row" style="margin-top:12px;gap:6px;flex-wrap:wrap">
+      <button id="em-send">📧 فتح تطبيق البريد</button>
+      <button class="secondary" id="em-copy">نسخ نص الرسالة</button>
+      <button class="secondary" id="em-cancel">إغلاق</button>
+    </div>`);
+
+  $("#em-cancel", ov).onclick = () => ov.remove();
+
+  // يضمّن رابط المستودع في نص الرسالة إن غيّره المستخدم ولم يعد مذكوراً
+  const composed = () => {
+    let text = $("#em-body", ov).value;
+    const url = val("em-repo", ov);
+    if (url && !text.includes(url)) text += `\n\nرابط المستودع: ${url}`;
+    return text;
+  };
+
+  $("#em-copy", ov).onclick = async () => {
+    try { await navigator.clipboard.writeText(composed()); toast("نُسخت الرسالة"); }
+    catch { toast("تعذّر النسخ — انسخ النص يدوياً", true); }
+  };
+
+  $("#em-send", ov).onclick = () => {
+    const to = val("em-to", ov);
+    if (to && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) return toast("صيغة البريد الإلكتروني غير صحيحة", true);
+    const subj = val("em-subject", ov);
+    const href = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subj)}&body=${encodeURIComponent(composed())}`;
+    window.location.href = href;
+    toast("فُتح تطبيق البريد");
+    ov.remove();
+  };
 }
