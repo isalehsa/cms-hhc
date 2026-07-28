@@ -278,7 +278,7 @@ export function openDetail(id, done) {
         </div>
         <div class="row" style="gap:6px;flex-wrap:wrap">
           ${repoEditable ? '<button class="secondary" id="mt-saverepo" title="حفظ رابط مجلد الأدلة">💾 حفظ الرابط</button>' : ""}
-          <button class="secondary" id="mt-email" title="إرسال بريد إلكتروني يحتوي رسالة ورابط المجلد">✉ إرسال بريد</button>
+          ${canEdit(user) ? '<button class="secondary" id="mt-email" title="إرسال بريد إلكتروني يحتوي رسالة ورابط المجلد">✉ إرسال بريد</button>' : ""}
         </div>
       </div>
       <div class="row" style="margin-top:10px;gap:6px;flex-wrap:wrap">
