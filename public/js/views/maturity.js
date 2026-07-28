@@ -268,15 +268,15 @@ export function openDetail(id, done) {
     <div class="card sub">
       <div class="row" style="justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap">
         <div style="flex:1;min-width:240px">
-          ${fld("🔗 مستودع الأدلة (رابط واحد)", repoEditable
+          ${fld("🔗 مجلد الأدلة (رابط واحد)", repoEditable
             ? `<input type="url" id="mt-repo" placeholder="https://…" value="${esc(m.evidenceRepo || "")}" />`
             : (m.evidenceRepo
               ? `<a href="${esc(m.evidenceRepo)}" target="_blank" rel="noopener">${esc(m.evidenceRepo)}</a>`
-              : '<span class="muted">لم يُحدَّد رابط المستودع بعد</span>'))}
+              : '<span class="muted">لم يُحدَّد رابط المجلد بعد</span>'))}
         </div>
         <div class="row" style="gap:6px;flex-wrap:wrap">
-          ${repoEditable ? '<button class="secondary" id="mt-saverepo" title="حفظ رابط مستودع الأدلة">💾 حفظ الرابط</button>' : ""}
-          <button class="secondary" id="mt-email" title="إرسال بريد إلكتروني يحتوي رسالة ورابط المستودع">✉ إرسال بريد</button>
+          ${repoEditable ? '<button class="secondary" id="mt-saverepo" title="حفظ رابط مجلد الأدلة">💾 حفظ الرابط</button>' : ""}
+          <button class="secondary" id="mt-email" title="إرسال بريد إلكتروني يحتوي رسالة ورابط المجلد">✉ إرسال بريد</button>
         </div>
       </div>
       <div class="row" style="margin-top:10px;gap:6px;flex-wrap:wrap">
@@ -319,17 +319,17 @@ export function openDetail(id, done) {
   // إعادة فتح النافذة بعد تعديل يُخزَّن مباشرة (رفع ملف / استيراد Excel)
   const reopen = async () => { await reload("maturity"); ov.remove(); openDetail(m.id, done); };
 
-  // ---- مستودع الأدلة: حفظ الرابط الواحد ----
+  // ---- مجلد الأدلة: حفظ الرابط الواحد ----
   $("#mt-saverepo", ov)?.addEventListener("click", async () => {
     const url = val("mt-repo", ov);
     if (url && !/^https?:\/\//i.test(url)) return toast("أدخل رابطاً صحيحاً يبدأ بـ http أو https", true);
     await db.updateRow("maturity", m.id, { evidenceRepo: url || null });
-    await db.audit("UPDATE", "Maturity", m.code, `تحديث رابط مستودع الأدلة — ${deptName(m.clusterId)}`);
+    await db.audit("UPDATE", "Maturity", m.code, `تحديث رابط مجلد الأدلة — ${deptName(m.clusterId)}`);
     m.evidenceRepo = url || null;
-    toast("حُفظ رابط المستودع");
+    toast("حُفظ رابط المجلد");
   });
 
-  // ---- إرسال بريد إلكتروني بمستودع الأدلة ----
+  // ---- إرسال بريد إلكتروني بمجلد الأدلة ----
   $("#mt-email", ov)?.addEventListener("click", () => {
     const repo = (ov.querySelector("#mt-repo")?.value?.trim()) || m.evidenceRepo || "";
     openEmailModal(m, repo);
@@ -424,24 +424,24 @@ export function openDetail(id, done) {
   });
 }
 
-// نافذة إرسال بريد إلكتروني يحتوي رسالة ورابط مستودع الأدلة
+// نافذة إرسال بريد إلكتروني يحتوي رسالة ورابط مجلد الأدلة
 // يفتح تطبيق البريد لدى المستخدم عبر رابط mailto (النظام مستضاف كموقع ثابت بلا خادم بريد)
 function openEmailModal(m, repo = "") {
   const cluster = deptName(m.clusterId);
   const subject = `أدلة تقييم نضج الالتزام — ${cluster} — الربع ${m.quarter}/${m.year}`;
   const body =
     `السلام عليكم ورحمة الله وبركاته،\n\n` +
-    `مرفق رابط مستودع الأدلة الداعمة لتقييم نضج الالتزام الخاص بـ«${cluster}» للربع ${m.quarter}/${m.year}:\n` +
-    `${repo || "(لم يُحدَّد رابط المستودع بعد — يُرجى تحديده ثم إعادة الإرسال)"}\n\n` +
+    `مرفق رابط مجلد الأدلة الداعمة لتقييم نضج الالتزام الخاص بـ«${cluster}» للربع ${m.quarter}/${m.year}:\n` +
+    `${repo || "(لم يُحدَّد رابط المجلد بعد — يُرجى تحديده ثم إعادة الإرسال)"}\n\n` +
     `وتفضلوا بقبول فائق الاحترام والتقدير.`;
 
   const ov = modal(`
-    <h2>✉ إرسال بريد بمستودع الأدلة</h2>
+    <h2>✉ إرسال بريد بمجلد الأدلة</h2>
     <div class="form-grid">
       ${fld("إلى (البريد الإلكتروني)", '<input type="email" id="em-to" placeholder="name@example.com" />')}
       ${fld("الموضوع", `<input type="text" id="em-subject" value="${esc(subject)}" />`)}
     </div>
-    ${fld("رابط المستودع", `<input type="url" id="em-repo" value="${esc(repo)}" placeholder="https://…" />`)}
+    ${fld("رابط المجلد", `<input type="url" id="em-repo" value="${esc(repo)}" placeholder="https://…" />`)}
     ${fld("نص الرسالة", area("em-body", body, "", 7))}
     <p class="muted">سيُفتح تطبيق البريد لديك برسالة جاهزة تتضمّن الرابط — راجعها ثم أرسلها.</p>
     <div class="row" style="margin-top:12px;gap:6px;flex-wrap:wrap">
@@ -452,11 +452,11 @@ function openEmailModal(m, repo = "") {
 
   $("#em-cancel", ov).onclick = () => ov.remove();
 
-  // يضمّن رابط المستودع في نص الرسالة إن غيّره المستخدم ولم يعد مذكوراً
+  // يضمّن رابط المجلد في نص الرسالة إن غيّره المستخدم ولم يعد مذكوراً
   const composed = () => {
     let text = $("#em-body", ov).value;
     const url = val("em-repo", ov);
-    if (url && !text.includes(url)) text += `\n\nرابط المستودع: ${url}`;
+    if (url && !text.includes(url)) text += `\n\nرابط المجلد: ${url}`;
     return text;
   };
 
