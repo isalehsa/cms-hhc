@@ -218,6 +218,8 @@ export function openDetail(id, done) {
   const canSelfImport = canSelfEdit || canEdit(user);
   // مدير الالتزام يمكنه اعتماد التقييم الذاتي مباشرةً حتى وهو مسودة (دون انتظار إرسال التجمع)
   const canAdoptDraft = manager && m.status === "DRAFT";
+  // مدير الالتزام يمكنه التراجع عن اعتماد تقييم معتمد وإعادته إلى «بانتظار المراجعة»
+  const canUndoReview = manager && m.status === "REVIEWED";
 
   const domHtml = (m.domains || []).map((dom, di) => {
     const p = domainPct(dom, useReview);
@@ -302,7 +304,8 @@ export function openDetail(id, done) {
       ${canSelfEdit ? '<button id="mt-savedraft" class="secondary">حفظ مؤقت</button><button id="mt-submit">📤 إرسال للمراجعة</button>' : ""}
       ${canAdoptDraft ? '<button id="mt-adopt" title="اعتماد التقييم الذاتي الحالي كنتيجة معتمدة دون انتظار إرسال التجمع">✔ اعتماد التقييم الذاتي</button>' : ""}
       ${canReview ? '<button id="mt-review">✔ اعتماد المراجعة الربعية</button>' : ""}
-      ${(canEdit(user) || officer) && m.status !== "REVIEWED" ? '<button class="danger" id="mt-del">حذف</button>' : ""}
+      ${canUndoReview ? '<button class="secondary" id="mt-undo" title="التراجع عن اعتماد التقييم وإعادته إلى بانتظار المراجعة">↩ تراجع عن الاعتماد</button>' : ""}
+      ${(canEdit(user) || (officer && m.status !== "REVIEWED")) ? '<button class="danger" id="mt-del">حذف</button>' : ""}
       <button class="secondary" id="mt-close">إغلاق</button>
     </div>`, { wide: true });
 
@@ -417,6 +420,13 @@ export function openDetail(id, done) {
     await db.updateRow("maturity", m.id, { domains: readReview(), status: "REVIEWED", reviewNotes: val("mt-rnotes", ov) || null, reviewedById: user.uid });
     await db.audit("REVIEW", "Maturity", m.code, `اعتماد المراجعة الربعية وإعادة التقييم — ${deptName(m.clusterId)}`);
     await reload("maturity"); ov.remove(); toast("اعتُمدت المراجعة الربعية"); done();
+  });
+  // التراجع عن الاعتماد: يعيد التقييم المعتمد إلى «بانتظار المراجعة» مع حفظ الدرجات والملاحظات
+  $("#mt-undo", ov)?.addEventListener("click", async () => {
+    if (!(await confirmBox("التراجع عن اعتماد التقييم وإعادته إلى «بانتظار المراجعة»؟"))) return;
+    await db.updateRow("maturity", m.id, { status: "SUBMITTED", reviewedById: null });
+    await db.audit("UPDATE", "Maturity", m.code, `تراجع عن اعتماد التقييم — ${deptName(m.clusterId)}`);
+    await reload("maturity"); ov.remove(); toast("تم التراجع عن الاعتماد"); done();
   });
   // اعتماد التقييم الذاتي مباشرةً من المسودة: تُعتمد درجات التجمع كما هي نتيجةً معتمدة
   $("#mt-adopt", ov)?.addEventListener("click", async () => {
