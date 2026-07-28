@@ -445,15 +445,40 @@ function openEmailModal(m, repo = "") {
   const cluster = deptName(m.clusterId);
   const subject = `أدلة تقييم نضج الالتزام — ${cluster} — الربع ${m.quarter}/${m.year}`;
   const body =
-    `السلام عليكم ورحمة الله وبركاته،\n\n` +
+    `الأعزاء في إدارة الالتزام في ${cluster}،\n` +
+    `تحية طيبة،،\n\n` +
     `مرفق رابط مجلد الأدلة الداعمة لتقييم نضج الالتزام الخاص بـ«${cluster}» للربع ${m.quarter}/${m.year}:\n` +
     `${repo || "(لم يُحدَّد رابط المجلد بعد — يُرجى تحديده ثم إعادة الإرسال)"}\n\n` +
     `وتفضلوا بقبول فائق الاحترام والتقدير.`;
 
+  // جهات الاتصال من دليل التواصل التي لديها بريد (الرسمي أولاً ضمن التسمية)، وجهات
+  // التجمع المعنيّ بالتقييم تظهر في الأعلى لتسهيل الاختيار
+  const seen = new Set();
+  const contacts = [];
+  for (const c of store.directory) {
+    for (const [email, kind] of [[c.email, ""], [c.officialEmail, " (بريد رسمي)"]]) {
+      const addr = (email || "").trim();
+      if (!addr || seen.has(addr)) continue;
+      seen.add(addr);
+      const cl = (c.cluster || "").trim();
+      contacts.push({
+        email: addr,
+        label: `${c.name || cl || "—"}${cl ? " — " + cl : ""}${kind} · ${addr}`,
+        same: cl === cluster.trim(),
+      });
+    }
+  }
+  contacts.sort((a, b) => (b.same - a.same) || a.label.localeCompare(b.label, "ar"));
+
+  const pickerField = contacts.length
+    ? fld("اختيار من دليل التواصل", `<select id="em-pick"><option value="">— اختر جهة لإضافة بريدها —</option>${contacts.map((c) => `<option value="${esc(c.email)}">${esc(c.label)}</option>`).join("")}</select>`)
+    : `<p class="muted">لا توجد جهات ذات بريد في دليل التواصل — أدخل البريد يدوياً.</p>`;
+
   const ov = modal(`
     <h2>✉ إرسال بريد بمجلد الأدلة</h2>
+    ${pickerField}
     <div class="form-grid">
-      ${fld("إلى (البريد الإلكتروني)", '<input type="email" id="em-to" placeholder="name@example.com" />')}
+      ${fld("إلى (البريد الإلكتروني)", '<input type="email" id="em-to" placeholder="name@example.com — يمكن إضافة أكثر من بريد بفاصلة" />')}
       ${fld("الموضوع", `<input type="text" id="em-subject" value="${esc(subject)}" />`)}
     </div>
     ${fld("رابط المجلد", `<input type="url" id="em-repo" value="${esc(repo)}" placeholder="https://…" />`)}
@@ -466,6 +491,17 @@ function openEmailModal(m, repo = "") {
     </div>`);
 
   $("#em-cancel", ov).onclick = () => ov.remove();
+
+  // اختيار جهة من دليل التواصل يضيف بريدها إلى حقل «إلى» (دون تكرار) ويدعم عدة مستلمين
+  $("#em-pick", ov)?.addEventListener("change", (e) => {
+    const addr = e.target.value;
+    e.target.value = "";
+    if (!addr) return;
+    const to = $("#em-to", ov);
+    const list = to.value.split(",").map((s) => s.trim()).filter(Boolean);
+    if (!list.includes(addr)) list.push(addr);
+    to.value = list.join(", ");
+  });
 
   // يضمّن رابط المجلد في نص الرسالة إن غيّره المستخدم ولم يعد مذكوراً
   const composed = () => {
@@ -481,10 +517,10 @@ function openEmailModal(m, repo = "") {
   };
 
   $("#em-send", ov).onclick = () => {
-    const to = val("em-to", ov);
-    if (to && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) return toast("صيغة البريد الإلكتروني غير صحيحة", true);
+    const recipients = val("em-to", ov).split(",").map((s) => s.trim()).filter(Boolean);
+    if (recipients.some((p) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(p))) return toast("صيغة البريد الإلكتروني غير صحيحة", true);
     const subj = val("em-subject", ov);
-    const href = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subj)}&body=${encodeURIComponent(composed())}`;
+    const href = `mailto:${encodeURIComponent(recipients.join(","))}?subject=${encodeURIComponent(subj)}&body=${encodeURIComponent(composed())}`;
     window.location.href = href;
     toast("فُتح تطبيق البريد");
     ov.remove();
