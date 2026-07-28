@@ -216,6 +216,8 @@ export function openDetail(id, done) {
   const useReview = m.status === "REVIEWED";
   // مدير/فريق الالتزام يمكنه استيراد التقييم الذاتي من Excel نيابةً عن التجمع
   const canSelfImport = canSelfEdit || canEdit(user);
+  // مدير الالتزام يمكنه اعتماد التقييم الذاتي مباشرةً حتى وهو مسودة (دون انتظار إرسال التجمع)
+  const canAdoptDraft = manager && m.status === "DRAFT";
 
   const domHtml = (m.domains || []).map((dom, di) => {
     const p = domainPct(dom, useReview);
@@ -298,6 +300,7 @@ export function openDetail(id, done) {
     ${canReview ? fld("ملاحظات المراجعة الربعية", area("mt-rnotes", m.reviewNotes, "قرار المراجعة والملاحظات على الأدلة", 2)) : m.reviewNotes ? `<p><strong>ملاحظات المراجعة:</strong> ${esc(m.reviewNotes)}</p>` : ""}
     <div class="row" style="margin-top:14px">
       ${canSelfEdit ? '<button id="mt-savedraft" class="secondary">حفظ مؤقت</button><button id="mt-submit">📤 إرسال للمراجعة</button>' : ""}
+      ${canAdoptDraft ? '<button id="mt-adopt" title="اعتماد التقييم الذاتي الحالي كنتيجة معتمدة دون انتظار إرسال التجمع">✔ اعتماد التقييم الذاتي</button>' : ""}
       ${canReview ? '<button id="mt-review">✔ اعتماد المراجعة الربعية</button>' : ""}
       ${(canEdit(user) || officer) && m.status !== "REVIEWED" ? '<button class="danger" id="mt-del">حذف</button>' : ""}
       <button class="secondary" id="mt-close">إغلاق</button>
@@ -414,6 +417,18 @@ export function openDetail(id, done) {
     await db.updateRow("maturity", m.id, { domains: readReview(), status: "REVIEWED", reviewNotes: val("mt-rnotes", ov) || null, reviewedById: user.uid });
     await db.audit("REVIEW", "Maturity", m.code, `اعتماد المراجعة الربعية وإعادة التقييم — ${deptName(m.clusterId)}`);
     await reload("maturity"); ov.remove(); toast("اعتُمدت المراجعة الربعية"); done();
+  });
+  // اعتماد التقييم الذاتي مباشرةً من المسودة: تُعتمد درجات التجمع كما هي نتيجةً معتمدة
+  $("#mt-adopt", ov)?.addEventListener("click", async () => {
+    if (!(await confirmBox("اعتماد التقييم الذاتي الحالي (مسودة) كنتيجة معتمدة، دون انتظار إرسال التجمع؟"))) return;
+    await db.updateRow("maturity", m.id, {
+      status: "REVIEWED",
+      reviewNotes: m.reviewNotes || "اعتُمد التقييم الذاتي كما هو من قبل إدارة الالتزام",
+      reviewedById: user.uid,
+      submittedAt: m.submittedAt || db.now(),
+    });
+    await db.audit("REVIEW", "Maturity", m.code, `اعتماد التقييم الذاتي من مسودة — ${deptName(m.clusterId)}`);
+    await reload("maturity"); ov.remove(); toast("اعتُمد التقييم الذاتي"); done();
   });
   $("#mt-del", ov)?.addEventListener("click", async () => {
     ov.remove();
