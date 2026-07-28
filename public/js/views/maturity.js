@@ -214,6 +214,8 @@ export function openDetail(id, done) {
   const canSelfEdit = officer && m.status === "DRAFT";
   const canReview = manager && (m.status === "SUBMITTED" || m.status === "REVIEWED");
   const useReview = m.status === "REVIEWED";
+  // مدير/فريق الالتزام يمكنه استيراد التقييم الذاتي من Excel نيابةً عن التجمع
+  const canSelfImport = canSelfEdit || canEdit(user);
 
   const domHtml = (m.domains || []).map((dom, di) => {
     const p = domainPct(dom, useReview);
@@ -279,7 +281,7 @@ export function openDetail(id, done) {
       </div>
       <div class="row" style="margin-top:10px;gap:6px;flex-wrap:wrap">
         <button class="secondary" id="mt-xls-tpl" title="تنزيل نموذج Excel معبّأ بالقيم الحالية لتعبئته">⬇ تنزيل نموذج Excel</button>
-        ${canSelfEdit ? '<button class="secondary" id="mt-xls-imp" title="رفع ملف Excel معبّأ وعكس التقييم الذاتي والأدلة على النظام">⬆ استيراد التقييم من Excel</button>' : ""}
+        ${canSelfImport ? `<button class="secondary" id="mt-xls-imp" title="رفع ملف Excel معبّأ وعكس التقييم الذاتي والأدلة على النظام${canSelfEdit ? "" : " (نيابةً عن التجمع)"}">⬆ استيراد التقييم من Excel</button>` : ""}
         ${canReview ? '<button class="secondary" id="mt-xls-impr" title="رفع ملف Excel وعكس درجات مراجعة الشركة على النظام">⬆ استيراد المراجعة من Excel</button>' : ""}
       </div>
     </div>`;
