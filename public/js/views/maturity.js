@@ -267,7 +267,9 @@ export function openDetail(id, done) {
   }).join("");
 
   const pct = finalPct(m);
-  const repoEditable = canSelfEdit || canReview;
+  // يمكن إضافة/تعديل رابط مجلد الأدلة في أي حالة قبل الاعتماد وبعده:
+  // مسؤول التجمع أثناء المسودة، وفريق الالتزام (المحررون) في جميع الحالات
+  const repoEditable = canSelfEdit || canReview || canEdit(user);
   const repoBlock = `
     <div class="card sub">
       <div class="row" style="justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap">
