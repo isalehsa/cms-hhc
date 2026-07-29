@@ -75,10 +75,10 @@ export function chip(text) {
   return `<span class="chip">${esc(text)}</span>`;
 }
 
-// شارة موجة التجمع (تابع للشركة / قيد التجهيز) — تقبل كائن الموجة {short, tone}
+// شارة موجة التجمع — تقبل كائن الموجة {short, label, tone, color}
 export function waveBadge(wave, { full = false } = {}) {
   if (!wave) return '<span class="muted" style="font-size:.72rem">غير مصنّف</span>';
-  const c = STATUS_COLORS[wave.tone] || STATUS_COLORS.neutral;
+  const c = wave.color || STATUS_COLORS[wave.tone] || STATUS_COLORS.neutral;
   return `<span class="lvl" style="background:${c}1f;border-color:${c}55;color:${c}"><span class="dot" style="background:${c}"></span>${esc(full ? wave.label : wave.short)}</span>`;
 }
 
