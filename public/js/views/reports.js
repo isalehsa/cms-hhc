@@ -147,13 +147,13 @@ function tableFor(key) {
       };
     case "maturity": {
       const critScore = (c, useReview) => (useReview && c.reviewScore != null ? c.reviewScore : (c.selfScore || 0));
-      const pctOf = (m) => {
+      const overall = (m, useReview) => {
         const crits = (m.domains || []).flatMap((d) => d.criteria);
         const max = crits.length * 3;
-        return max ? Math.round((crits.reduce((s, c) => s + critScore(c, m.status === "REVIEWED"), 0) / max) * 100) : 0;
+        return max ? Math.round((crits.reduce((s, c) => s + critScore(c, useReview), 0) / max) * 100) : 0;
       };
       return {
-        head: ["الرقم", "التجمع", "الفترة", ...MATURITY_MODEL.map((d) => d.name), "الإجمالي %", "المستوى", "الحالة"],
+        head: ["الرقم", "التجمع", "الفترة", ...MATURITY_MODEL.map((d) => d.name), "تقييم التجمع %", "بعد المراجعة %", "المستوى", "الحالة"],
         rows: store.maturity.map((m) => {
           const useReview = m.status === "REVIEWED";
           const domCells = MATURITY_MODEL.map((dm) => {
@@ -162,8 +162,14 @@ function tableFor(key) {
             const max = dom.criteria.length * 3;
             return max ? Math.round((dom.criteria.reduce((s, c) => s + critScore(c, useReview), 0) / max) * 100) + "%" : "—";
           });
-          const tot = pctOf(m);
-          return [m.code, deptName(m.clusterId), `ر${m.quarter}/${m.year}`, ...domCells, tot, maturityLevel(tot).label, MATURITY_STATUS[m.status] || m.status];
+          const self = overall(m, false);
+          const reviewed = useReview ? overall(m, true) : null;
+          const tot = useReview ? reviewed : self;
+          return [
+            m.code, deptName(m.clusterId), `ر${m.quarter}/${m.year}`, ...domCells,
+            self + "%", reviewed == null ? "— بانتظار المراجعة" : reviewed + "%",
+            maturityLevel(tot).label, MATURITY_STATUS[m.status] || m.status,
+          ];
         }),
       };
     }
@@ -245,6 +251,101 @@ function cell(v) {
   return c ? `<span class="pill" style="background:${c}22;color:${c};border:1px solid ${c}55">${esc(s)}</span>` : esc(s);
 }
 
+// ---------- لوحات بصرية لكل تقرير (داش بورد) ----------
+const tally = (arr, fn) => { const t = {}; for (const x of arr) { const k = fn(x); if (k != null && k !== "") t[k] = (t[k] || 0) + 1; } return t; };
+const barsFromMap = (map, dict, colorOf) =>
+  repBars(Object.entries(map).map(([k, count]) => ({ label: (dict && dict[k]) || k, count, color: colorOf ? colorOf(k) : C.primary })));
+const chartBox = (title, inner) => `<div class="rep-chart"><h3>${esc(title)}</h3>${inner}</div>`;
+const chartsWrap = (...c) => (c.filter(Boolean).length ? `<div class="rep-charts">${c.join("")}</div>` : "");
+// لون النضج المتدرّج من الأحمر (0٪) إلى الأخضر (100٪)
+const matColor = (pct) => `hsl(${Math.round(Math.max(0, Math.min(100, pct)) * 1.2)},58%,44%)`;
+
+const TONE_STATUS = { ACTIVE: C.good, UPDATED: "#2a78d6", UNDER_REVIEW: C.warning, CANCELLED: C.neutral };
+const TONE_CRIT = { CRITICAL: C.critical, HIGH: C.serious, MEDIUM: C.warning, LOW: C.good };
+const TONE_MON_RES = { COMPLIANT: C.good, PARTIAL: C.warning, NON_COMPLIANT: C.critical };
+const TONE_MON_ST = { PLANNED: C.neutral, IN_PROGRESS: C.warning, COMPLETED: C.good, CLOSED: "#2a78d6" };
+const TONE_SA = { COMPLIANT: C.good, PARTIAL: C.warning, NON_COMPLIANT: C.critical, NA: C.neutral };
+const TONE_PLAN = { NOT_STARTED: C.neutral, IN_PROGRESS: C.warning, COMPLETED: C.good, DELAYED: C.critical };
+const TONE_FND_ST = { OPEN: C.critical, IN_PROGRESS: C.warning, CLOSED: C.good };
+const TONE_COR_ST = { OPEN: C.warning, REPLIED: C.good, CLOSED: "#2a78d6" };
+const TONE_DIS_ST = { PENDING: C.warning, UNDER_REVIEW: C.warning, APPROVED: C.good, MITIGATED: C.good, REJECTED: C.critical };
+const TONE_TRN_ST = { PLANNED: C.neutral, IN_PROGRESS: C.warning, COMPLETED: C.good, CANCELLED: C.neutral };
+
+function reportCharts(key) {
+  switch (key) {
+    case "requirements": {
+      const active = store.requirements.filter((r) => r.status !== "CANCELLED");
+      return chartsWrap(
+        chartBox("حسب الحالة", barsFromMap(tally(store.requirements, (r) => r.status), REQ_STATUS, (k) => TONE_STATUS[k] || C.primary)),
+        chartBox("حسب الأهمية (النشطة)", barsFromMap(tally(active, (r) => r.criticality), CRITICALITY, (k) => TONE_CRIT[k] || C.primary)),
+      );
+    }
+    case "risks": {
+      const rc = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 };
+      for (const r of store.risks) rc[riskLevel(r.residualLikelihood ?? r.likelihood, r.residualImpact ?? r.impact).key]++;
+      return chartsWrap(
+        chartBox("مستوى الخطر (بعد الضوابط)", repBars([
+          { label: "حرج", count: rc.CRITICAL, color: C.critical }, { label: "عالٍ", count: rc.HIGH, color: C.serious },
+          { label: "متوسط", count: rc.MEDIUM, color: C.warning }, { label: "منخفض", count: rc.LOW, color: C.good },
+        ])),
+        chartBox("حسب الحالة", barsFromMap(tally(store.risks, (r) => r.status), RISK_STATUS, () => "#2a78d6")),
+      );
+    }
+    case "monitoring":
+      return chartsWrap(
+        chartBox("نتائج الأنشطة المنفذة", barsFromMap(tally(store.monitoring.filter((m) => m.result), (m) => m.result), MON_RESULT, (k) => TONE_MON_RES[k])),
+        chartBox("حسب الحالة", barsFromMap(tally(store.monitoring, (m) => m.status), MON_STATUS, (k) => TONE_MON_ST[k] || C.primary)),
+      );
+    case "assessments": {
+      const answers = tally(store.assessments.flatMap((a) => a.questions || []), (q) => q.response?.answer);
+      return chartsWrap(chartBox("توزيع إجابات الفحص الذاتي", barsFromMap(answers, SA_ANSWERS, (k) => TONE_SA[k] || C.neutral)));
+    }
+    case "plan":
+      return chartsWrap(chartBox("مبادرات الخطة حسب الحالة", barsFromMap(tally(store.planItems, (p) => p.status), PLAN_STATUS, (k) => TONE_PLAN[k] || C.primary)));
+    case "findings":
+      return chartsWrap(
+        chartBox("حسب الخطورة", barsFromMap(tally(store.findings, (f) => f.severity), FND_SEVERITY, (k) => TONE_CRIT[k] || C.primary)),
+        chartBox("حسب الحالة", barsFromMap(tally(store.findings, (f) => f.status), FND_STATUS, (k) => TONE_FND_ST[k] || C.primary)),
+      );
+    case "correspondence":
+      return chartsWrap(
+        chartBox("حسب الاتجاه", barsFromMap(tally(store.correspondence, (c) => c.direction), COR_DIRECTION, () => C.primary)),
+        chartBox("حسب الحالة", barsFromMap(tally(store.correspondence, (c) => c.status), COR_STATUS, (k) => TONE_COR_ST[k] || C.primary)),
+      );
+    case "disclosures":
+      return chartsWrap(
+        chartBox("حسب النوع", barsFromMap(tally(store.disclosures, (d) => d.type), DISCLOSURE_TYPES, () => C.primary)),
+        chartBox("حسب الحالة", barsFromMap(tally(store.disclosures, (d) => d.status), DISCLOSURE_STATUS, (k) => TONE_DIS_ST[k] || C.primary)),
+      );
+    case "training":
+      return chartsWrap(chartBox("برامج التدريب حسب الحالة", barsFromMap(tally(store.trainings, (t) => t.status), TRAINING_STATUS, (k) => TONE_TRN_ST[k] || C.primary)));
+    case "maturity": {
+      const overall = (m, useRev) => {
+        const cs = (m.domains || []).flatMap((d) => d.criteria); const max = cs.length * 3;
+        return max ? Math.round((cs.reduce((s, c) => s + ((useRev && c.reviewScore != null) ? c.reviewScore : (c.selfScore || 0)), 0) / max) * 100) : 0;
+      };
+      const lc = { good: 0, warning: 0, serious: 0, critical: 0 };
+      for (const m of store.maturity) lc[maturityLevel(overall(m, m.status === "REVIEWED")).key]++;
+      const rev = store.maturity.filter((m) => m.status === "REVIEWED");
+      const avg = (a) => (a.length ? Math.round(a.reduce((s, x) => s + x, 0) / a.length) : 0);
+      const avgSelf = avg(store.maturity.map((m) => overall(m, false)));
+      const avgRev = avg(rev.map((m) => overall(m, true)));
+      return chartsWrap(
+        chartBox("توزيع التجمعات حسب المستوى", repBars([
+          { label: "رائد", count: lc.good, color: matColor(90) }, { label: "متقدم", count: lc.warning, color: matColor(63) },
+          { label: "نامٍ", count: lc.serious, color: matColor(38) }, { label: "مبتدئ", count: lc.critical, color: matColor(12) },
+        ])),
+        chartBox("متوسط النسب", `<div class="bars">
+          <div class="bar-row"><span class="bar-lbl">تقييم التجمعات (ذاتي)</span><span class="bar-track"><span class="bar-fill" style="width:${avgSelf}%;background:${matColor(avgSelf)}"></span></span><span class="bar-num">${avgSelf}%</span></div>
+          <div class="bar-row"><span class="bar-lbl">بعد المراجعة</span><span class="bar-track"><span class="bar-fill" style="width:${avgRev}%;background:${matColor(avgRev)}"></span></span><span class="bar-num">${avgRev}%</span></div>
+        </div>`),
+      );
+    }
+    default:
+      return "";
+  }
+}
+
 // ---------- عرض التقرير (وللطباعة PDF) ----------
 function reportHtml(key) {
   const k = kpis();
@@ -305,8 +406,11 @@ function reportHtml(key) {
       <ul>${recs.map((r) => `<li>${esc(r)}</li>`).join("") || "<li>لا توجد توصيات مسجلة</li>"}</ul>`;
   } else {
     const t = tableFor(key);
+    const charts = reportCharts(key);
     body = `
       ${kpiBlock}
+      ${charts ? `<h2>مؤشرات ${esc(meta.title.replace("تقرير ", ""))}</h2>${charts}` : ""}
+      <h2>التفاصيل</h2>
       <table><thead><tr>${t.head.map((h) => `<th>${esc(h)}</th>`).join("")}</tr></thead>
       <tbody>${t.rows.map((row) => `<tr>${row.map((c) => `<td>${cell(c)}</td>`).join("")}</tr>`).join("") || `<tr><td colspan="${t.head.length}">لا توجد بيانات</td></tr>`}</tbody></table>`;
   }
