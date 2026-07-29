@@ -10,7 +10,7 @@ import {
 import { MATURITY_MODEL, MATURITY_SCALE, MATURITY_STATUS, maturityLevel } from "../meta.js";
 import { canEdit, canApprove, isClusterOfficer } from "../auth.js";
 import { uploadFile, deleteFile } from "../storage.js";
-import { downloadMaturityTemplate, importMaturityExcel } from "../maturity-xlsx.js";
+import { downloadMaturityTemplate, importMaturityExcel, importLegacyMaturityExcel } from "../maturity-xlsx.js";
 
 // فتح منتقي ملفات ويعيد الملف المختار (أو null إن أُلغي)
 function pickFile(accept = "") {
@@ -289,6 +289,7 @@ export function openDetail(id, done) {
         <button class="secondary" id="mt-xls-tpl" title="تنزيل نموذج Excel معبّأ بالقيم الحالية لتعبئته">⬇ تنزيل نموذج Excel</button>
         ${canSelfImport ? `<button class="secondary" id="mt-xls-imp" title="رفع ملف Excel معبّأ وعكس التقييم الذاتي والأدلة على النظام${canSelfEdit ? "" : " (نيابةً عن التجمع)"}">⬆ استيراد التقييم من Excel</button>` : ""}
         ${canReview ? '<button class="secondary" id="mt-xls-impr" title="رفع ملف Excel وعكس درجات مراجعة الشركة على النظام">⬆ استيراد المراجعة من Excel</button>' : ""}
+        ${canEdit(user) ? '<button class="secondary" id="mt-xls-legacy" title="استيراد قيم التقييم من ملف النموذج القديم (ورقة نموذج التقييم) وعكسها على التقييم الذاتي">⬆ استيراد من النموذج القديم</button>' : ""}
       </div>
     </div>`;
 
@@ -364,6 +365,20 @@ export function openDetail(id, done) {
   };
   $("#mt-xls-imp", ov)?.addEventListener("click", () => doImport("self"));
   $("#mt-xls-impr", ov)?.addEventListener("click", () => doImport("review"));
+
+  // ---- استيراد قيم التقييم من النموذج القديم ----
+  $("#mt-xls-legacy", ov)?.addEventListener("click", async () => {
+    const file = await pickFile(".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    if (!file) return;
+    toast("جارٍ قراءة الملف…");
+    try {
+      const { domains, applied, total } = await importLegacyMaturityExcel(file, m);
+      await db.updateRow("maturity", m.id, { domains });
+      await db.audit("UPDATE", "Maturity", m.code, `عكس التقييم من النموذج القديم — ${deptName(m.clusterId)}`);
+      toast(`تم عكس ${applied} من ${total} معياراً من النموذج القديم`);
+      await reopen();
+    } catch (err) { toast(err.message, true); }
+  });
 
   // ---- رفع ملف دليل داعم لكل بند على حدة ----
   ov.querySelectorAll(".mt-upload").forEach((btn) => btn.addEventListener("click", async () => {

@@ -155,3 +155,72 @@ export async function importMaturityExcel(file, m, mode = "self") {
   }
   return { domains, applied, total };
 }
+
+// استيراد قيم التقييم من «النموذج القديم» المستخدم سابقاً (ورقة «نموذج التقييم»):
+// صف عناوين يحوي «المعيار» و«درجة تقييم المعيار»، والمعايير في عمود المعيار ودرجاتها
+// في عمود الدرجة (0-3). تُعكس الدرجة على التقييم الذاتي، والملاحظات إن وُجدت.
+// المطابقة بنص المعيار مع بديل حسب الترتيب.
+export async function importLegacyMaturityExcel(file, m) {
+  requireExcel();
+  const buffer = await file.arrayBuffer();
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(buffer).catch(() => {
+    throw new Error("تعذّرت قراءة الملف — تأكد أنه بصيغة Excel (.xlsx)");
+  });
+  const ws = wb.worksheets.find((w) => /نموذج|تقييم/.test(w.name)) || wb.worksheets[0];
+  if (!ws) throw new Error("الملف لا يحتوي على أوراق عمل");
+
+  // ابحث عن صف العناوين ضمن أول 15 صفاً: يحوي عمود «المعيار» وعمود «درجة تقييم المعيار»
+  let headerRow = 0, cCrit = 0, cScore = 0, cNote = 0;
+  const maxScan = Math.min(ws.rowCount || 15, 15);
+  for (let r = 1; r <= maxScan && !headerRow; r++) {
+    let crit = 0, score = 0, note = 0;
+    ws.getRow(r).eachCell((cell, col) => {
+      const t = cellText(cell.value).trim();
+      if (!crit && /^المعيار/.test(t)) crit = col;
+      if (!score && /درجة تقييم المعيار|درجة المعيار|^الدرجة/.test(t)) score = col;
+      if (!note && /^الملاحظات|^ملاحظات/.test(t)) note = col;
+    });
+    if (crit && score) { headerRow = r; cCrit = crit; cScore = score; cNote = note; }
+  }
+  if (!headerRow) {
+    throw new Error("تعذّر التعرّف على أعمدة النموذج القديم (المعيار / درجة تقييم المعيار)");
+  }
+
+  // اجمع صفوف المعايير (كل صف له نص معيار)، وتخطَّ صفوف الإجماليات في الأسفل
+  const rows = [];
+  const lastRow = ws.rowCount || headerRow;
+  for (let r = headerRow + 1; r <= lastRow; r++) {
+    const row = ws.getRow(r);
+    const crit = cellText(row.getCell(cCrit).value).trim();
+    if (!crit) continue;
+    rows.push({
+      crit,
+      score: parseScore(row.getCell(cScore).value),
+      note: cNote ? cellText(row.getCell(cNote).value).trim() : "",
+    });
+  }
+  if (!rows.length) throw new Error("لم يُعثر على معايير في الملف");
+
+  const byText = new Map();
+  for (const r of rows) if (r.crit) byText.set(norm(r.crit), r);
+
+  const domains = JSON.parse(JSON.stringify(m.domains || []));
+  let applied = 0, total = 0, k = 0;
+  for (const dom of domains) {
+    for (const c of dom.criteria) {
+      total++;
+      const r = byText.get(norm(c.text)) || rows[k];
+      k++;
+      if (!r) continue;
+      let changed = false;
+      if (r.score != null) { c.selfScore = r.score; changed = true; }
+      if (r.note) { c.note = r.note; changed = true; }
+      if (changed) applied++;
+    }
+  }
+  if (!applied) {
+    throw new Error("لم تُطابَق أي معايير — تأكد أن الملف هو النموذج القديم للتقييم");
+  }
+  return { domains, applied, total };
+}
