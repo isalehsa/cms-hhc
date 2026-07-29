@@ -8,7 +8,7 @@ import {
   fmtDate, statusBadgeFrom, emptyMsg, statTile, donutStat,
   maturityBar, maturityLevelBadge, maturityColor, waveBadge,
 } from "../ui.js";
-import { CLUSTER_WAVES } from "../meta.js";
+import { CLUSTER_WAVES, CLUSTER_WAVE_ORDER } from "../meta.js";
 import { MATURITY_MODEL, MATURITY_SCALE, MATURITY_STATUS, maturityLevel } from "../meta.js";
 import { canEdit, canApprove, isClusterOfficer } from "../auth.js";
 import { uploadFile, deleteFile } from "../storage.js";
@@ -174,30 +174,32 @@ function renderResults(rows) {
 
   const avg = (arr) => (arr.length ? Math.round(arr.reduce((s, x) => s + x, 0) / arr.length) : 0);
 
-  // تجميع حسب الموجة (للملخّص المقارن بين الموجتين)
-  const groups = { ONE: [], TWO: [], NONE: [] };
-  for (const m of allItems) groups[clusterWave(m.clusterId)?.key || "NONE"].push(m);
+  // تجميع حسب الموجة (للملخّص المقارن بين الموجات)
+  const groups = {};
+  CLUSTER_WAVE_ORDER.forEach((k) => (groups[k] = []));
+  for (const m of allItems) (groups[clusterWave(m.clusterId)?.key || "PREP"]).push(m);
+  const presentWaves = CLUSTER_WAVE_ORDER.filter((k) => groups[k].length);
   const waveCard = (key) => {
     const g = groups[key], rev = g.filter(isReviewed), meta = CLUSTER_WAVES[key];
-    return `<div class="card sub" style="flex:1;min-width:250px;margin:0">
+    return `<div class="card sub" style="flex:1;min-width:230px;margin:0;border-top:3px solid ${meta.color}">
       <div class="row" style="justify-content:space-between;align-items:center">
-        <strong>${esc(meta.label)}</strong><span class="chip">${g.length} تجمع</span>
+        <strong style="color:${meta.color}">${esc(meta.label)}</strong><span class="chip">${g.length} تجمع</span>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px">
         ${donutStat(g.length ? avg(g.map(selfPct)) : null, "متوسط الذاتي")}
         ${donutStat(rev.length ? avg(rev.map(reviewedPct)) : null, "بعد المراجعة", rev.length ? `${rev.length} معتمد` : "لا يوجد")}
       </div></div>`;
   };
-  const waveSummary = (groups.ONE.length || groups.TWO.length)
-    ? `<div class="row" style="gap:12px;flex-wrap:wrap;margin-bottom:14px">${waveCard("ONE")}${waveCard("TWO")}</div>` : "";
+  const waveSummary = presentWaves.length
+    ? `<div class="row" style="gap:12px;flex-wrap:wrap;margin-bottom:14px">${presentWaves.map(waveCard).join("")}</div>` : "";
 
   // فلتر الموجة
   const btn = (v, label) => `<button class="subtab ${resultsWave === v ? "active" : ""}" data-wave="${v}">${label}</button>`;
   const waveFilter = `<div class="subtabs" style="margin-bottom:12px">
-    ${btn("", "كل التجمعات")}${btn("ONE", CLUSTER_WAVES.ONE.short)}${btn("TWO", CLUSTER_WAVES.TWO.short)}
+    ${btn("", "كل التجمعات")}${presentWaves.map((k) => btn(k, CLUSTER_WAVES[k].short)).join("")}
   </div>`;
 
-  const items = resultsWave ? allItems.filter((m) => (clusterWave(m.clusterId)?.key || "NONE") === resultsWave) : allItems;
+  const items = resultsWave ? allItems.filter((m) => (clusterWave(m.clusterId)?.key || "PREP") === resultsWave) : allItems;
   const reviewedItems = items.filter(isReviewed);
   const avgSelf = avg(items.map(selfPct));
   const avgRev = avg(reviewedItems.map(reviewedPct));

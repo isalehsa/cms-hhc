@@ -7,7 +7,7 @@ import {
   RISK_STATUS, MON_TYPES, MON_FREQ, MON_STATUS, MON_RESULT, NC_LEVELS,
   PLAN_STATUS, PLAN_SOURCES, PLAN_TYPES, SA_STATUS, SA_ANSWERS, FND_SEVERITY, FND_STATUS, FND_SOURCES,
   COR_DIRECTION, COR_PRIORITY, COR_STATUS, DISCLOSURE_TYPES, DISCLOSURE_STATUS, TRAINING_TYPES, TRAINING_STATUS,
-  MATURITY_MODEL, MATURITY_STATUS, maturityLevel, CLUSTER_WAVES,
+  MATURITY_MODEL, MATURITY_STATUS, maturityLevel, CLUSTER_WAVES, CLUSTER_WAVE_ORDER,
 } from "../meta.js";
 
 const waveShort = (clusterId) => clusterWave(clusterId)?.short || "غير مصنّف";
@@ -396,13 +396,14 @@ function reportCharts(key) {
     const boxes = [];
     // متوسط النضج حسب الموجة (مقارنة الموجتين)
     const avgOf = (a) => (a.length ? Math.round(a.reduce((s, x) => s + x, 0) / a.length) : 0);
-    const grp = { ONE: [], TWO: [] };
-    for (const m of items) { const w = clusterWave(m.clusterId)?.key; if (w) grp[w].push(m); }
-    if (grp.ONE.length || grp.TWO.length) {
+    const grp = {}; CLUSTER_WAVE_ORDER.forEach((k) => (grp[k] = []));
+    for (const m of items) grp[clusterWave(m.clusterId)?.key || "PREP"].push(m);
+    const wk = CLUSTER_WAVE_ORDER.filter((k) => grp[k].length);
+    if (wk.length) {
       boxes.push(chartBox("متوسط النضج حسب الموجة", groupedBarChart(
-        [CLUSTER_WAVES.ONE.short, CLUSTER_WAVES.TWO.short],
-        { name: "تقييم التجمع (ذاتي)", color: "#2a78d6", values: ["ONE", "TWO"].map((k) => avgOf(grp[k].map((m) => maturityOverall(m, false)))) },
-        { name: "بعد المراجعة", color: C.good, values: ["ONE", "TWO"].map((k) => avgOf(grp[k].filter((m) => m.status === "REVIEWED").map((m) => maturityOverall(m, true)))) },
+        wk.map((k) => CLUSTER_WAVES[k].short),
+        { name: "تقييم التجمع (ذاتي)", color: "#2a78d6", values: wk.map((k) => avgOf(grp[k].map((m) => maturityOverall(m, false)))) },
+        { name: "بعد المراجعة", color: C.good, values: wk.map((k) => avgOf(grp[k].filter((m) => m.status === "REVIEWED").map((m) => maturityOverall(m, true)))) },
       )));
     }
     // مقارنة لكل تجمع
@@ -710,13 +711,14 @@ async function exportPptx(key) {
       catAxisLabelColor: INK, catAxisLabelFontSize: 11, catAxisLabelFontFace: "Arial", valAxisHidden: true, valGridLine: { style: "none" }, barGapWidthPct: 30,
     });
     const avgOf = (a) => (a.length ? Math.round(a.reduce((s, x) => s + x, 0) / a.length) : 0);
-    const grp = { ONE: [], TWO: [] };
-    for (const m of items) { const w = clusterWave(m.clusterId)?.key; if (w) grp[w].push(m); }
-    if (grp.ONE.length || grp.TWO.length) {
+    const grp = {}; CLUSTER_WAVE_ORDER.forEach((k) => (grp[k] = []));
+    for (const m of items) grp[clusterWave(m.clusterId)?.key || "PREP"].push(m);
+    const wk = CLUSTER_WAVE_ORDER.filter((k) => grp[k].length);
+    if (wk.length) {
       const s = pptx.addSlide(); header(s, "متوسط النضج حسب الموجة");
-      clustered(s, [CLUSTER_WAVES.ONE.short, CLUSTER_WAVES.TWO.short],
-        ["ONE", "TWO"].map((k) => avgOf(grp[k].map((m) => maturityOverall(m, false)))),
-        ["ONE", "TWO"].map((k) => avgOf(grp[k].filter((m) => m.status === "REVIEWED").map((m) => maturityOverall(m, true)))));
+      clustered(s, wk.map((k) => CLUSTER_WAVES[k].short),
+        wk.map((k) => avgOf(grp[k].map((m) => maturityOverall(m, false)))),
+        wk.map((k) => avgOf(grp[k].filter((m) => m.status === "REVIEWED").map((m) => maturityOverall(m, true)))));
     }
     const top = items.slice(0, 12);
     if (top.length) {
