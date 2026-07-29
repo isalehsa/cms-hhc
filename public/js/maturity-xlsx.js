@@ -158,7 +158,7 @@ export async function importMaturityExcel(file, m, mode = "self") {
 
 // استيراد قيم التقييم من «النموذج القديم» المستخدم سابقاً (ورقة «نموذج التقييم»):
 // صف عناوين يحوي «المعيار» و«درجة تقييم المعيار»، والمعايير في عمود المعيار ودرجاتها
-// في عمود الدرجة (0-3). تُعكس الدرجة على التقييم الذاتي، والملاحظات إن وُجدت.
+// في عمود الدرجة (0-3). يُستورَد **فقط** «درجة تقييم المعيار» وتُعكس على التقييم الذاتي.
 // المطابقة بنص المعيار مع بديل حسب الترتيب.
 export async function importLegacyMaturityExcel(file, m) {
   requireExcel();
@@ -171,10 +171,10 @@ export async function importLegacyMaturityExcel(file, m) {
   if (!ws) throw new Error("الملف لا يحتوي على أوراق عمل");
 
   // ابحث عن صف العناوين ضمن أول 15 صفاً: يحوي عمود «المعيار» وعمود «درجة تقييم المعيار»
-  let headerRow = 0, cCrit = 0, cScore = 0, cNote = 0;
+  let headerRow = 0, cCrit = 0, cScore = 0;
   const maxScan = Math.min(ws.rowCount || 15, 15);
   for (let r = 1; r <= maxScan && !headerRow; r++) {
-    let crit = 0, score = 0, note = 0;
+    let crit = 0, score = 0;
     ws.getRow(r).eachCell((cell, col) => {
       const t = cellText(cell.value).trim();
       if (!crit && /^المعيار/.test(t)) crit = col;
@@ -182,9 +182,8 @@ export async function importLegacyMaturityExcel(file, m) {
       // عمود «الدرجة الكلية» (إجمالي المحور) الذي يحوي كلمة «كلي»
       if (/درجة تقييم/.test(t)) score = col;
       else if (!score && /درجة/.test(t) && !/كلي/.test(t)) score = col;
-      if (!note && /^الملاحظات|^ملاحظات/.test(t)) note = col;
     });
-    if (crit && score) { headerRow = r; cCrit = crit; cScore = score; cNote = note; }
+    if (crit && score) { headerRow = r; cCrit = crit; cScore = score; }
   }
   if (!headerRow) {
     throw new Error("تعذّر التعرّف على أعمدة النموذج القديم (المعيار / درجة تقييم المعيار)");
@@ -197,17 +196,14 @@ export async function importLegacyMaturityExcel(file, m) {
     const row = ws.getRow(r);
     const crit = cellText(row.getCell(cCrit).value).trim();
     if (!crit) continue;
-    rows.push({
-      crit,
-      score: parseScore(row.getCell(cScore).value),
-      note: cNote ? cellText(row.getCell(cNote).value).trim() : "",
-    });
+    rows.push({ crit, score: parseScore(row.getCell(cScore).value) });
   }
   if (!rows.length) throw new Error("لم يُعثر على معايير في الملف");
 
   const byText = new Map();
   for (const r of rows) if (r.crit) byText.set(norm(r.crit), r);
 
+  // يُستورَد فقط درجة تقييم المعيار (لا يُغيَّر أي شيء آخر كالأدلة أو الملاحظات)
   const domains = JSON.parse(JSON.stringify(m.domains || []));
   let applied = 0, total = 0, k = 0;
   for (const dom of domains) {
@@ -215,11 +211,7 @@ export async function importLegacyMaturityExcel(file, m) {
       total++;
       const r = byText.get(norm(c.text)) || rows[k];
       k++;
-      if (!r) continue;
-      let changed = false;
-      if (r.score != null) { c.selfScore = r.score; changed = true; }
-      if (r.note) { c.note = r.note; changed = true; }
-      if (changed) applied++;
+      if (r && r.score != null) { c.selfScore = r.score; applied++; }
     }
   }
   if (!applied) {
