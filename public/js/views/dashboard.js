@@ -1,10 +1,12 @@
 // لوحة التحكم التنفيذية — مؤشرات الالتزام العامة والتنبيهات
 import { store, deptName } from "../state.js";
 import {
-  esc, statTile, distBar, progressBar, fmtDate, daysUntil, levelBadge,
-  donutStat, riskHeatmap, hBars, monthCalendar, MONTH_NAMES, fmtSAR,
+  esc, statTile, progressBar, fmtDate, daysUntil, levelBadge,
+  donutStat, donutChart, riskHeatmap, hBars, monthCalendar, MONTH_NAMES, fmtSAR,
 } from "../ui.js";
-import { riskLevel, CRITICALITY, FND_SEVERITY, MON_RESULT, SA_STATUS, CONTROL_TYPES } from "../meta.js";
+import { riskLevel, CRITICALITY, FND_SEVERITY, MON_RESULT, SA_STATUS, CONTROL_TYPES, STATUS_COLORS } from "../meta.js";
+
+const roleColor = (role) => STATUS_COLORS[role] || STATUS_COLORS.neutral;
 
 // شهر التقويم المعروض — يبقى بين عمليات إعادة الرسم
 const calState = { y: new Date().getFullYear(), m: new Date().getMonth() };
@@ -207,31 +209,31 @@ export function renderDashboard(el, nav) {
     <div class="grid-2">
       <section class="card">
         <h2>المخاطر حسب المستوى (بعد الضوابط)</h2>
-        ${distBar([
-          { label: "حرج", count: riskCounts.CRITICAL, role: "critical" },
-          { label: "عالٍ", count: riskCounts.HIGH, role: "serious" },
-          { label: "متوسط", count: riskCounts.MEDIUM, role: "warning" },
-          { label: "منخفض", count: riskCounts.LOW, role: "good" },
-        ])}
+        ${donutChart([
+          { label: "حرج", count: riskCounts.CRITICAL, color: roleColor("critical") },
+          { label: "عالٍ", count: riskCounts.HIGH, color: roleColor("serious") },
+          { label: "متوسط", count: riskCounts.MEDIUM, color: roleColor("warning") },
+          { label: "منخفض", count: riskCounts.LOW, color: roleColor("good") },
+        ], { unit: "خطر" })}
       </section>
       <section class="card">
         <h2>نتائج أنشطة المراقبة المنفذة</h2>
-        ${distBar([
-          { label: MON_RESULT.COMPLIANT, count: monResults.COMPLIANT, role: "good" },
-          { label: MON_RESULT.PARTIAL, count: monResults.PARTIAL, role: "warning" },
-          { label: MON_RESULT.NON_COMPLIANT, count: monResults.NON_COMPLIANT, role: "critical" },
-        ])}
+        ${donutChart([
+          { label: MON_RESULT.COMPLIANT, count: monResults.COMPLIANT, color: roleColor("good") },
+          { label: MON_RESULT.PARTIAL, count: monResults.PARTIAL, color: roleColor("warning") },
+          { label: MON_RESULT.NON_COMPLIANT, count: monResults.NON_COMPLIANT, color: roleColor("critical") },
+        ], { unit: "نشاط" })}
       </section>
     </div>
 
     <div class="grid-2">
       <section class="card">
         <h2>فعالية الضوابط المسجلة (${allControls.length})</h2>
-        ${distBar([
-          { label: "فعّال", count: allControls.filter((c) => c.effectiveness === "فعّال").length, role: "good" },
-          { label: "فعّال جزئيًا", count: allControls.filter((c) => c.effectiveness === "فعّال جزئيًا").length, role: "warning" },
-          { label: "غير فعّال", count: allControls.filter((c) => c.effectiveness === "غير فعّال").length, role: "critical" },
-        ])}
+        ${donutChart([
+          { label: "فعّال", count: allControls.filter((c) => c.effectiveness === "فعّال").length, color: roleColor("good") },
+          { label: "فعّال جزئيًا", count: allControls.filter((c) => c.effectiveness === "فعّال جزئيًا").length, color: roleColor("warning") },
+          { label: "غير فعّال", count: allControls.filter((c) => c.effectiveness === "غير فعّال").length, color: roleColor("critical") },
+        ], { unit: "ضابط" })}
         <h2 style="margin-top:18px">الضوابط حسب النوع</h2>
         ${allControls.length ? hBars(ctlTypes) : '<p class="muted">لا توجد ضوابط بعد</p>'}
       </section>
@@ -244,22 +246,22 @@ export function renderDashboard(el, nav) {
     <div class="grid-2">
       <section class="card">
         <h2>أهمية المتطلبات النشطة</h2>
-        ${distBar(
+        ${donutChart(
           Object.entries(CRITICALITY).map(([k, label]) => ({
             label,
             count: activeReqs.filter((r) => r.criticality === k).length,
-            role: { CRITICAL: "critical", HIGH: "serious", MEDIUM: "warning", LOW: "good" }[k],
-          }))
+            color: roleColor({ CRITICAL: "critical", HIGH: "serious", MEDIUM: "warning", LOW: "good" }[k]),
+          })), { unit: "متطلب" }
         )}
       </section>
       <section class="card">
         <h2>الملاحظات المفتوحة حسب الخطورة</h2>
-        ${distBar(
+        ${donutChart(
           Object.entries(FND_SEVERITY).map(([k, label]) => ({
             label,
             count: openFindings.filter((f) => f.severity === k).length,
-            role: { CRITICAL: "critical", HIGH: "serious", MEDIUM: "warning", LOW: "good" }[k],
-          })).reverse()
+            color: roleColor({ CRITICAL: "critical", HIGH: "serious", MEDIUM: "warning", LOW: "good" }[k]),
+          })).reverse(), { unit: "ملاحظة" }
         )}
       </section>
     </div>

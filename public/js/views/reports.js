@@ -1,7 +1,7 @@
 // التقارير — ملخص تنفيذي ومؤشرات وجداول، تصدير Excel / PDF (طباعة) / Word
 import { store, deptName, authName, userName, reqLabel } from "../state.js";
 import * as db from "../db.js";
-import { esc, toast, fmtDate } from "../ui.js";
+import { esc, toast, fmtDate, donutChart } from "../ui.js";
 import {
   riskLevel, CRITICALITY, REQ_TYPES, REQ_CATEGORIES, REQ_STATUS,
   RISK_STATUS, MON_TYPES, MON_FREQ, MON_STATUS, MON_RESULT, NC_LEVELS,
@@ -373,7 +373,7 @@ function distSpecs(key) {
         { title: "توزيع التجمعات حسب المستوى", items: [
           { label: "رائد", count: lc.good, color: C.good }, { label: "متقدم", count: lc.warning, color: C.warning },
           { label: "نامٍ", count: lc.serious, color: C.serious }, { label: "مبتدئ", count: lc.critical, color: C.critical } ] },
-        { title: "متوسط النسب (٪)", items: [
+        { title: "متوسط النسب (٪)", bars: true, items: [
           { label: "تقييم التجمعات (ذاتي)", count: avgSelf, color: matLevelHex(avgSelf) },
           { label: "بعد المراجعة", count: avgRev, color: matLevelHex(avgRev) } ] },
       ];
@@ -386,7 +386,7 @@ function distSpecs(key) {
 function reportCharts(key) {
   const specs = distSpecs(key);
   if (!specs.length) return "";
-  return chartsWrap(...specs.map((s) => chartBox(s.title, repBars(s.items))));
+  return chartsWrap(...specs.map((s) => chartBox(s.title, s.bars ? repBars(s.items) : donutChart(s.items, { size: 140, unit: "الإجمالي" }))));
 }
 
 // مؤشر مصغّر بارز على بطاقة كل تقرير (يجعل تبويب التقارير لوحة حية)
@@ -442,20 +442,20 @@ function reportHtml(key) {
       <div class="rep-charts">
         <div class="rep-chart">
           <h3>توزيع المخاطر حسب المستوى (بعد الضوابط)</h3>
-          ${repBars([
+          ${donutChart([
             { label: "حرج", count: k.riskCounts.CRITICAL, color: C.critical },
             { label: "عالٍ", count: k.riskCounts.HIGH, color: C.serious },
             { label: "متوسط", count: k.riskCounts.MEDIUM, color: C.warning },
             { label: "منخفض", count: k.riskCounts.LOW, color: C.good },
-          ])}
+          ], { size: 140, unit: "خطر" })}
         </div>
         <div class="rep-chart">
           <h3>نتائج أنشطة المراقبة المنفذة</h3>
-          ${repBars([
+          ${donutChart([
             { label: "ملتزم", count: monResults.COMPLIANT, color: C.good },
             { label: "ملتزم جزئياً", count: monResults.PARTIAL, color: C.warning },
             { label: "غير ملتزم", count: monResults.NON_COMPLIANT, color: C.critical },
-          ])}
+          ], { size: 140, unit: "نشاط" })}
         </div>
       </div>
       <h2>أبرز المخاطر (بعد الضوابط)</h2>

@@ -215,6 +215,36 @@ export function donutStat(pct, label, sub = "") {
   </div>`;
 }
 
+// مخطط دائري (دونات) SVG ذاتي الاحتواء بألوان صريحة — يعمل داخل التطبيق وفي نافذة التقارير
+// items = [{label, count, color}] · القيم والنِّسب تظهر نصاً في وسيلة الإيضاح (اللون لا يحمل المعنى وحده)
+export function donutChart(items, { size = 150, thickness = 24, unit = "الإجمالي" } = {}) {
+  const total = items.reduce((s, i) => s + (Number(i.count) || 0), 0);
+  const r = (size - thickness) / 2, cx = size / 2, cy = size / 2, circ = 2 * Math.PI * r;
+  let off = 0;
+  const segs = (total ? items.filter((i) => i.count > 0) : []).map((i) => {
+    const len = (i.count / total) * circ;
+    const seg = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${i.color}" stroke-width="${thickness}" stroke-dasharray="${len.toFixed(2)} ${(circ - len).toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}" transform="rotate(-90 ${cx} ${cy})"><title>${esc(i.label)}: ${i.count}</title></circle>`;
+    off += len;
+    return seg;
+  }).join("");
+  const legend = items.map((i) => {
+    const pct = total ? Math.round((i.count / total) * 100) : 0;
+    return `<div style="display:flex;align-items:center;gap:7px;font-size:.8rem;margin:3px 0">
+      <span style="width:11px;height:11px;border-radius:3px;background:${i.color};flex-shrink:0"></span>
+      <span style="flex:1">${esc(i.label)}</span><strong>${i.count}</strong>
+      <span style="color:#8a8578;min-width:36px;text-align:left">${pct}%</span></div>`;
+  }).join("");
+  return `<div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap">
+    <svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" style="flex-shrink:0" role="img" aria-label="مخطط دائري: ${esc(unit)} ${total}">
+      <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="rgba(120,130,125,.15)" stroke-width="${thickness}"/>
+      ${segs}
+      <text x="${cx}" y="${cy - size * 0.02}" text-anchor="middle" style="font-size:${(size * 0.24).toFixed(0)}px;font-weight:800;fill:currentColor">${total}</text>
+      <text x="${cx}" y="${cy + size * 0.15}" text-anchor="middle" style="font-size:${(size * 0.093).toFixed(0)}px;fill:#8a8578">${esc(unit)}</text>
+    </svg>
+    <div style="flex:1;min-width:150px">${legend}</div>
+  </div>`;
+}
+
 // أعمدة أفقية بلون واحد مع التسمية والقيمة نصاً: items = [{label, count, tip?}]
 export function hBars(items) {
   const max = Math.max(...items.map((i) => i.count), 1);
