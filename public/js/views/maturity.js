@@ -5,8 +5,8 @@ import { store, reload, deptName, clusterOptions } from "../state.js";
 import * as db from "../db.js";
 import {
   $, esc, toast, modal, confirmBox, fld, sel, area, val,
-  fmtDate, statusBadgeFrom, emptyMsg,
-  maturityBar, maturityLevelBadge,
+  fmtDate, statusBadgeFrom, emptyMsg, statTile, donutStat,
+  maturityBar, maturityLevelBadge, maturityColor,
 } from "../ui.js";
 import { MATURITY_MODEL, MATURITY_SCALE, MATURITY_STATUS, maturityLevel } from "../meta.js";
 import { canEdit, canApprove, isClusterOfficer } from "../auth.js";
@@ -55,6 +55,29 @@ function overallPct(m, useReview) {
 }
 // النتيجة المعتمدة: بعد المراجعة إن روجِع، وإلا التقييم الذاتي
 const finalPct = (m) => overallPct(m, m.status === "REVIEWED");
+// نسبة تقييم التجمع (ذاتي) ونسبة ما بعد مراجعة إدارة الالتزام
+const selfPct = (m) => overallPct(m, false);
+const reviewedPct = (m) => overallPct(m, true);
+const isReviewed = (m) => m.status === "REVIEWED";
+
+// ---------- إعادة الترقيم التلقائي (MAT-0001 متسلسلة بلا فجوات) ----------
+const matCode = (i) => `MAT-${String(i + 1).padStart(4, "0")}`;
+// ترتيب زمني ثابت لإسناد الأرقام حسب تسلسل الإنشاء
+const byCreated = (a, b) => (a.createdAt || "").localeCompare(b.createdAt || "") || (a.code || "").localeCompare(b.code || "");
+function needsRenumber() {
+  const rows = store.maturity.slice().sort(byCreated);
+  return rows.some((m, i) => m.code !== matCode(i));
+}
+async function renumberMaturity() {
+  const rows = store.maturity.slice().sort(byCreated);
+  let changed = 0;
+  for (let i = 0; i < rows.length; i++) {
+    const code = matCode(i);
+    if (rows[i].code !== code) { await db.setFields("maturity", rows[i].id, { code }); changed++; }
+  }
+  return changed;
+}
+let renumberChecked = false;
 
 // التجمع المرتبط بالمستخدم (لمسؤول التزام التجمع)
 const myClusterId = () => store.user?.departmentId || null;
@@ -64,6 +87,12 @@ export function renderMaturity(el, nav, refresh) {
   const officer = isClusterOfficer(user);
   const manager = canApprove(user);
   const rerender = () => renderMaturity(el, nav, refresh);
+
+  // إصلاح فجوات الترقيم تلقائياً مرة واحدة (بعد الحذف) — للمحرّرين فقط
+  if (!renumberChecked && canEdit(user) && needsRenumber()) {
+    renumberChecked = true;
+    renumberMaturity().then((n) => { if (n) return reload("maturity").then(rerender); }).catch(() => {});
+  }
 
   // مسؤول التجمع يرى تقييمات تجمعه فقط
   let rows = store.maturity.slice();
@@ -124,17 +153,46 @@ export function renderMaturity(el, nav, refresh) {
   );
 }
 
-// نتائج ربعية: مصفوفة المحاور × التجمعات لأحدث تقييم معتمد لكل تجمع
+// خلية نسبة ملوّنة بتدرّج النضج
+const pctCell = (p) => `<span class="lvl" style="background:${maturityColor(p)};border-color:transparent;color:#fff;font-weight:700">${p}%</span>`;
+
+// لوحة النتائج الربعية (داش بورد): مؤشرات + توزيع المستويات + مصفوفة المحاور
+// مع نسبة تقييم التجمع (ذاتي) ونسبة ما بعد مراجعة إدارة الالتزام
 function renderResults(rows) {
-  const reviewed = rows.filter((m) => m.status === "REVIEWED" || m.status === "SUBMITTED");
-  // أحدث تقييم لكل تجمع
+  const considered = rows.filter((m) => m.status === "REVIEWED" || m.status === "SUBMITTED");
   const latest = {};
-  for (const m of reviewed) {
+  for (const m of considered) {
     const k = m.clusterId;
     if (!latest[k] || (m.year * 4 + m.quarter) > (latest[k].year * 4 + latest[k].quarter)) latest[k] = m;
   }
   const items = Object.values(latest);
-  if (!items.length) return `<section class="card">${emptyMsg("لا توجد نتائج معتمدة بعد")}</section>`;
+  if (!items.length) return `<section class="card">${emptyMsg("لا توجد نتائج بعد — تظهر هنا التقييمات المُرسلة أو المعتمدة")}</section>`;
+
+  const avg = (arr) => (arr.length ? Math.round(arr.reduce((s, x) => s + x, 0) / arr.length) : 0);
+  const reviewedItems = items.filter(isReviewed);
+  const avgSelf = avg(items.map(selfPct));
+  const avgRev = avg(reviewedItems.map(reviewedPct));
+
+  // توزيع المستويات حسب النتيجة المعتمدة
+  const lc = { good: 0, warning: 0, serious: 0, critical: 0 };
+  for (const m of items) lc[maturityLevel(finalPct(m)).key]++;
+  const dist = [
+    { label: "رائد", count: lc.good, color: maturityColor(90) },
+    { label: "متقدم", count: lc.warning, color: maturityColor(63) },
+    { label: "نامٍ", count: lc.serious, color: maturityColor(38) },
+    { label: "مبتدئ", count: lc.critical, color: maturityColor(12) },
+  ];
+  const distSeg = dist.filter((d) => d.count > 0)
+    .map((d) => `<div style="flex:${d.count};background:${d.color}" title="${d.label}: ${d.count}"></div>`).join("")
+    || '<div style="flex:1;background:rgba(120,130,125,.15)"></div>';
+  const distLegend = dist.map((d) => `<span class="lvl" style="background:${d.color}1f;border-color:transparent;color:${d.color}"><span class="dot" style="background:${d.color}"></span>${d.label} <strong>${d.count}</strong></span>`).join(" ");
+
+  const tiles = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:14px">
+    ${statTile(items.length, "تجمعات في النتائج")}
+    ${donutStat(avgSelf, "متوسط تقييم التجمعات", "التقييم الذاتي")}
+    ${donutStat(reviewedItems.length ? avgRev : null, "متوسط بعد المراجعة", reviewedItems.length ? `${reviewedItems.length} تقييم معتمد` : "لا يوجد معتمد بعد")}
+    ${statTile(reviewedItems.length, "تقييمات معتمدة", `${items.length - reviewedItems.length} بانتظار المراجعة`)}
+  </div>`;
 
   const domNames = MATURITY_MODEL.map((d) => d.name);
   const rowsHtml = items
@@ -143,21 +201,33 @@ function renderResults(rows) {
       const cells = domNames.map((dn) => {
         const dom = (m.domains || []).find((d) => d.name === dn);
         if (!dom) return `<td class="muted">—</td>`;
-        const p = domainPct(dom, m.status === "REVIEWED");
-        const lvl = maturityLevel(p);
-        return `<td class="hm-cell hm-${lvl.key}" data-tip="${esc(dn)}: ${p}%">${p}%</td>`;
+        const p = domainPct(dom, isReviewed(m));
+        const c = maturityColor(p);
+        return `<td class="hm-cell" style="background:${c}22;color:${c};font-weight:700" data-tip="${esc(dn)}: ${p}%">${p}%</td>`;
       }).join("");
-      const tot = finalPct(m);
-      return `<tr><td><strong>${esc(deptName(m.clusterId))}</strong><div class="muted">ر${m.quarter}/${m.year}</div></td>${cells}
-        <td>${maturityLevelBadge(tot, `${tot}%`)}</td></tr>`;
+      const sp = selfPct(m);
+      const revCell = isReviewed(m)
+        ? `<td>${pctCell(reviewedPct(m))}</td>`
+        : `<td class="muted" data-tip="لم تُراجع من إدارة الالتزام بعد">— بانتظار</td>`;
+      return `<tr>
+        <td><strong>${esc(deptName(m.clusterId))}</strong><div class="muted" style="font-size:.72rem">ر${m.quarter}/${m.year} · ${esc(MATURITY_STATUS[m.status] || m.status)}</div></td>
+        ${cells}<td>${pctCell(sp)}</td>${revCell}</tr>`;
     }).join("");
 
   return `
     <section class="card">
+      <h2>لوحة نتائج النضج الربعية</h2>
+      ${tiles}
+      <h3 style="margin:6px 0">توزيع التجمعات حسب مستوى النضج</h3>
+      <div style="display:flex;height:16px;border-radius:8px;overflow:hidden;margin:6px 0">${distSeg}</div>
+      <div class="row" style="gap:8px;flex-wrap:wrap;margin-bottom:6px">${distLegend}</div>
+    </section>
+    <section class="card">
       <h2>مصفوفة النضج حسب المحاور (أحدث تقييم لكل تجمع)</h2>
+      <p class="muted" style="margin-top:0">«تقييم التجمع» = التقييم الذاتي · «بعد المراجعة» = النتيجة المعتمدة من إدارة الالتزام</p>
       <div style="overflow-x:auto">
         <table class="mat-matrix">
-          <thead><tr><th>التجمع</th>${domNames.map((n) => `<th style="font-size:.72rem">${esc(n)}</th>`).join("")}<th>الإجمالي</th></tr></thead>
+          <thead><tr><th>التجمع</th>${domNames.map((n) => `<th style="font-size:.72rem">${esc(n)}</th>`).join("")}<th>تقييم التجمع</th><th>بعد المراجعة</th></tr></thead>
           <tbody>${rowsHtml}</tbody>
         </table>
       </div>
@@ -191,8 +261,9 @@ function openCreate(done, officer) {
       return toast("يوجد تقييم لهذا التجمع في نفس الربع — افتحه وعدّله", true);
     }
     try {
-      const code = await db.nextCode("MAT");
-      const row = await db.setRow("maturity", code, {
+      // ترقيم متسلسل بلا فجوات؛ معرّف الوثيقة مستقل عن الرمز حتى تصح إعادة الترقيم لاحقاً
+      const code = matCode(store.maturity.length);
+      const row = await db.setRow("maturity", db.newId("MAT"), {
         code, clusterId, year, quarter, status: "DRAFT",
         domains: blankDomains(), reviewNotes: null, reviewedById: null,
         createdById: store.user.uid, createdAt: db.now(), updatedAt: db.now(),
@@ -472,7 +543,10 @@ export function openDetail(id, done) {
     if (!(await confirmBox(`حذف تقييم ${m.code}؟`))) return;
     await db.removeRow("maturity", m.id);
     await db.audit("DELETE", "Maturity", m.code, `حذف تقييم نضج ${m.code}`);
-    await reload("maturity"); toast("تم الحذف"); done();
+    await reload("maturity");
+    await renumberMaturity();      // إعادة الترقيم تلقائياً بعد الحذف
+    await reload("maturity");
+    toast("تم الحذف وإعادة الترقيم"); done();
   });
 }
 
