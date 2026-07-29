@@ -1,7 +1,7 @@
 // التقارير — ملخص تنفيذي ومؤشرات وجداول، تصدير Excel / PDF (طباعة) / Word
 import { store, deptName, authName, userName, reqLabel } from "../state.js";
 import * as db from "../db.js";
-import { esc, toast, fmtDate, donutChart } from "../ui.js";
+import { esc, toast, fmtDate, donutChart, groupedBarChart } from "../ui.js";
 import {
   riskLevel, CRITICALITY, REQ_TYPES, REQ_CATEGORIES, REQ_STATUS,
   RISK_STATUS, MON_TYPES, MON_FREQ, MON_STATUS, MON_RESULT, NC_LEVELS,
@@ -385,8 +385,21 @@ function distSpecs(key) {
 
 function reportCharts(key) {
   const specs = distSpecs(key);
-  if (!specs.length) return "";
-  return chartsWrap(...specs.map((s) => chartBox(s.title, s.bars ? repBars(s.items) : donutChart(s.items, { size: 140, unit: "الإجمالي" }))));
+  let html = specs.length ? chartsWrap(...specs.map((s) => chartBox(s.title, s.bars ? repBars(s.items) : donutChart(s.items, { size: 140, unit: "الإجمالي" })))) : "";
+  // مقارنة تقييم التجمع (ذاتي) مقابل ما بعد المراجعة لكل تجمع (أحدث تقييم)
+  if (key === "maturity") {
+    const latest = {};
+    for (const m of store.maturity) { const c = m.clusterId; if (!latest[c] || (m.year * 4 + m.quarter) > (latest[c].year * 4 + latest[c].quarter)) latest[c] = m; }
+    const items = Object.values(latest).sort((a, b) => maturityOverall(b, b.status === "REVIEWED") - maturityOverall(a, a.status === "REVIEWED")).slice(0, 12);
+    if (items.length) {
+      html += chartsWrap(chartBox("مقارنة: تقييم التجمع مقابل ما بعد المراجعة", groupedBarChart(
+        items.map((m) => deptName(m.clusterId)),
+        { name: "تقييم التجمع (ذاتي)", color: "#2a78d6", values: items.map((m) => maturityOverall(m, false)) },
+        { name: "بعد المراجعة", color: C.good, values: items.map((m) => (m.status === "REVIEWED" ? maturityOverall(m, true) : 0)) },
+      )));
+    }
+  }
+  return html;
 }
 
 // مؤشر مصغّر بارز على بطاقة كل تقرير (يجعل تبويب التقارير لوحة حية)
