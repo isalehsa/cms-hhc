@@ -4,7 +4,7 @@ import * as db from "../db.js";
 import {
   $, esc, toast, modal, confirmBox, fld, txt, sel, val, fmtDate, emptyMsg,
 } from "../ui.js";
-import { ROLES, DEPT_TYPES, ORG_SECTORS, HEALTH_CLUSTERS } from "../meta.js";
+import { ROLES, DEPT_TYPES, ORG_SECTORS, HEALTH_CLUSTERS, CLUSTER_WAVE_SELECT } from "../meta.js";
 import { canApprove, createAuthUser } from "../auth.js";
 
 export function renderAdmin(el, nav, refresh) {
@@ -124,6 +124,7 @@ function openDeptForm(d, done) {
         <datalist id="sector-list">${sectors.map((s) => `<option value="${esc(s)}">`).join("")}</datalist>`)}
       ${fld("النوع", sel("d-type", DEPT_TYPES, d?.type || "DEPARTMENT"))}
       ${fld("الحالة", sel("d-active", { yes: "نشطة", no: "معطّلة" }, d?.active === false ? "no" : "yes"))}
+      ${fld("الموجة (للتجمعات الصحية)", sel("d-wave", CLUSTER_WAVE_SELECT, d?.wave || ""))}
     </div>
     <div class="row" style="margin-top:14px">
       <button id="d-save">حفظ</button>
@@ -149,6 +150,7 @@ function openDeptForm(d, done) {
       sector: val("d-sector", ov) || null,
       type: val("d-type", ov),
       active: val("d-active", ov) === "yes",
+      wave: val("d-wave", ov) || null,
     };
     try {
       if (isNew) {
