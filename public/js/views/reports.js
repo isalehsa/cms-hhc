@@ -26,23 +26,50 @@ const REPORTS = [
 ];
 
 export function renderReports(el) {
+  const k = kpis();
+  const monPct = store.monitoring.length ? Math.round((k.monDone / store.monitoring.length) * 100) : 0;
+  const strip = [
+    { v: k.activeReqs.length, l: "متطلب نشط", c: C.primary },
+    { v: store.risks.length, l: "خطر مسجل", c: "#2a78d6" },
+    { v: k.riskCounts.CRITICAL + k.riskCounts.HIGH, l: "مخاطر عالية فأكثر", c: (k.riskCounts.CRITICAL + k.riskCounts.HIGH) ? C.critical : C.good },
+    { v: monPct + "%", l: "إنجاز المراقبة", c: monPct >= 70 ? C.good : monPct >= 40 ? C.warning : C.critical },
+    { v: k.openFnd.length, l: "ملاحظة مفتوحة", c: k.openFnd.length ? C.warning : C.good },
+    { v: k.planAvg + "%", l: "إنجاز الخطة", c: k.planAvg >= 70 ? C.good : k.planAvg >= 40 ? C.warning : C.critical },
+  ];
   el.innerHTML = `
-    <div class="page-head"><h1>📊 التقارير</h1><p class="muted">اختر التقرير ثم صيغة التصدير — التقارير تُبنى لحظياً من بيانات جميع الوحدات</p></div>
+    <div class="page-head"><h1>📊 التقارير</h1><p class="muted">لوحات ومؤشرات لحظية — اعرض التقرير أو صدّره PDF أو عرضاً تقديمياً أو Excel أو Word</p></div>
+    <section class="card">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px">
+        ${strip.map((s) => `<div style="text-align:center;padding:8px 6px;border-left:1px solid rgba(120,130,125,.12)">
+          <div style="font-size:1.8rem;font-weight:800;color:${s.c};line-height:1.1">${esc(String(s.v))}</div>
+          <div class="muted" style="font-size:.74rem;margin-top:2px">${esc(s.l)}</div></div>`).join("")}
+      </div>
+    </section>
     <div class="report-grid">
-      ${REPORTS.map(
-        (r) => `<div class="card report-card">
-          <h2>${r.icon} ${esc(r.title)}</h2>
-          <p class="muted">${esc(r.desc)}</p>
-          <div class="row">
+      ${REPORTS.map((r) => {
+        const st = cardStat(r.key);
+        const tc = TONE_CARD[st.tone] || C.primary;
+        return `<div class="card report-card" style="border-top:4px solid ${tc}">
+          <div class="row" style="justify-content:space-between;align-items:flex-start;gap:8px">
+            <h2 style="margin:0;font-size:1.05rem">${r.icon} ${esc(r.title)}</h2>
+            <div style="text-align:center;min-width:60px;flex-shrink:0">
+              <div style="font-size:1.5rem;font-weight:800;color:${tc};line-height:1">${esc(String(st.value))}</div>
+              <div class="muted" style="font-size:.64rem">${esc(st.label)}</div>
+            </div>
+          </div>
+          <p class="muted" style="min-height:2.4em">${esc(r.desc)}</p>
+          <div class="row" style="flex-wrap:wrap;gap:6px">
             <button class="small" data-view="${r.key}">👁 عرض / PDF</button>
+            <button class="secondary small" data-pptx="${r.key}">📊 عرض تقديمي</button>
             <button class="secondary small" data-xlsx="${r.key}">⬇ Excel</button>
             <button class="secondary small" data-doc="${r.key}">⬇ Word</button>
           </div>
-        </div>`
-      ).join("")}
+        </div>`;
+      }).join("")}
     </div>`;
 
   el.querySelectorAll("[data-view]").forEach((b) => (b.onclick = () => viewReport(b.dataset.view)));
+  el.querySelectorAll("[data-pptx]").forEach((b) => (b.onclick = () => exportPptx(b.dataset.pptx).catch((e) => toast(e.message, true))));
   el.querySelectorAll("[data-xlsx]").forEach((b) => (b.onclick = () => exportExcel(b.dataset.xlsx).catch((e) => toast(e.message, true))));
   el.querySelectorAll("[data-doc]").forEach((b) => (b.onclick = () => exportWord(b.dataset.doc).catch((e) => toast(e.message, true))));
 }
@@ -251,14 +278,12 @@ function cell(v) {
   return c ? `<span class="pill" style="background:${c}22;color:${c};border:1px solid ${c}55">${esc(s)}</span>` : esc(s);
 }
 
-// ---------- لوحات بصرية لكل تقرير (داش بورد) ----------
+// ---------- لوحات بصرية لكل تقرير (داش بورد) — تُشارك بين العرض والعرض التقديمي ----------
 const tally = (arr, fn) => { const t = {}; for (const x of arr) { const k = fn(x); if (k != null && k !== "") t[k] = (t[k] || 0) + 1; } return t; };
-const barsFromMap = (map, dict, colorOf) =>
-  repBars(Object.entries(map).map(([k, count]) => ({ label: (dict && dict[k]) || k, count, color: colorOf ? colorOf(k) : C.primary })));
+const mapItems = (map, dict, colorOf) =>
+  Object.entries(map).map(([k, count]) => ({ label: (dict && dict[k]) || k, count, color: colorOf ? colorOf(k) : C.primary }));
 const chartBox = (title, inner) => `<div class="rep-chart"><h3>${esc(title)}</h3>${inner}</div>`;
 const chartsWrap = (...c) => (c.filter(Boolean).length ? `<div class="rep-charts">${c.join("")}</div>` : "");
-// لون النضج المتدرّج من الأحمر (0٪) إلى الأخضر (100٪)
-const matColor = (pct) => `hsl(${Math.round(Math.max(0, Math.min(100, pct)) * 1.2)},58%,44%)`;
 
 const TONE_STATUS = { ACTIVE: C.good, UPDATED: "#2a78d6", UNDER_REVIEW: C.warning, CANCELLED: C.neutral };
 const TONE_CRIT = { CRITICAL: C.critical, HIGH: C.serious, MEDIUM: C.warning, LOW: C.good };
@@ -270,79 +295,118 @@ const TONE_FND_ST = { OPEN: C.critical, IN_PROGRESS: C.warning, CLOSED: C.good }
 const TONE_COR_ST = { OPEN: C.warning, REPLIED: C.good, CLOSED: "#2a78d6" };
 const TONE_DIS_ST = { PENDING: C.warning, UNDER_REVIEW: C.warning, APPROVED: C.good, MITIGATED: C.good, REJECTED: C.critical };
 const TONE_TRN_ST = { PLANNED: C.neutral, IN_PROGRESS: C.warning, COMPLETED: C.good, CANCELLED: C.neutral };
+const TONE_CARD = { primary: C.primary, danger: C.critical, warn: C.warning, good: C.good };
+// لون مستوى النضج (هيكس ليعمل في PDF وExcel والعرض التقديمي)
+const matLevelHex = (pct) => ({ good: C.good, warning: C.warning, serious: C.serious, critical: C.critical }[maturityLevel(pct).key]);
+const maturityOverall = (m, useRev) => {
+  const cs = (m.domains || []).flatMap((d) => d.criteria); const max = cs.length * 3;
+  return max ? Math.round((cs.reduce((s, c) => s + ((useRev && c.reviewScore != null) ? c.reviewScore : (c.selfScore || 0)), 0) / max) * 100) : 0;
+};
 
-function reportCharts(key) {
+// المواصفات الموحّدة للرسوم: [{ title, items:[{label,count,color}] }]
+function distSpecs(key) {
   switch (key) {
+    case "executive": {
+      const k = kpis();
+      const mr = { COMPLIANT: 0, PARTIAL: 0, NON_COMPLIANT: 0 };
+      for (const m of store.monitoring) if (m.result && mr[m.result] !== undefined) mr[m.result]++;
+      return [
+        { title: "توزيع المخاطر (بعد الضوابط)", items: [
+          { label: "حرج", count: k.riskCounts.CRITICAL, color: C.critical }, { label: "عالٍ", count: k.riskCounts.HIGH, color: C.serious },
+          { label: "متوسط", count: k.riskCounts.MEDIUM, color: C.warning }, { label: "منخفض", count: k.riskCounts.LOW, color: C.good } ] },
+        { title: "نتائج أنشطة المراقبة", items: [
+          { label: "ملتزم", count: mr.COMPLIANT, color: C.good }, { label: "ملتزم جزئياً", count: mr.PARTIAL, color: C.warning },
+          { label: "غير ملتزم", count: mr.NON_COMPLIANT, color: C.critical } ] },
+      ];
+    }
     case "requirements": {
       const active = store.requirements.filter((r) => r.status !== "CANCELLED");
-      return chartsWrap(
-        chartBox("حسب الحالة", barsFromMap(tally(store.requirements, (r) => r.status), REQ_STATUS, (k) => TONE_STATUS[k] || C.primary)),
-        chartBox("حسب الأهمية (النشطة)", barsFromMap(tally(active, (r) => r.criticality), CRITICALITY, (k) => TONE_CRIT[k] || C.primary)),
-      );
+      return [
+        { title: "حسب الحالة", items: mapItems(tally(store.requirements, (r) => r.status), REQ_STATUS, (k) => TONE_STATUS[k] || C.primary) },
+        { title: "حسب الأهمية (النشطة)", items: mapItems(tally(active, (r) => r.criticality), CRITICALITY, (k) => TONE_CRIT[k] || C.primary) },
+      ];
     }
     case "risks": {
       const rc = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 };
       for (const r of store.risks) rc[riskLevel(r.residualLikelihood ?? r.likelihood, r.residualImpact ?? r.impact).key]++;
-      return chartsWrap(
-        chartBox("مستوى الخطر (بعد الضوابط)", repBars([
+      return [
+        { title: "مستوى الخطر (بعد الضوابط)", items: [
           { label: "حرج", count: rc.CRITICAL, color: C.critical }, { label: "عالٍ", count: rc.HIGH, color: C.serious },
-          { label: "متوسط", count: rc.MEDIUM, color: C.warning }, { label: "منخفض", count: rc.LOW, color: C.good },
-        ])),
-        chartBox("حسب الحالة", barsFromMap(tally(store.risks, (r) => r.status), RISK_STATUS, () => "#2a78d6")),
-      );
+          { label: "متوسط", count: rc.MEDIUM, color: C.warning }, { label: "منخفض", count: rc.LOW, color: C.good } ] },
+        { title: "حسب الحالة", items: mapItems(tally(store.risks, (r) => r.status), RISK_STATUS, () => "#2a78d6") },
+      ];
     }
     case "monitoring":
-      return chartsWrap(
-        chartBox("نتائج الأنشطة المنفذة", barsFromMap(tally(store.monitoring.filter((m) => m.result), (m) => m.result), MON_RESULT, (k) => TONE_MON_RES[k])),
-        chartBox("حسب الحالة", barsFromMap(tally(store.monitoring, (m) => m.status), MON_STATUS, (k) => TONE_MON_ST[k] || C.primary)),
-      );
-    case "assessments": {
-      const answers = tally(store.assessments.flatMap((a) => a.questions || []), (q) => q.response?.answer);
-      return chartsWrap(chartBox("توزيع إجابات الفحص الذاتي", barsFromMap(answers, SA_ANSWERS, (k) => TONE_SA[k] || C.neutral)));
-    }
+      return [
+        { title: "نتائج الأنشطة المنفذة", items: mapItems(tally(store.monitoring.filter((m) => m.result), (m) => m.result), MON_RESULT, (k) => TONE_MON_RES[k]) },
+        { title: "حسب الحالة", items: mapItems(tally(store.monitoring, (m) => m.status), MON_STATUS, (k) => TONE_MON_ST[k] || C.primary) },
+      ];
+    case "assessments":
+      return [{ title: "توزيع إجابات الفحص الذاتي", items: mapItems(tally(store.assessments.flatMap((a) => a.questions || []), (q) => q.response?.answer), SA_ANSWERS, (k) => TONE_SA[k] || C.neutral) }];
     case "plan":
-      return chartsWrap(chartBox("مبادرات الخطة حسب الحالة", barsFromMap(tally(store.planItems, (p) => p.status), PLAN_STATUS, (k) => TONE_PLAN[k] || C.primary)));
+      return [{ title: "مبادرات الخطة حسب الحالة", items: mapItems(tally(store.planItems, (p) => p.status), PLAN_STATUS, (k) => TONE_PLAN[k] || C.primary) }];
     case "findings":
-      return chartsWrap(
-        chartBox("حسب الخطورة", barsFromMap(tally(store.findings, (f) => f.severity), FND_SEVERITY, (k) => TONE_CRIT[k] || C.primary)),
-        chartBox("حسب الحالة", barsFromMap(tally(store.findings, (f) => f.status), FND_STATUS, (k) => TONE_FND_ST[k] || C.primary)),
-      );
+      return [
+        { title: "حسب الخطورة", items: mapItems(tally(store.findings, (f) => f.severity), FND_SEVERITY, (k) => TONE_CRIT[k] || C.primary) },
+        { title: "حسب الحالة", items: mapItems(tally(store.findings, (f) => f.status), FND_STATUS, (k) => TONE_FND_ST[k] || C.primary) },
+      ];
     case "correspondence":
-      return chartsWrap(
-        chartBox("حسب الاتجاه", barsFromMap(tally(store.correspondence, (c) => c.direction), COR_DIRECTION, () => C.primary)),
-        chartBox("حسب الحالة", barsFromMap(tally(store.correspondence, (c) => c.status), COR_STATUS, (k) => TONE_COR_ST[k] || C.primary)),
-      );
+      return [
+        { title: "حسب الاتجاه", items: mapItems(tally(store.correspondence, (c) => c.direction), COR_DIRECTION, () => C.primary) },
+        { title: "حسب الحالة", items: mapItems(tally(store.correspondence, (c) => c.status), COR_STATUS, (k) => TONE_COR_ST[k] || C.primary) },
+      ];
     case "disclosures":
-      return chartsWrap(
-        chartBox("حسب النوع", barsFromMap(tally(store.disclosures, (d) => d.type), DISCLOSURE_TYPES, () => C.primary)),
-        chartBox("حسب الحالة", barsFromMap(tally(store.disclosures, (d) => d.status), DISCLOSURE_STATUS, (k) => TONE_DIS_ST[k] || C.primary)),
-      );
+      return [
+        { title: "حسب النوع", items: mapItems(tally(store.disclosures, (d) => d.type), DISCLOSURE_TYPES, () => C.primary) },
+        { title: "حسب الحالة", items: mapItems(tally(store.disclosures, (d) => d.status), DISCLOSURE_STATUS, (k) => TONE_DIS_ST[k] || C.primary) },
+      ];
     case "training":
-      return chartsWrap(chartBox("برامج التدريب حسب الحالة", barsFromMap(tally(store.trainings, (t) => t.status), TRAINING_STATUS, (k) => TONE_TRN_ST[k] || C.primary)));
+      return [{ title: "برامج التدريب حسب الحالة", items: mapItems(tally(store.trainings, (t) => t.status), TRAINING_STATUS, (k) => TONE_TRN_ST[k] || C.primary) }];
     case "maturity": {
-      const overall = (m, useRev) => {
-        const cs = (m.domains || []).flatMap((d) => d.criteria); const max = cs.length * 3;
-        return max ? Math.round((cs.reduce((s, c) => s + ((useRev && c.reviewScore != null) ? c.reviewScore : (c.selfScore || 0)), 0) / max) * 100) : 0;
-      };
       const lc = { good: 0, warning: 0, serious: 0, critical: 0 };
-      for (const m of store.maturity) lc[maturityLevel(overall(m, m.status === "REVIEWED")).key]++;
+      for (const m of store.maturity) lc[maturityLevel(maturityOverall(m, m.status === "REVIEWED")).key]++;
       const rev = store.maturity.filter((m) => m.status === "REVIEWED");
       const avg = (a) => (a.length ? Math.round(a.reduce((s, x) => s + x, 0) / a.length) : 0);
-      const avgSelf = avg(store.maturity.map((m) => overall(m, false)));
-      const avgRev = avg(rev.map((m) => overall(m, true)));
-      return chartsWrap(
-        chartBox("توزيع التجمعات حسب المستوى", repBars([
-          { label: "رائد", count: lc.good, color: matColor(90) }, { label: "متقدم", count: lc.warning, color: matColor(63) },
-          { label: "نامٍ", count: lc.serious, color: matColor(38) }, { label: "مبتدئ", count: lc.critical, color: matColor(12) },
-        ])),
-        chartBox("متوسط النسب", `<div class="bars">
-          <div class="bar-row"><span class="bar-lbl">تقييم التجمعات (ذاتي)</span><span class="bar-track"><span class="bar-fill" style="width:${avgSelf}%;background:${matColor(avgSelf)}"></span></span><span class="bar-num">${avgSelf}%</span></div>
-          <div class="bar-row"><span class="bar-lbl">بعد المراجعة</span><span class="bar-track"><span class="bar-fill" style="width:${avgRev}%;background:${matColor(avgRev)}"></span></span><span class="bar-num">${avgRev}%</span></div>
-        </div>`),
-      );
+      const avgSelf = avg(store.maturity.map((m) => maturityOverall(m, false)));
+      const avgRev = avg(rev.map((m) => maturityOverall(m, true)));
+      return [
+        { title: "توزيع التجمعات حسب المستوى", items: [
+          { label: "رائد", count: lc.good, color: C.good }, { label: "متقدم", count: lc.warning, color: C.warning },
+          { label: "نامٍ", count: lc.serious, color: C.serious }, { label: "مبتدئ", count: lc.critical, color: C.critical } ] },
+        { title: "متوسط النسب (٪)", items: [
+          { label: "تقييم التجمعات (ذاتي)", count: avgSelf, color: matLevelHex(avgSelf) },
+          { label: "بعد المراجعة", count: avgRev, color: matLevelHex(avgRev) } ] },
+      ];
     }
     default:
-      return "";
+      return [];
+  }
+}
+
+function reportCharts(key) {
+  const specs = distSpecs(key);
+  if (!specs.length) return "";
+  return chartsWrap(...specs.map((s) => chartBox(s.title, repBars(s.items))));
+}
+
+// مؤشر مصغّر بارز على بطاقة كل تقرير (يجعل تبويب التقارير لوحة حية)
+function cardStat(key) {
+  const k = kpis();
+  const hi = k.riskCounts.CRITICAL + k.riskCounts.HIGH;
+  const monPct = store.monitoring.length ? Math.round((k.monDone / store.monitoring.length) * 100) : 0;
+  switch (key) {
+    case "executive": return { value: hi, label: "مخاطر عالية فأكثر", tone: hi ? "danger" : "good" };
+    case "requirements": return { value: k.activeReqs.length, label: "متطلب نشط", tone: "primary" };
+    case "risks": return { value: hi, label: "مخاطر عالية فأكثر", tone: hi ? "danger" : "good" };
+    case "monitoring": return { value: monPct + "%", label: "إنجاز المراقبة", tone: monPct >= 70 ? "good" : monPct >= 40 ? "warn" : "danger" };
+    case "assessments": return { value: store.assessments.length, label: "فحص ذاتي", tone: "primary" };
+    case "plan": return { value: k.planAvg + "%", label: "إنجاز الخطة", tone: k.planAvg >= 70 ? "good" : k.planAvg >= 40 ? "warn" : "danger" };
+    case "findings": return { value: k.openFnd.length, label: "ملاحظة مفتوحة", tone: k.openFnd.length ? "warn" : "good" };
+    case "correspondence": { const o = store.correspondence.filter((c) => c.status === "OPEN").length; return { value: o, label: "قيد المعالجة", tone: o ? "warn" : "good" }; }
+    case "disclosures": { const p = store.disclosures.filter((d) => ["PENDING", "UNDER_REVIEW"].includes(d.status)).length; return { value: p, label: "بانتظار المراجعة", tone: p ? "warn" : "good" }; }
+    case "training": { const d = store.trainings.filter((t) => t.status === "COMPLETED").length; return { value: `${d}/${store.trainings.length}`, label: "برامج منفذة", tone: "primary" }; }
+    case "maturity": { const a = store.maturity.length ? Math.round(store.maturity.reduce((s, m) => s + maturityOverall(m, m.status === "REVIEWED"), 0) / store.maturity.length) : 0; return { value: a + "%", label: "متوسط النضج", tone: a >= 70 ? "good" : a >= 40 ? "warn" : "danger" }; }
+    default: return { value: "", label: "", tone: "primary" };
   }
 }
 
@@ -523,6 +587,94 @@ async function exportWord(key) {
     <style>body{font-family:Arial;direction:rtl}table{border-collapse:collapse;width:100%}th,td{border:1px solid #999;padding:5px;text-align:right}th{background:#eef3f0}h2{color:#1d5c4d}</style>
     </head><body>${reportHtml(key)}</body></html>`;
   downloadBlob(new Blob(["﻿" + html], { type: "application/msword" }), `${meta.title}.doc`);
+  logReport(key);
+}
+
+// ---------- تصدير عرض تقديمي (PowerPoint .pptx) ----------
+async function exportPptx(key) {
+  if (typeof PptxGenJS === "undefined") throw new Error("مكتبة العروض التقديمية لم تُحمَّل — تحقق من اتصالك وأعد تحميل الصفحة");
+  toast("جاري تجهيز العرض التقديمي…");
+  const meta = REPORTS.find((r) => r.key === key);
+  const today = new Date().toLocaleDateString("ar-SA-u-ca-gregory-nu-latn", { dateStyle: "long" });
+  const pptx = new PptxGenJS();
+  pptx.layout = "LAYOUT_WIDE"; // 13.333 × 7.5
+  pptx.rtlMode = true;
+  pptx.author = "نظام إدارة الالتزام";
+  const W = 13.333, GREEN = "0D5243", TEAL = "14705C", INK = "1A2C27", MUTED = "5D6C66", BG = "F6F9F8";
+  const AR = { fontFace: "Arial", rtlMode: true };
+
+  // شريحة العنوان
+  const s1 = pptx.addSlide();
+  s1.background = { color: GREEN };
+  s1.addShape(pptx.ShapeType.rect, { x: 0, y: 3.15, w: W, h: 0.06, fill: { color: "3FA98C" } });
+  s1.addText(meta.title, { x: 0.6, y: 2.2, w: W - 1.2, h: 1.0, fontSize: 40, bold: true, color: "FFFFFF", align: "center", ...AR });
+  s1.addText("نظام إدارة الالتزام — Compliance Management System", { x: 0.6, y: 3.35, w: W - 1.2, h: 0.5, fontSize: 16, color: "CFE6DE", align: "center", ...AR });
+  s1.addText(`تاريخ الإصدار: ${today}`, { x: 0.6, y: 4.1, w: W - 1.2, h: 0.4, fontSize: 13, color: "9FC4B8", align: "center", ...AR });
+
+  const header = (slide, title) => {
+    slide.background = { color: BG };
+    slide.addText(title, { x: 0.4, y: 0.28, w: W - 0.8, h: 0.55, fontSize: 22, bold: true, color: GREEN, align: "right", ...AR });
+    slide.addShape(pptx.ShapeType.line, { x: 0.4, y: 0.92, w: W - 0.8, h: 0, line: { color: TEAL, width: 2 } });
+    slide.addText(`${meta.title} · ${today}`, { x: 0.4, y: 7.0, w: W - 0.8, h: 0.35, fontSize: 9, color: MUTED, align: "right", ...AR });
+  };
+
+  // شريحة المؤشرات
+  const k = kpis();
+  const monPct = store.monitoring.length ? Math.round((k.monDone / store.monitoring.length) * 100) : 0;
+  const kpiData = [
+    { v: k.activeReqs.length, l: "متطلب نشط", c: TEAL },
+    { v: store.risks.length, l: "خطر مسجل", c: "2A78D6" },
+    { v: k.riskCounts.CRITICAL + k.riskCounts.HIGH, l: "مخاطر عالية فأكثر", c: "D03B3B" },
+    { v: monPct + "%", l: "إنجاز المراقبة", c: "0CA30C" },
+    { v: k.openFnd.length, l: "ملاحظة مفتوحة", c: "E6A100" },
+    { v: k.planAvg + "%", l: "إنجاز الخطة", c: "0CA30C" },
+  ];
+  const sK = pptx.addSlide();
+  header(sK, "أبرز المؤشرات");
+  const colW = (W - 0.8) / 6;
+  kpiData.forEach((kp, i) => {
+    const x = 0.4 + i * colW, w = colW - 0.18;
+    sK.addShape(pptx.ShapeType.roundRect, { x, y: 2.5, w, h: 2.0, rectRadius: 0.09, fill: { color: "FFFFFF" }, line: { color: "E6ECEA", width: 1 }, shadow: { type: "outer", color: "AEBEB8", blur: 6, offset: 2, angle: 90, opacity: 0.45 } });
+    sK.addText(String(kp.v), { x, y: 2.8, w, h: 0.9, fontSize: 30, bold: true, color: kp.c, align: "center", fontFace: "Arial" });
+    sK.addText(kp.l, { x, y: 3.7, w, h: 0.6, fontSize: 11, color: MUTED, align: "center", ...AR });
+  });
+
+  // شرائح الرسوم
+  for (const spec of distSpecs(key)) {
+    const s = pptx.addSlide();
+    header(s, spec.title);
+    const data = [{ name: spec.title, labels: spec.items.map((i) => i.label), values: spec.items.map((i) => Number(i.count) || 0) }];
+    s.addChart(pptx.ChartType.bar, data, {
+      x: 0.6, y: 1.35, w: W - 1.2, h: 5.1, barDir: "bar",
+      chartColors: spec.items.map((i) => String(i.color).replace("#", "")),
+      showValue: true, dataLabelColor: "FFFFFF", dataLabelFontSize: 13, dataLabelFontBold: true, dataLabelPosition: "inEnd",
+      showLegend: false, showTitle: false, valAxisHidden: true, catAxisLineShow: false,
+      valGridLine: { style: "none" }, catAxisLabelColor: INK, catAxisLabelFontSize: 13, catAxisLabelFontFace: "Arial",
+      barGapWidthPct: 45,
+    });
+  }
+
+  // شرائح الجدول التفصيلي (مقسّمة)
+  const t = tableFor(key);
+  if (t.head.length) {
+    const MAX = 60, PER = 12;
+    const rows = t.rows.slice(0, MAX);
+    for (let i = 0; i < rows.length; i += PER) {
+      const chunk = rows.slice(i, i + PER);
+      const s = pptx.addSlide();
+      header(s, i === 0 ? "التفاصيل" : "التفاصيل (تابع)");
+      const table = [
+        t.head.map((h) => ({ text: String(h), options: { bold: true, color: "FFFFFF", fill: { color: GREEN }, align: "right", fontSize: 9, ...AR } })),
+        ...chunk.map((r) => r.map((c) => ({ text: String(c ?? ""), options: { align: "right", fontSize: 8, color: INK, ...AR } }))),
+      ];
+      s.addTable(table, { x: 0.3, y: 1.1, w: W - 0.6, border: { type: "solid", color: "E6ECEA", pt: 0.5 }, valign: "middle", autoPage: false });
+    }
+    if (!rows.length) { const s = pptx.addSlide(); header(s, "التفاصيل"); s.addText("لا توجد بيانات", { x: 0.5, y: 3, w: W - 1, h: 1, fontSize: 16, color: MUTED, align: "center", ...AR }); }
+    if (t.rows.length > MAX) { const s = pptx.addSlide(); header(s, "ملاحظة"); s.addText(`عُرضت أول ${MAX} سجل في العرض التقديمي — للسجل الكامل استخدم تصدير Excel.`, { x: 0.6, y: 3, w: W - 1.2, h: 1, fontSize: 15, color: MUTED, align: "center", ...AR }); }
+  }
+
+  await pptx.writeFile({ fileName: `${meta.title}.pptx` });
+  toast("تم إنشاء العرض التقديمي");
   logReport(key);
 }
 
