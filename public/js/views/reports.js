@@ -1,5 +1,5 @@
 // التقارير — ملخص تنفيذي ومؤشرات وجداول، تصدير Excel / PDF (طباعة) / Word
-import { store, deptName, authName, userName, reqLabel } from "../state.js";
+import { store, deptName, authName, userName, reqLabel, clusterWave } from "../state.js";
 import * as db from "../db.js";
 import { esc, toast, fmtDate, donutChart, groupedBarChart } from "../ui.js";
 import {
@@ -7,8 +7,10 @@ import {
   RISK_STATUS, MON_TYPES, MON_FREQ, MON_STATUS, MON_RESULT, NC_LEVELS,
   PLAN_STATUS, PLAN_SOURCES, PLAN_TYPES, SA_STATUS, SA_ANSWERS, FND_SEVERITY, FND_STATUS, FND_SOURCES,
   COR_DIRECTION, COR_PRIORITY, COR_STATUS, DISCLOSURE_TYPES, DISCLOSURE_STATUS, TRAINING_TYPES, TRAINING_STATUS,
-  MATURITY_MODEL, MATURITY_STATUS, maturityLevel,
+  MATURITY_MODEL, MATURITY_STATUS, maturityLevel, CLUSTER_WAVES,
 } from "../meta.js";
+
+const waveShort = (clusterId) => clusterWave(clusterId)?.short || "غير مصنّف";
 
 // ---------- تعريف التقارير ----------
 const REPORTS = [
@@ -180,7 +182,7 @@ function tableFor(key) {
         return max ? Math.round((crits.reduce((s, c) => s + critScore(c, useReview), 0) / max) * 100) : 0;
       };
       return {
-        head: ["الرقم", "التجمع", "الفترة", ...MATURITY_MODEL.map((d) => d.name), "تقييم التجمع %", "بعد المراجعة %", "المستوى", "الحالة"],
+        head: ["الرقم", "التجمع", "الموجة", "الفترة", ...MATURITY_MODEL.map((d) => d.name), "تقييم التجمع %", "بعد المراجعة %", "المستوى", "الحالة"],
         rows: store.maturity.map((m) => {
           const useReview = m.status === "REVIEWED";
           const domCells = MATURITY_MODEL.map((dm) => {
@@ -193,7 +195,7 @@ function tableFor(key) {
           const reviewed = useReview ? overall(m, true) : null;
           const tot = useReview ? reviewed : self;
           return [
-            m.code, deptName(m.clusterId), `ر${m.quarter}/${m.year}`, ...domCells,
+            m.code, deptName(m.clusterId), waveShort(m.clusterId), `ر${m.quarter}/${m.year}`, ...domCells,
             self + "%", reviewed == null ? "— بانتظار المراجعة" : reviewed + "%",
             maturityLevel(tot).label, MATURITY_STATUS[m.status] || m.status,
           ];
@@ -386,18 +388,33 @@ function distSpecs(key) {
 function reportCharts(key) {
   const specs = distSpecs(key);
   let html = specs.length ? chartsWrap(...specs.map((s) => chartBox(s.title, s.bars ? repBars(s.items) : donutChart(s.items, { size: 140, unit: "الإجمالي" })))) : "";
-  // مقارنة تقييم التجمع (ذاتي) مقابل ما بعد المراجعة لكل تجمع (أحدث تقييم)
+  // مقارنة تقييم التجمع (ذاتي) مقابل ما بعد المراجعة لكل تجمع (أحدث تقييم) + متوسط حسب الموجة
   if (key === "maturity") {
     const latest = {};
     for (const m of store.maturity) { const c = m.clusterId; if (!latest[c] || (m.year * 4 + m.quarter) > (latest[c].year * 4 + latest[c].quarter)) latest[c] = m; }
-    const items = Object.values(latest).sort((a, b) => maturityOverall(b, b.status === "REVIEWED") - maturityOverall(a, a.status === "REVIEWED")).slice(0, 12);
-    if (items.length) {
-      html += chartsWrap(chartBox("مقارنة: تقييم التجمع مقابل ما بعد المراجعة", groupedBarChart(
-        items.map((m) => deptName(m.clusterId)),
-        { name: "تقييم التجمع (ذاتي)", color: "#2a78d6", values: items.map((m) => maturityOverall(m, false)) },
-        { name: "بعد المراجعة", color: C.good, values: items.map((m) => (m.status === "REVIEWED" ? maturityOverall(m, true) : 0)) },
+    const items = Object.values(latest).sort((a, b) => maturityOverall(b, b.status === "REVIEWED") - maturityOverall(a, a.status === "REVIEWED"));
+    const boxes = [];
+    // متوسط النضج حسب الموجة (مقارنة الموجتين)
+    const avgOf = (a) => (a.length ? Math.round(a.reduce((s, x) => s + x, 0) / a.length) : 0);
+    const grp = { ONE: [], TWO: [] };
+    for (const m of items) { const w = clusterWave(m.clusterId)?.key; if (w) grp[w].push(m); }
+    if (grp.ONE.length || grp.TWO.length) {
+      boxes.push(chartBox("متوسط النضج حسب الموجة", groupedBarChart(
+        [CLUSTER_WAVES.ONE.short, CLUSTER_WAVES.TWO.short],
+        { name: "تقييم التجمع (ذاتي)", color: "#2a78d6", values: ["ONE", "TWO"].map((k) => avgOf(grp[k].map((m) => maturityOverall(m, false)))) },
+        { name: "بعد المراجعة", color: C.good, values: ["ONE", "TWO"].map((k) => avgOf(grp[k].filter((m) => m.status === "REVIEWED").map((m) => maturityOverall(m, true)))) },
       )));
     }
+    // مقارنة لكل تجمع
+    if (items.length) {
+      const top = items.slice(0, 12);
+      boxes.push(chartBox("مقارنة التجمعات: ذاتي مقابل ما بعد المراجعة", groupedBarChart(
+        top.map((m) => `${deptName(m.clusterId)} (${waveShort(m.clusterId)})`),
+        { name: "تقييم التجمع (ذاتي)", color: "#2a78d6", values: top.map((m) => maturityOverall(m, false)) },
+        { name: "بعد المراجعة", color: C.good, values: top.map((m) => (m.status === "REVIEWED" ? maturityOverall(m, true) : 0)) },
+      )));
+    }
+    if (boxes.length) html += chartsWrap(...boxes);
   }
   return html;
 }
@@ -678,25 +695,35 @@ async function exportPptx(key) {
     }
   }
 
-  // شريحة مقارنة النضج: تقييم التجمع (ذاتي) مقابل ما بعد المراجعة
+  // شرائح مقارنة النضج: متوسط حسب الموجة + تقييم التجمع مقابل ما بعد المراجعة
   if (key === "maturity") {
     const latest = {};
     for (const m of store.maturity) { const c = m.clusterId; if (!latest[c] || (m.year * 4 + m.quarter) > (latest[c].year * 4 + latest[c].quarter)) latest[c] = m; }
-    const items = Object.values(latest).sort((a, b) => maturityOverall(b, b.status === "REVIEWED") - maturityOverall(a, a.status === "REVIEWED")).slice(0, 12);
-    if (items.length) {
-      const s = pptx.addSlide();
-      header(s, "مقارنة: تقييم التجمع مقابل ما بعد المراجعة");
-      const cats = items.map((m) => deptName(m.clusterId));
-      const data = [
-        { name: "تقييم التجمع (ذاتي)", labels: cats, values: items.map((m) => maturityOverall(m, false)) },
-        { name: "بعد المراجعة", labels: cats, values: items.map((m) => (m.status === "REVIEWED" ? maturityOverall(m, true) : 0)) },
-      ];
-      s.addChart(pptx.ChartType.bar, data, {
-        x: 0.6, y: 1.35, w: W - 1.2, h: 5.1, barDir: "bar", barGrouping: "clustered",
-        chartColors: ["2A78D6", "0CA30C"], showLegend: true, legendPos: "t", legendFontSize: 13, legendFontFace: "Arial",
-        showValue: true, dataLabelColor: "FFFFFF", dataLabelFontSize: 10, dataLabelPosition: "inEnd", showTitle: false,
-        catAxisLabelColor: INK, catAxisLabelFontSize: 11, catAxisLabelFontFace: "Arial", valAxisHidden: true, valGridLine: { style: "none" }, barGapWidthPct: 30,
-      });
+    const items = Object.values(latest).sort((a, b) => maturityOverall(b, b.status === "REVIEWED") - maturityOverall(a, a.status === "REVIEWED"));
+    const clustered = (slide, cats, selfV, revV) => slide.addChart(pptx.ChartType.bar, [
+      { name: "تقييم التجمع (ذاتي)", labels: cats, values: selfV },
+      { name: "بعد المراجعة", labels: cats, values: revV },
+    ], {
+      x: 0.6, y: 1.35, w: W - 1.2, h: 5.1, barDir: "bar", barGrouping: "clustered",
+      chartColors: ["2A78D6", "0CA30C"], showLegend: true, legendPos: "t", legendFontSize: 13, legendFontFace: "Arial",
+      showValue: true, dataLabelColor: "FFFFFF", dataLabelFontSize: 10, dataLabelPosition: "inEnd", showTitle: false,
+      catAxisLabelColor: INK, catAxisLabelFontSize: 11, catAxisLabelFontFace: "Arial", valAxisHidden: true, valGridLine: { style: "none" }, barGapWidthPct: 30,
+    });
+    const avgOf = (a) => (a.length ? Math.round(a.reduce((s, x) => s + x, 0) / a.length) : 0);
+    const grp = { ONE: [], TWO: [] };
+    for (const m of items) { const w = clusterWave(m.clusterId)?.key; if (w) grp[w].push(m); }
+    if (grp.ONE.length || grp.TWO.length) {
+      const s = pptx.addSlide(); header(s, "متوسط النضج حسب الموجة");
+      clustered(s, [CLUSTER_WAVES.ONE.short, CLUSTER_WAVES.TWO.short],
+        ["ONE", "TWO"].map((k) => avgOf(grp[k].map((m) => maturityOverall(m, false)))),
+        ["ONE", "TWO"].map((k) => avgOf(grp[k].filter((m) => m.status === "REVIEWED").map((m) => maturityOverall(m, true)))));
+    }
+    const top = items.slice(0, 12);
+    if (top.length) {
+      const s = pptx.addSlide(); header(s, "مقارنة: تقييم التجمع مقابل ما بعد المراجعة");
+      clustered(s, top.map((m) => `${deptName(m.clusterId)} (${waveShort(m.clusterId)})`),
+        top.map((m) => maturityOverall(m, false)),
+        top.map((m) => (m.status === "REVIEWED" ? maturityOverall(m, true) : 0)));
     }
   }
 

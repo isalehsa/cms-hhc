@@ -1,13 +1,14 @@
 // تقييم نضج الالتزام في التجمعات الصحية (ISO 37301)
 // التجمع يقيّم نفسه (0..3 لكل معيار مع الأدلة) ويرسل، ومدير الالتزام في الشركة يراجع
 // ربعياً ويعيد التقييم بناءً على الأدلة الداعمة. النتائج الربعية تظهر للجميع المعنيين.
-import { store, reload, deptName, clusterOptions } from "../state.js";
+import { store, reload, deptName, clusterOptions, clusterWave } from "../state.js";
 import * as db from "../db.js";
 import {
   $, esc, toast, modal, confirmBox, fld, sel, area, val,
   fmtDate, statusBadgeFrom, emptyMsg, statTile, donutStat,
-  maturityBar, maturityLevelBadge, maturityColor,
+  maturityBar, maturityLevelBadge, maturityColor, waveBadge,
 } from "../ui.js";
+import { CLUSTER_WAVES } from "../meta.js";
 import { MATURITY_MODEL, MATURITY_SCALE, MATURITY_STATUS, maturityLevel } from "../meta.js";
 import { canEdit, canApprove, isClusterOfficer } from "../auth.js";
 import { uploadFile, deleteFile } from "../storage.js";
@@ -28,6 +29,7 @@ function pickFile(accept = "") {
 
 const ST_ROLE = { DRAFT: "neutral", SUBMITTED: "warning", REVIEWED: "good" };
 const tabState = { tab: "list" }; // list | results
+let resultsWave = ""; // فلتر الموجة في لوحة النتائج: "" | ONE | TWO
 
 // نسخة جديدة من النموذج القياسي (40 معياراً) بدرجات صفرية
 function blankDomains() {
@@ -119,6 +121,7 @@ export function renderMaturity(el, nav, refresh) {
   if (tabState.tab === "results") {
     el.innerHTML = head + renderResults(rows);
     bind();
+    el.querySelectorAll("[data-wave]").forEach((b) => (b.onclick = () => { resultsWave = b.dataset.wave; rerender(); }));
     return;
   }
 
@@ -127,7 +130,7 @@ export function renderMaturity(el, nav, refresh) {
       <div style="overflow-x:auto">
         <table>
           <thead><tr>
-            <th>الرقم</th><th>التجمع</th><th>الفترة</th><th>النضج المعتمد</th><th>المستوى</th><th>الحالة</th><th>آخر تحديث</th>
+            <th>الرقم</th><th>التجمع</th><th>الموجة</th><th>الفترة</th><th>النضج المعتمد</th><th>المستوى</th><th>الحالة</th><th>آخر تحديث</th>
           </tr></thead>
           <tbody>
             ${rows.map((m) => {
@@ -136,13 +139,14 @@ export function renderMaturity(el, nav, refresh) {
               return `<tr class="rowlink" data-open="${m.id}">
                 <td><strong>${esc(m.code)}</strong></td>
                 <td>${esc(deptName(m.clusterId))}</td>
+                <td>${waveBadge(clusterWave(m.clusterId))}</td>
                 <td>الربع ${m.quarter} / ${m.year}</td>
                 <td style="min-width:130px">${maturityBar(pct)}</td>
                 <td>${maturityLevelBadge(pct, lvl.label)}</td>
                 <td>${statusBadgeFrom(MATURITY_STATUS, m.status, ST_ROLE)}</td>
                 <td>${fmtDate(m.updatedAt || m.createdAt)}</td>
               </tr>`;
-            }).join("") || `<tr><td colspan="7">${emptyMsg(officer ? "لا توجد تقييمات لتجمعك بعد — ابدأ بـ «تقييم جديد»" : "لا توجد تقييمات بعد")}</td></tr>`}
+            }).join("") || `<tr><td colspan="8">${emptyMsg(officer ? "لا توجد تقييمات لتجمعك بعد — ابدأ بـ «تقييم جديد»" : "لا توجد تقييمات بعد")}</td></tr>`}
           </tbody>
         </table>
       </div>
@@ -165,15 +169,39 @@ function renderResults(rows) {
     const k = m.clusterId;
     if (!latest[k] || (m.year * 4 + m.quarter) > (latest[k].year * 4 + latest[k].quarter)) latest[k] = m;
   }
-  const items = Object.values(latest);
-  if (!items.length) return `<section class="card">${emptyMsg("لا توجد نتائج بعد — تظهر هنا التقييمات المُرسلة أو المعتمدة")}</section>`;
+  const allItems = Object.values(latest);
+  if (!allItems.length) return `<section class="card">${emptyMsg("لا توجد نتائج بعد — تظهر هنا التقييمات المُرسلة أو المعتمدة")}</section>`;
 
   const avg = (arr) => (arr.length ? Math.round(arr.reduce((s, x) => s + x, 0) / arr.length) : 0);
+
+  // تجميع حسب الموجة (للملخّص المقارن بين الموجتين)
+  const groups = { ONE: [], TWO: [], NONE: [] };
+  for (const m of allItems) groups[clusterWave(m.clusterId)?.key || "NONE"].push(m);
+  const waveCard = (key) => {
+    const g = groups[key], rev = g.filter(isReviewed), meta = CLUSTER_WAVES[key];
+    return `<div class="card sub" style="flex:1;min-width:250px;margin:0">
+      <div class="row" style="justify-content:space-between;align-items:center">
+        <strong>${esc(meta.label)}</strong><span class="chip">${g.length} تجمع</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px">
+        ${donutStat(g.length ? avg(g.map(selfPct)) : null, "متوسط الذاتي")}
+        ${donutStat(rev.length ? avg(rev.map(reviewedPct)) : null, "بعد المراجعة", rev.length ? `${rev.length} معتمد` : "لا يوجد")}
+      </div></div>`;
+  };
+  const waveSummary = (groups.ONE.length || groups.TWO.length)
+    ? `<div class="row" style="gap:12px;flex-wrap:wrap;margin-bottom:14px">${waveCard("ONE")}${waveCard("TWO")}</div>` : "";
+
+  // فلتر الموجة
+  const btn = (v, label) => `<button class="subtab ${resultsWave === v ? "active" : ""}" data-wave="${v}">${label}</button>`;
+  const waveFilter = `<div class="subtabs" style="margin-bottom:12px">
+    ${btn("", "كل التجمعات")}${btn("ONE", CLUSTER_WAVES.ONE.short)}${btn("TWO", CLUSTER_WAVES.TWO.short)}
+  </div>`;
+
+  const items = resultsWave ? allItems.filter((m) => (clusterWave(m.clusterId)?.key || "NONE") === resultsWave) : allItems;
   const reviewedItems = items.filter(isReviewed);
   const avgSelf = avg(items.map(selfPct));
   const avgRev = avg(reviewedItems.map(reviewedPct));
 
-  // توزيع المستويات حسب النتيجة المعتمدة
   const lc = { good: 0, warning: 0, serious: 0, critical: 0 };
   for (const m of items) lc[maturityLevel(finalPct(m)).key]++;
   const dist = [
@@ -188,7 +216,7 @@ function renderResults(rows) {
   const distLegend = dist.map((d) => `<span class="lvl" style="background:${d.color}1f;border-color:transparent;color:${d.color}"><span class="dot" style="background:${d.color}"></span>${d.label} <strong>${d.count}</strong></span>`).join(" ");
 
   const tiles = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:14px">
-    ${statTile(items.length, "تجمعات في النتائج")}
+    ${statTile(items.length, "تجمعات في العرض")}
     ${donutStat(avgSelf, "متوسط تقييم التجمعات", "التقييم الذاتي")}
     ${donutStat(reviewedItems.length ? avgRev : null, "متوسط بعد المراجعة", reviewedItems.length ? `${reviewedItems.length} تقييم معتمد` : "لا يوجد معتمد بعد")}
     ${statTile(reviewedItems.length, "تقييمات معتمدة", `${items.length - reviewedItems.length} بانتظار المراجعة`)}
@@ -211,12 +239,16 @@ function renderResults(rows) {
         : `<td class="muted" data-tip="لم تُراجع من إدارة الالتزام بعد">— بانتظار</td>`;
       return `<tr>
         <td><strong>${esc(deptName(m.clusterId))}</strong><div class="muted" style="font-size:.72rem">ر${m.quarter}/${m.year} · ${esc(MATURITY_STATUS[m.status] || m.status)}</div></td>
+        <td>${waveBadge(clusterWave(m.clusterId))}</td>
         ${cells}<td>${pctCell(sp)}</td>${revCell}</tr>`;
     }).join("");
 
   return `
     <section class="card">
       <h2>لوحة نتائج النضج الربعية</h2>
+      <h3 style="margin:4px 0 8px">مقارنة الموجتين</h3>
+      ${waveSummary || '<p class="muted">لم تُصنَّف التجمعات إلى موجات بعد</p>'}
+      ${waveFilter}
       ${tiles}
       <h3 style="margin:6px 0">توزيع التجمعات حسب مستوى النضج</h3>
       <div style="display:flex;height:16px;border-radius:8px;overflow:hidden;margin:6px 0">${distSeg}</div>
@@ -227,7 +259,7 @@ function renderResults(rows) {
       <p class="muted" style="margin-top:0">«تقييم التجمع» = التقييم الذاتي · «بعد المراجعة» = النتيجة المعتمدة من إدارة الالتزام</p>
       <div style="overflow-x:auto">
         <table class="mat-matrix">
-          <thead><tr><th>التجمع</th>${domNames.map((n) => `<th style="font-size:.72rem">${esc(n)}</th>`).join("")}<th>تقييم التجمع</th><th>بعد المراجعة</th></tr></thead>
+          <thead><tr><th>التجمع</th><th>الموجة</th>${domNames.map((n) => `<th style="font-size:.72rem">${esc(n)}</th>`).join("")}<th>تقييم التجمع</th><th>بعد المراجعة</th></tr></thead>
           <tbody>${rowsHtml}</tbody>
         </table>
       </div>
