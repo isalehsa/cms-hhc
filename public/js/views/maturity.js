@@ -305,7 +305,8 @@ export function openDetail(id, done) {
     ${canReview ? fld("ملاحظات المراجعة الربعية", area("mt-rnotes", m.reviewNotes, "قرار المراجعة والملاحظات على الأدلة", 2)) : m.reviewNotes ? `<p><strong>ملاحظات المراجعة:</strong> ${esc(m.reviewNotes)}</p>` : ""}
     <div class="row" style="margin-top:14px">
       ${canSelfEdit ? '<button id="mt-savedraft" class="secondary">حفظ مؤقت</button><button id="mt-submit">📤 إرسال للمراجعة</button>' : ""}
-      ${canAdoptDraft ? '<button id="mt-adopt" title="اعتماد التقييم الذاتي الحالي كنتيجة معتمدة دون انتظار إرسال التجمع">✔ اعتماد التقييم الذاتي</button>' : ""}
+      ${canAdoptDraft ? '<button class="secondary" id="mt-approvedraft" title="اعتماد المسودة ونقلها إلى «بانتظار المراجعة» — دون اعتماد مراجعة نهائية">✔ اعتماد المسودة</button>' : ""}
+      ${canAdoptDraft ? '<button id="mt-adopt" title="اعتماد التقييم الذاتي الحالي كنتيجة معتمدة نهائية دون انتظار إرسال التجمع">✔ اعتماد التقييم الذاتي</button>' : ""}
       ${canReview ? '<button id="mt-review">✔ اعتماد المراجعة الربعية</button>' : ""}
       ${canUndoReview ? '<button class="secondary" id="mt-undo" title="التراجع عن اعتماد التقييم وإعادته إلى بانتظار المراجعة">↩ تراجع عن الاعتماد</button>' : ""}
       ${(canEdit(user) || (officer && m.status !== "REVIEWED")) ? '<button class="danger" id="mt-del">حذف</button>' : ""}
@@ -444,6 +445,13 @@ export function openDetail(id, done) {
     await db.updateRow("maturity", m.id, { status: "SUBMITTED", reviewedById: null });
     await db.audit("UPDATE", "Maturity", m.code, `تراجع عن اعتماد التقييم — ${deptName(m.clusterId)}`);
     await reload("maturity"); ov.remove(); toast("تم التراجع عن الاعتماد"); done();
+  });
+  // اعتماد المسودة: نقلها إلى «بانتظار المراجعة» فقط (ليس اعتماد مراجعة نهائية)
+  $("#mt-approvedraft", ov)?.addEventListener("click", async () => {
+    if (!(await confirmBox("اعتماد المسودة ونقلها إلى «بانتظار المراجعة»؟ (دون اعتماد مراجعة نهائية)"))) return;
+    await db.updateRow("maturity", m.id, { status: "SUBMITTED", submittedAt: m.submittedAt || db.now() });
+    await db.audit("SUBMIT", "Maturity", m.code, `اعتماد المسودة (بانتظار المراجعة) — ${deptName(m.clusterId)}`);
+    await reload("maturity"); ov.remove(); toast("اعتُمدت المسودة"); done();
   });
   // اعتماد التقييم الذاتي مباشرةً من المسودة: تُعتمد درجات التجمع كما هي نتيجةً معتمدة
   $("#mt-adopt", ov)?.addEventListener("click", async () => {
