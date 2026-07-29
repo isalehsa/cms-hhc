@@ -652,19 +652,52 @@ async function exportPptx(key) {
     sK.addText(kp.l, { x, y: 3.7, w, h: 0.6, fontSize: 11, color: MUTED, align: "center", ...AR });
   });
 
-  // شرائح الرسوم
+  // شرائح الرسوم — دائرية (دونات) للتوزيعات لتطابق الشاشة، وأعمدة للنسب
   for (const spec of distSpecs(key)) {
     const s = pptx.addSlide();
     header(s, spec.title);
-    const data = [{ name: spec.title, labels: spec.items.map((i) => i.label), values: spec.items.map((i) => Number(i.count) || 0) }];
-    s.addChart(pptx.ChartType.bar, data, {
-      x: 0.6, y: 1.35, w: W - 1.2, h: 5.1, barDir: "bar",
-      chartColors: spec.items.map((i) => String(i.color).replace("#", "")),
-      showValue: true, dataLabelColor: "FFFFFF", dataLabelFontSize: 13, dataLabelFontBold: true, dataLabelPosition: "inEnd",
-      showLegend: false, showTitle: false, valAxisHidden: true, catAxisLineShow: false,
-      valGridLine: { style: "none" }, catAxisLabelColor: INK, catAxisLabelFontSize: 13, catAxisLabelFontFace: "Arial",
-      barGapWidthPct: 45,
-    });
+    const colors = spec.items.map((i) => String(i.color).replace("#", ""));
+    const total = spec.items.reduce((sum, i) => sum + (Number(i.count) || 0), 0);
+    if (spec.bars) {
+      const data = [{ name: spec.title, labels: spec.items.map((i) => i.label), values: spec.items.map((i) => Number(i.count) || 0) }];
+      s.addChart(pptx.ChartType.bar, data, {
+        x: 0.6, y: 1.35, w: W - 1.2, h: 5.1, barDir: "bar", chartColors: colors,
+        showValue: true, dataLabelColor: "FFFFFF", dataLabelFontSize: 13, dataLabelFontBold: true, dataLabelPosition: "inEnd",
+        showLegend: false, showTitle: false, valAxisHidden: true, catAxisLineShow: false,
+        valGridLine: { style: "none" }, catAxisLabelColor: INK, catAxisLabelFontSize: 13, catAxisLabelFontFace: "Arial", barGapWidthPct: 45,
+      });
+    } else if (total > 0) {
+      const data = [{ name: spec.title, labels: spec.items.map((i) => i.label), values: spec.items.map((i) => Number(i.count) || 0) }];
+      s.addChart(pptx.ChartType.doughnut, data, {
+        x: 1.0, y: 1.35, w: W - 2.0, h: 5.1, chartColors: colors, holeSize: 55,
+        showLegend: true, legendPos: "r", legendFontSize: 13, legendFontFace: "Arial",
+        showValue: true, dataLabelColor: "FFFFFF", dataLabelFontSize: 13, dataLabelFontBold: true, showTitle: false, showPercent: false,
+      });
+    } else {
+      s.addText("لا توجد بيانات لهذا المؤشر", { x: 0.6, y: 3, w: W - 1.2, h: 1, fontSize: 15, color: MUTED, align: "center", ...AR });
+    }
+  }
+
+  // شريحة مقارنة النضج: تقييم التجمع (ذاتي) مقابل ما بعد المراجعة
+  if (key === "maturity") {
+    const latest = {};
+    for (const m of store.maturity) { const c = m.clusterId; if (!latest[c] || (m.year * 4 + m.quarter) > (latest[c].year * 4 + latest[c].quarter)) latest[c] = m; }
+    const items = Object.values(latest).sort((a, b) => maturityOverall(b, b.status === "REVIEWED") - maturityOverall(a, a.status === "REVIEWED")).slice(0, 12);
+    if (items.length) {
+      const s = pptx.addSlide();
+      header(s, "مقارنة: تقييم التجمع مقابل ما بعد المراجعة");
+      const cats = items.map((m) => deptName(m.clusterId));
+      const data = [
+        { name: "تقييم التجمع (ذاتي)", labels: cats, values: items.map((m) => maturityOverall(m, false)) },
+        { name: "بعد المراجعة", labels: cats, values: items.map((m) => (m.status === "REVIEWED" ? maturityOverall(m, true) : 0)) },
+      ];
+      s.addChart(pptx.ChartType.bar, data, {
+        x: 0.6, y: 1.35, w: W - 1.2, h: 5.1, barDir: "bar", barGrouping: "clustered",
+        chartColors: ["2A78D6", "0CA30C"], showLegend: true, legendPos: "t", legendFontSize: 13, legendFontFace: "Arial",
+        showValue: true, dataLabelColor: "FFFFFF", dataLabelFontSize: 10, dataLabelPosition: "inEnd", showTitle: false,
+        catAxisLabelColor: INK, catAxisLabelFontSize: 11, catAxisLabelFontFace: "Arial", valAxisHidden: true, valGridLine: { style: "none" }, barGapWidthPct: 30,
+      });
+    }
   }
 
   // شرائح الجدول التفصيلي (مقسّمة)
