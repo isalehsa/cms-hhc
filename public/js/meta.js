@@ -78,6 +78,38 @@ export const HEALTH_CLUSTERS = [
   "تجمع الحدود الشمالية الصحي", "تجمع بيشة الصحي",
 ];
 
+// ---------- موجات التجمعات (تصنيف حالة التبعية للشركة) ----------
+// تُميَّز التجمعات في التقارير بحسب موجتها: الأولى مُشغّلة وتابعة للشركة، والثانية قيد التجهيز
+export const CLUSTER_WAVES = {
+  ONE: { label: "الموجة الأولى — تابعة للشركة", short: "الموجة الأولى", tone: "good", desc: "تجمعات مُشغّلة وتابعة للشركة" },
+  TWO: { label: "الموجة الثانية — قيد التجهيز", short: "الموجة الثانية", tone: "warning", desc: "تجمعات قيد التجهيز للانضمام" },
+};
+
+// مطابقات إسناد الموجة حسب اسم التجمع (تعمل حتى لو اختلفت صياغة الاسم)
+const WAVE_ONE_MATCH = [
+  (n) => n.includes("الرياض") && n.includes("الثاني"),
+  (n) => n.includes("الشرقية"),
+  (n) => n.includes("القصيم"),
+];
+const WAVE_TWO_MATCH = [
+  (n) => n.includes("حائل"),
+  (n) => n.includes("تبوك"),
+  (n) => n.includes("الحدود"),
+  (n) => n.includes("حفر") && n.includes("الباطن"),
+  (n) => n.includes("الأحساء") || n.includes("الاحساء"),
+  (n) => n.includes("نجران"),
+  (n) => n.includes("الطائف"),
+];
+
+// مفتاح موجة التجمع: يعتمد الحقل الصريح wave إن وُجد، وإلا يُشتق من اسم التجمع
+export function clusterWaveKey(name, explicit) {
+  if (explicit === "ONE" || explicit === "TWO") return explicit;
+  const n = String(name || "");
+  if (WAVE_ONE_MATCH.some((f) => f(n))) return "ONE";
+  if (WAVE_TWO_MATCH.some((f) => f(n))) return "TWO";
+  return null;
+}
+
 // ---------- الأدوار ----------
 export const ROLES = {
   ADMIN: "مدير النظام",
