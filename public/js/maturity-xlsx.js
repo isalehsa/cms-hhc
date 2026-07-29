@@ -178,7 +178,10 @@ export async function importLegacyMaturityExcel(file, m) {
     ws.getRow(r).eachCell((cell, col) => {
       const t = cellText(cell.value).trim();
       if (!crit && /^المعيار/.test(t)) crit = col;
-      if (!score && /درجة تقييم المعيار|درجة المعيار|^الدرجة/.test(t)) score = col;
+      // عمود درجة المعيار الفردية: الأولوية لـ«درجة تقييم المعيار»؛ ويُستبعد صراحةً
+      // عمود «الدرجة الكلية» (إجمالي المحور) الذي يحوي كلمة «كلي»
+      if (/درجة تقييم/.test(t)) score = col;
+      else if (!score && /درجة/.test(t) && !/كلي/.test(t)) score = col;
       if (!note && /^الملاحظات|^ملاحظات/.test(t)) note = col;
     });
     if (crit && score) { headerRow = r; cCrit = crit; cScore = score; cNote = note; }
