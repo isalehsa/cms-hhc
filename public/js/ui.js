@@ -174,6 +174,24 @@ export function progressBar(pct) {
   return `<div class="prog"><div class="prog-bar"><div class="prog-fill" style="width:${p}%"></div></div><span class="prog-num">${p}%</span></div>`;
 }
 
+// لون النضج على تدرّج لوني مستمر من الأحمر (0٪) إلى الأخضر (100٪) — يعكس مستوى النضج
+export function maturityColor(pct) {
+  const p = Math.max(0, Math.min(100, Math.round(pct || 0)));
+  return `hsl(${Math.round(p * 1.2)}, 58%, 44%)`; // 0=أحمر · 60=أصفر · 120=أخضر
+}
+
+// شريط تقدّم النضج بلون يعكس المستوى (أحمر للمنخفض ← أخضر للمرتفع)
+export function maturityBar(pct) {
+  const p = Math.max(0, Math.min(100, Math.round(pct || 0)));
+  return `<div class="prog"><div class="prog-bar"><div class="prog-fill" style="width:${p}%;background:${maturityColor(p)}"></div></div><span class="prog-num" style="color:${maturityColor(p)};font-weight:600">${p}%</span></div>`;
+}
+
+// شارة مستوى النضج بلون متدرّج من الأحمر إلى الأخضر بحسب النسبة
+export function maturityLevelBadge(pct, label) {
+  const color = maturityColor(pct);
+  return `<span class="lvl" style="background:${color};border-color:transparent;color:#fff"><span class="dot" style="background:rgba(255,255,255,.9)"></span>${esc(label)}</span>`;
+}
+
 export function emptyMsg(msg) {
   return `<p class="muted" style="padding:14px">${esc(msg)}</p>`;
 }

@@ -5,7 +5,8 @@ import { store, reload, deptName, clusterOptions } from "../state.js";
 import * as db from "../db.js";
 import {
   $, esc, toast, modal, confirmBox, fld, sel, area, val,
-  fmtDate, statusBadgeFrom, levelBadge, progressBar, emptyMsg,
+  fmtDate, statusBadgeFrom, emptyMsg,
+  maturityBar, maturityLevelBadge,
 } from "../ui.js";
 import { MATURITY_MODEL, MATURITY_SCALE, MATURITY_STATUS, maturityLevel } from "../meta.js";
 import { canEdit, canApprove, isClusterOfficer } from "../auth.js";
@@ -107,8 +108,8 @@ export function renderMaturity(el, nav, refresh) {
                 <td><strong>${esc(m.code)}</strong></td>
                 <td>${esc(deptName(m.clusterId))}</td>
                 <td>الربع ${m.quarter} / ${m.year}</td>
-                <td style="min-width:130px">${progressBar(pct)}</td>
-                <td>${levelBadge(lvl.key, lvl.label)}</td>
+                <td style="min-width:130px">${maturityBar(pct)}</td>
+                <td>${maturityLevelBadge(pct, lvl.label)}</td>
                 <td>${statusBadgeFrom(MATURITY_STATUS, m.status, ST_ROLE)}</td>
                 <td>${fmtDate(m.updatedAt || m.createdAt)}</td>
               </tr>`;
@@ -148,7 +149,7 @@ function renderResults(rows) {
       }).join("");
       const tot = finalPct(m);
       return `<tr><td><strong>${esc(deptName(m.clusterId))}</strong><div class="muted">ر${m.quarter}/${m.year}</div></td>${cells}
-        <td>${levelBadge(maturityLevel(tot).key, `${tot}%`)}</td></tr>`;
+        <td>${maturityLevelBadge(tot, `${tot}%`)}</td></tr>`;
     }).join("");
 
   return `
@@ -257,7 +258,7 @@ export function openDetail(id, done) {
     return `<div class="card sub">
       <div class="row" style="justify-content:space-between">
         <h3>${di + 1}. ${esc(dom.name)} <span class="muted" style="font-weight:normal">(${esc(dom.ref)})</span></h3>
-        <span>${levelBadge(maturityLevel(p).key, `${p}%`)}</span>
+        <span>${maturityLevelBadge(p, `${p}% — ${maturityLevel(p).label}`)}</span>
       </div>
       <div style="overflow-x:auto"><table>
         <thead><tr><th>المعيار</th><th>التقييم الذاتي (0-3)</th><th>مراجعة الشركة</th><th>الدليل الداعم</th></tr></thead>
@@ -298,7 +299,8 @@ export function openDetail(id, done) {
       <h2>${esc(m.code)} — ${esc(deptName(m.clusterId))}</h2>
       <span>${statusBadgeFrom(MATURITY_STATUS, m.status, ST_ROLE)}</span>
     </div>
-    <p class="muted">الربع ${m.quarter} / ${m.year} · النضج المعتمد: ${levelBadge(maturityLevel(pct).key, `${pct}٪ — ${maturityLevel(pct).label}`)}</p>
+    <p class="muted">الربع ${m.quarter} / ${m.year} · النضج المعتمد: ${maturityLevelBadge(pct, `${pct}٪ — ${maturityLevel(pct).label}`)}</p>
+    <div style="max-width:320px;margin:6px 0 4px">${maturityBar(pct)}</div>
     <div class="scale-note muted">مقياس التقييم: ${Object.entries(MATURITY_SCALE).map(([k, v]) => `<strong>${k}</strong>=${esc(v)}`).join(" · ")}</div>
     ${repoBlock}
     ${domHtml}
