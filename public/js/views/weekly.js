@@ -79,6 +79,10 @@ function weekStartISO(iso) {
   return d.toISOString().slice(0, 10);
 }
 const shortDate = (iso) => { const d = new Date(iso); return isNaN(d) ? "—" : `${d.getDate()}/${d.getMonth() + 1}`; };
+// موعد التسليم قد يكون تاريخاً أو نصاً مستورَداً («الاجتماع القادم»…)
+const isDateStr = (s) => !!s && /\d{3,4}/.test(s) && !isNaN(new Date(s).getTime());
+const dueEditValue = (s) => (isDateStr(s) ? inputFromISO(s) : "");
+const dueDisplay = (s) => (!s ? '<span class="muted">—</span>' : (isDateStr(s) ? esc(fmtDate(s)) : esc(s)));
 const splitAssignees = (s) => String(s || "").split(/[\/،,\-–—]|&|\+| و /).map((x) => x.trim()).filter((x) => x && x !== "-");
 
 // صف بند قابل للتحرير أو للعرض فقط
@@ -88,7 +92,7 @@ function itemRow(it = {}, editable) {
     return `<tr>
       <td>${esc(it.topic || "—")}</td>
       <td>${it.recommendation ? esc(it.recommendation) : '<span class="muted">—</span>'}</td>
-      <td>${it.due ? esc(it.due) : '<span class="muted">—</span>'}</td>
+      <td>${dueDisplay(it.due)}</td>
       <td>${it.assignees ? esc(it.assignees) : '<span class="muted">—</span>'}</td>
       <td>${statusBadgeFrom(WM_STATUS, st, WM_ROLE)}</td>
     </tr>`;
@@ -96,7 +100,7 @@ function itemRow(it = {}, editable) {
   return `<tr class="wm-row">
     <td><textarea class="wm-topic" rows="2" placeholder="المحور / الموضوع">${esc(it.topic || "")}</textarea></td>
     <td><textarea class="wm-rec" rows="2" placeholder="التوصية / الإجراء">${esc(it.recommendation || "")}</textarea></td>
-    <td><input type="text" class="wm-due" value="${esc(it.due || "")}" placeholder="تاريخ أو «الاجتماع القادم»" /></td>
+    <td><input type="date" class="wm-due" data-orig="${esc(it.due || "")}" value="${dueEditValue(it.due)}" />${(it.due && !isDateStr(it.due)) ? `<div class="muted" style="font-size:.68rem;margin-top:2px">سابقاً: ${esc(it.due)}</div>` : ""}</td>
     <td><input type="text" class="wm-assignees" value="${esc(it.assignees || "")}" placeholder="المنفّذون" /></td>
     <td><select class="wm-status">${Object.entries(WM_STATUS).map(([k, v]) => `<option value="${k}" ${k === st ? "selected" : ""}>${v}</option>`).join("")}</select></td>
     <td><button type="button" class="danger small wm-del" title="حذف البند">✕</button></td>
@@ -113,7 +117,8 @@ function readItems(root) {
   return [...root.querySelectorAll(".wm-row")].map((tr) => ({
     topic: tr.querySelector(".wm-topic").value.trim(),
     recommendation: tr.querySelector(".wm-rec").value.trim(),
-    due: tr.querySelector(".wm-due").value.trim(),
+    // القيمة المختارة من منتقي التاريخ، وإلا نُبقي النص المستورَد الأصلي إن وُجد
+    due: tr.querySelector(".wm-due").value.trim() || (tr.querySelector(".wm-due").dataset.orig || ""),
     assignees: tr.querySelector(".wm-assignees").value.trim(),
     status: tr.querySelector(".wm-status").value === "DONE" ? "DONE" : "OPEN",
   })).filter((x) => x.topic || x.recommendation || x.assignees);
