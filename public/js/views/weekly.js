@@ -10,6 +10,62 @@ import {
 import { canEdit } from "../auth.js";
 
 const WM_STATUS = { OPEN: "مفتوحة", DONE: "منجزة" };
+
+// منتقي ملف
+function pickFile(accept = "") {
+  return new Promise((resolve) => {
+    const inp = document.createElement("input");
+    inp.type = "file"; if (accept) inp.accept = accept; inp.style.display = "none";
+    inp.onchange = () => { const f = inp.files[0] || null; inp.remove(); resolve(f); };
+    document.body.appendChild(inp); inp.click();
+  });
+}
+
+// استيراد محاضر من ملف Excel بصيغة «محضر الاجتماع الأسبوعي … بتاريخ …»
+// كل ورقة تحوي كتل محاضر؛ صف العنوان في العمود A، والبنود في B(المحور) D(التوصية) E(الموعد) F(المنفّذون)
+async function parseWeeklyExcel(file) {
+  if (typeof ExcelJS === "undefined") throw new Error("مكتبة Excel لم تُحمَّل — أعد تحميل الصفحة");
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(await file.arrayBuffer()).catch(() => { throw new Error("تعذّرت قراءة الملف — تأكد أنه بصيغة Excel (.xlsx)"); });
+  const ct = (v) => {
+    if (v == null) return "";
+    if (v instanceof Date) return v.toISOString().slice(0, 10);
+    if (typeof v === "object") { if (v.text != null) return String(v.text); if (v.result != null) return String(v.result); if (Array.isArray(v.richText)) return v.richText.map((x) => x.text).join(""); return ""; }
+    return String(v).trim();
+  };
+  const parseDate = (a) => {
+    const m = a.match(/بتاريخ\s*(\d{4})\s*\/\s*(\d{1,2})\s*\/\s*(\d{1,2})/);
+    if (!m) return null;
+    return new Date(Date.UTC(+m[1], +m[2] - 1, Math.max(1, +m[3]), 12)).toISOString();
+  };
+  const LABEL = /محاور الاجتماع|مواضيع تم/;
+  const isDone = (due, rec) => [due, rec].some((x) => ["done", "تم", "تم التسليم"].includes(x.trim().toLowerCase()));
+  const meetings = [];
+  for (const ws of wb.worksheets) {
+    let cur = null;
+    ws.eachRow((row) => {
+      // عنوان المحضر مدمج رأسياً في العمود A؛ نلتقطه فقط عند خلية الدمج الرئيسية (لا يتكرّر على صفوف البنود)
+      const c1 = row.getCell(1);
+      const master = c1.master || c1;
+      const a = ct(c1.value);
+      if (master.address === c1.address && a.includes("محضر الاجتماع")) {
+        cur = { date: parseDate(a), items: [] }; meetings.push(cur); return;
+      }
+      if (!cur) return;
+      const topic = ct(row.getCell(2).value), rec = ct(row.getCell(4).value), due = ct(row.getCell(5).value), asg = ct(row.getCell(6).value);
+      if (LABEL.test(topic)) return;
+      if (!(topic || rec || asg)) return;
+      cur.items.push({ topic, recommendation: rec, due, assignees: asg, status: isDone(due, rec) ? "DONE" : "OPEN" });
+    });
+  }
+  // إسقاط الفارغة، وإزالة التكرار حسب التاريخ (نُبقي الأكثر بنوداً)
+  const byDate = {};
+  for (const m of meetings.filter((m) => m.items.length && m.date)) {
+    const k = m.date.slice(0, 10);
+    if (!byDate[k] || m.items.length > byDate[k].items.length) byDate[k] = m;
+  }
+  return Object.values(byDate).sort((a, b) => a.date.localeCompare(b.date));
+}
 const WM_ROLE = { OPEN: "warning", DONE: "good" };
 // بنود مؤجَّلة للاجتماع القادم (من نص موعد التسليم)
 const CARRY_RE = /القادم|القادمة|الجاي|الجاية|next|الأسبوع القادم/i;
@@ -171,7 +227,10 @@ export function renderWeekly(el, nav, refresh) {
   el.innerHTML = `
     <div class="page-head">
       <div><h1>🗓 الاجتماع الأسبوعي</h1><p class="muted">محاضر اجتماعات إدارة الالتزام الأسبوعية ومتابعة المهام</p></div>
-      ${editable ? '<button id="wm-new" title="إنشاء محضر بتاريخ مخصص">＋ محضر بتاريخ آخر</button>' : ""}
+      ${editable ? `<div class="row" style="gap:6px;flex-wrap:wrap">
+        <button class="secondary" id="wm-import" title="استيراد محاضر من ملف Excel">⬆ استيراد من Excel</button>
+        <button id="wm-new" title="إنشاء محضر بتاريخ مخصص">＋ محضر بتاريخ آخر</button>
+      </div>` : ""}
     </div>
     ${weekFill}
     ${indicators}
@@ -193,6 +252,31 @@ export function renderWeekly(el, nav, refresh) {
     } catch (err) { toast(err.message, true); }
   });
   $("#wm-new", el)?.addEventListener("click", () => openMeetingModal(null, rerender));
+  $("#wm-import", el)?.addEventListener("click", async () => {
+    const file = await pickFile(".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    if (!file) return;
+    toast("جارٍ قراءة الملف…");
+    try {
+      const parsed = await parseWeeklyExcel(file);
+      if (!parsed.length) return toast("لم يُعثر على محاضر في الملف", true);
+      const existing = new Set(store.meetings.map((m) => (m.date || "").slice(0, 10)));
+      const toAdd = parsed.filter((m) => !existing.has(m.date.slice(0, 10)));
+      if (!toAdd.length) return toast("جميع المحاضر مستوردة مسبقاً");
+      const totalItems = toAdd.reduce((s, m) => s + m.items.length, 0);
+      if (!(await confirmBox(`استيراد ${toAdd.length} محضراً (${totalItems} محوراً) من الملف؟`))) return;
+      for (const m of toAdd) {
+        const code = await db.nextCode("WM");
+        await db.setRow("meetings", db.newId("WM"), {
+          code, title: "الاجتماع الأسبوعي", date: m.date, items: m.items,
+          createdById: store.user.uid, createdAt: db.now(), updatedAt: db.now(),
+        });
+      }
+      await db.audit("CREATE", "Meeting", null, `استيراد ${toAdd.length} محضر اجتماع أسبوعي من Excel`);
+      await reload("meetings");
+      toast(`استُورد ${toAdd.length} محضراً (${totalItems} محوراً)`);
+      rerender();
+    } catch (err) { toast(err.message, true); }
+  });
   el.querySelectorAll("[data-open]").forEach((tr) =>
     tr.addEventListener("click", () => openMeetingModal(store.meetings.find((x) => x.id === tr.dataset.open), rerender))
   );
