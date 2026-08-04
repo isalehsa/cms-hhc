@@ -649,28 +649,36 @@ async function exportPptx(key) {
     slide.addText(`${meta.title} · ${today}`, { x: 0.4, y: 7.0, w: W - 0.8, h: 0.35, fontSize: 9, color: MUTED, align: "right", ...AR });
   };
 
-  // شريحة المؤشرات
-  const k = kpis();
-  const monPct = store.monitoring.length ? Math.round((k.monDone / store.monitoring.length) * 100) : 0;
-  const kpiData = [
-    { v: k.activeReqs.length, l: "متطلب نشط", c: TEAL },
-    { v: store.risks.length, l: "خطر مسجل", c: "2A78D6" },
-    { v: k.riskCounts.CRITICAL + k.riskCounts.HIGH, l: "مخاطر عالية فأكثر", c: "D03B3B" },
-    { v: monPct + "%", l: "إنجاز المراقبة", c: "0CA30C" },
-    { v: k.openFnd.length, l: "ملاحظة مفتوحة", c: "E6A100" },
-    { v: k.planAvg + "%", l: "إنجاز الخطة", c: "0CA30C" },
-  ];
-  const sK = pptx.addSlide();
-  header(sK, "أبرز المؤشرات");
-  const colW = (W - 0.8) / 6;
-  kpiData.forEach((kp, i) => {
-    const x = 0.4 + i * colW, w = colW - 0.18;
-    sK.addShape(pptx.ShapeType.roundRect, { x, y: 2.5, w, h: 2.0, rectRadius: 0.09, fill: { color: "FFFFFF" }, line: { color: "E6ECEA", width: 1 }, shadow: { type: "outer", color: "AEBEB8", blur: 6, offset: 2, angle: 90, opacity: 0.45 } });
-    sK.addText(String(kp.v), { x, y: 2.8, w, h: 0.9, fontSize: 30, bold: true, color: kp.c, align: "center", fontFace: "Arial" });
-    sK.addText(kp.l, { x, y: 3.7, w, h: 0.6, fontSize: 11, color: MUTED, align: "center", ...AR });
-  });
+  // بطاقات مؤشرات موحّدة
+  const kpiCards = (slide, cards) => {
+    const cw = (W - 0.8) / cards.length;
+    cards.forEach((kp, i) => {
+      const x = 0.4 + i * cw, w = cw - 0.18;
+      slide.addShape(pptx.ShapeType.roundRect, { x, y: 2.4, w, h: 2.15, rectRadius: 0.09, fill: { color: "FFFFFF" }, line: { color: "E6ECEA", width: 1 }, shadow: { type: "outer", color: "AEBEB8", blur: 6, offset: 2, angle: 90, opacity: 0.45 } });
+      slide.addText(String(kp.v), { x, y: 2.72, w, h: 0.9, fontSize: 30, bold: true, color: kp.c, align: "center", fontFace: "Arial" });
+      slide.addText(kp.l, { x, y: 3.62, w, h: 0.55, fontSize: 12, color: INK, align: "center", ...AR });
+      if (kp.s) slide.addText(kp.s, { x, y: 4.12, w, h: 0.4, fontSize: 9.5, color: MUTED, align: "center", ...AR });
+    });
+  };
 
-  // شرائح الرسوم — دائرية (دونات) للتوزيعات لتطابق الشاشة، وأعمدة للنسب
+  // شريحة المؤشرات التنفيذية (لغير تقرير النضج — النضج له مؤشراته الربعية)
+  if (key !== "maturity") {
+    const k = kpis();
+    const monPct = store.monitoring.length ? Math.round((k.monDone / store.monitoring.length) * 100) : 0;
+    const sK = pptx.addSlide();
+    header(sK, "أبرز المؤشرات");
+    kpiCards(sK, [
+      { v: k.activeReqs.length, l: "متطلب نشط", c: TEAL },
+      { v: store.risks.length, l: "خطر مسجل", c: "2A78D6" },
+      { v: k.riskCounts.CRITICAL + k.riskCounts.HIGH, l: "مخاطر عالية فأكثر", c: "D03B3B" },
+      { v: monPct + "%", l: "إنجاز المراقبة", c: "0CA30C" },
+      { v: k.openFnd.length, l: "ملاحظة مفتوحة", c: "E6A100" },
+      { v: k.planAvg + "%", l: "إنجاز الخطة", c: "0CA30C" },
+    ]);
+  }
+
+  // شرائح الرسوم — دائرية (دونات) للتوزيعات لتطابق الشاشة، وأعمدة للنسب (لغير النضج)
+  if (key !== "maturity")
   for (const spec of distSpecs(key)) {
     const s = pptx.addSlide();
     header(s, spec.title);
@@ -696,41 +704,99 @@ async function exportPptx(key) {
     }
   }
 
-  // شرائح مقارنة النضج: متوسط حسب الموجة + تقييم التجمع مقابل ما بعد المراجعة
+  // ---------- تقرير النضج: يطابق لوحة النتائج الربعية (نفس المؤشرات والتصميم) ----------
   if (key === "maturity") {
+    // أحدث تقييم لكل تجمع (مُرسل أو معتمد) — كما في صفحة النتائج
+    const considered = store.maturity.filter((m) => ["REVIEWED", "SUBMITTED"].includes(m.status));
     const latest = {};
-    for (const m of store.maturity) { const c = m.clusterId; if (!latest[c] || (m.year * 4 + m.quarter) > (latest[c].year * 4 + latest[c].quarter)) latest[c] = m; }
-    const items = Object.values(latest).sort((a, b) => maturityOverall(b, b.status === "REVIEWED") - maturityOverall(a, a.status === "REVIEWED"));
-    const clustered = (slide, cats, selfV, revV) => slide.addChart(pptx.ChartType.bar, [
-      { name: "تقييم التجمع (ذاتي)", labels: cats, values: selfV },
-      { name: "بعد المراجعة", labels: cats, values: revV },
-    ], {
-      x: 0.6, y: 1.35, w: W - 1.2, h: 5.1, barDir: "bar", barGrouping: "clustered",
-      chartColors: ["2A78D6", "0CA30C"], showLegend: true, legendPos: "t", legendFontSize: 13, legendFontFace: "Arial",
-      showValue: true, dataLabelColor: "FFFFFF", dataLabelFontSize: 10, dataLabelPosition: "inEnd", showTitle: false,
-      catAxisLabelColor: INK, catAxisLabelFontSize: 11, catAxisLabelFontFace: "Arial", valAxisHidden: true, valGridLine: { style: "none" }, barGapWidthPct: 30,
-    });
-    const avgOf = (a) => (a.length ? Math.round(a.reduce((s, x) => s + x, 0) / a.length) : 0);
-    const grp = {}; CLUSTER_WAVE_ORDER.forEach((k) => (grp[k] = []));
-    for (const m of items) grp[clusterWave(m.clusterId)?.key || "PREP"].push(m);
-    const wk = CLUSTER_WAVE_ORDER.filter((k) => grp[k].length);
-    if (wk.length) {
-      const s = pptx.addSlide(); header(s, "متوسط النضج حسب الموجة");
-      clustered(s, wk.map((k) => CLUSTER_WAVES[k].short),
-        wk.map((k) => avgOf(grp[k].map((m) => maturityOverall(m, false)))),
-        wk.map((k) => avgOf(grp[k].filter((m) => m.status === "REVIEWED").map((m) => maturityOverall(m, true)))));
-    }
-    const top = items.slice(0, 12);
-    if (top.length) {
-      const s = pptx.addSlide(); header(s, "مقارنة: تقييم التجمع مقابل ما بعد المراجعة");
-      clustered(s, top.map((m) => `${deptName(m.clusterId)} (${waveShort(m.clusterId)})`),
-        top.map((m) => maturityOverall(m, false)),
-        top.map((m) => (m.status === "REVIEWED" ? maturityOverall(m, true) : 0)));
+    for (const m of considered) { const c = m.clusterId; if (!latest[c] || (m.year * 4 + m.quarter) > (latest[c].year * 4 + latest[c].quarter)) latest[c] = m; }
+    const items = Object.values(latest);
+    const avg = (a) => (a.length ? Math.round(a.reduce((s, x) => s + x, 0) / a.length) : 0);
+    const reviewed = items.filter((m) => m.status === "REVIEWED");
+    const finalOf = (m) => maturityOverall(m, m.status === "REVIEWED");
+    const avgSelf = avg(items.map((m) => maturityOverall(m, false)));
+    const avgRev = avg(reviewed.map((m) => maturityOverall(m, true)));
+    const domPct = (dom, useRev) => { const mx = dom.criteria.length * 3; return mx ? Math.round(dom.criteria.reduce((s, c) => s + ((useRev && c.reviewScore != null) ? c.reviewScore : (c.selfScore || 0)), 0) / mx * 100) : 0; };
+    // تدرّج ألوان النضج (HSL→HEX) لتطابق تصميم الشاشة
+    const hslHex = (h, s, l) => { s /= 100; l /= 100; const kk = (n) => (n + h / 30) % 12; const a = s * Math.min(l, 1 - l); const f = (n) => l - a * Math.max(-1, Math.min(kk(n) - 3, Math.min(9 - kk(n), 1))); const to = (x) => Math.round(255 * x).toString(16).padStart(2, "0").toUpperCase(); return to(f(0)) + to(f(8)) + to(f(4)); };
+    const matHex = (p) => hslHex(Math.round(Math.max(0, Math.min(100, p)) * 1.2), 58, 44);
+    const lighten = (hex, amt) => { const n = (i) => parseInt(hex.substr(i, 2), 16); const mm = (x) => Math.round(x + (255 - x) * amt).toString(16).padStart(2, "0").toUpperCase(); return mm(n(0)) + mm(n(2)) + mm(n(4)); };
+
+    if (!items.length) {
+      const s = pptx.addSlide(); header(s, "المؤشرات الربعية للنضج");
+      s.addText("لا توجد نتائج بعد — تظهر التقييمات المُرسلة أو المعتمدة", { x: 0.6, y: 3, w: W - 1.2, h: 1, fontSize: 16, color: MUTED, align: "center", ...AR });
+    } else {
+      // 1) بطاقات المؤشرات الربعية
+      const sK = pptx.addSlide(); header(sK, "المؤشرات الربعية للنضج");
+      kpiCards(sK, [
+        { v: items.length, l: "تجمعات في النتائج", c: TEAL },
+        { v: avgSelf + "%", l: "متوسط تقييم التجمعات", s: "التقييم الذاتي", c: matHex(avgSelf) },
+        { v: reviewed.length ? avgRev + "%" : "—", l: "متوسط بعد المراجعة", s: reviewed.length ? `${reviewed.length} معتمد` : "لا يوجد معتمد", c: matHex(avgRev) },
+        { v: reviewed.length, l: "تقييمات معتمدة", s: `${items.length - reviewed.length} بانتظار المراجعة`, c: "0CA30C" },
+      ]);
+
+      // 2) توزيع التجمعات حسب مستوى النضج (دونات)
+      const lc = { good: 0, warning: 0, serious: 0, critical: 0 };
+      for (const m of items) lc[maturityLevel(finalOf(m)).key]++;
+      const di = [
+        { label: "رائد", count: lc.good, color: matHex(90) }, { label: "متقدم", count: lc.warning, color: matHex(63) },
+        { label: "نامٍ", count: lc.serious, color: matHex(38) }, { label: "مبتدئ", count: lc.critical, color: matHex(12) },
+      ];
+      const sd = pptx.addSlide(); header(sd, "توزيع التجمعات حسب مستوى النضج");
+      if (di.some((x) => x.count > 0)) {
+        sd.addChart(pptx.ChartType.doughnut, [{ name: "المستوى", labels: di.map((x) => x.label), values: di.map((x) => x.count) }], {
+          x: 1.0, y: 1.35, w: W - 2.0, h: 5.1, chartColors: di.map((x) => x.color), holeSize: 55,
+          showLegend: true, legendPos: "r", legendFontSize: 13, legendFontFace: "Arial", showValue: true, dataLabelColor: "FFFFFF", dataLabelFontSize: 13, dataLabelFontBold: true, showTitle: false,
+        });
+      } else sd.addText("لا توجد بيانات", { x: 0.6, y: 3, w: W - 1.2, h: 1, fontSize: 15, color: MUTED, align: "center", ...AR });
+
+      // 3) متوسط النضج حسب الموجة (أعمدة مجمّعة: ذاتي مقابل بعد المراجعة)
+      const clustered = (slide, cats, selfV, revV) => slide.addChart(pptx.ChartType.bar, [
+        { name: "تقييم التجمع (ذاتي)", labels: cats, values: selfV }, { name: "بعد المراجعة", labels: cats, values: revV },
+      ], { x: 0.6, y: 1.35, w: W - 1.2, h: 5.1, barDir: "bar", barGrouping: "clustered", chartColors: ["2A78D6", "0CA30C"], showLegend: true, legendPos: "t", legendFontSize: 13, legendFontFace: "Arial", showValue: true, dataLabelColor: "FFFFFF", dataLabelFontSize: 10, dataLabelPosition: "inEnd", showTitle: false, catAxisLabelColor: INK, catAxisLabelFontSize: 11, catAxisLabelFontFace: "Arial", valAxisHidden: true, valGridLine: { style: "none" }, barGapWidthPct: 30 });
+      const grp = {}; CLUSTER_WAVE_ORDER.forEach((kk) => (grp[kk] = []));
+      for (const m of items) grp[clusterWave(m.clusterId)?.key || "PREP"].push(m);
+      const wk = CLUSTER_WAVE_ORDER.filter((kk) => grp[kk].length);
+      if (wk.length) {
+        const s = pptx.addSlide(); header(s, "متوسط النضج حسب الموجة");
+        clustered(s, wk.map((kk) => CLUSTER_WAVES[kk].short),
+          wk.map((kk) => avg(grp[kk].map((m) => maturityOverall(m, false)))),
+          wk.map((kk) => avg(grp[kk].filter((m) => m.status === "REVIEWED").map((m) => maturityOverall(m, true)))));
+      }
+
+      // 4) مصفوفة النضج حسب المحاور (جدول ملوّن يطابق الشاشة)
+      const domNames = MATURITY_MODEL.map((d) => d.name);
+      const domShort = domNames.map((n) => (n.length > 15 ? n.slice(0, 14) + "…" : n));
+      const sorted = items.slice().sort((a, b) => finalOf(b) - finalOf(a));
+      const nameW = 1.7, waveW = 1.0, selfW = 1.05, revW = 1.15, domW = (W - 0.6 - nameW - waveW - selfW - revW) / domNames.length;
+      const colW = [nameW, waveW, ...domNames.map(() => domW), selfW, revW];
+      const hdrOpt = { bold: true, color: "FFFFFF", fill: { color: GREEN }, align: "center", fontSize: 8, valign: "middle", ...AR };
+      const headRow = [
+        { text: "التجمع", options: { ...hdrOpt, align: "right" } }, { text: "الموجة", options: hdrOpt },
+        ...domShort.map((n) => ({ text: n, options: hdrOpt })),
+        { text: "تقييم التجمع", options: hdrOpt }, { text: "بعد المراجعة", options: hdrOpt },
+      ];
+      const pctCell = (p) => ({ text: p + "%", options: { fill: { color: lighten(matHex(p), 0.84) }, color: matHex(p), bold: true, align: "center", fontSize: 9, valign: "middle" } });
+      const bodyRows = sorted.map((m) => {
+        const rev = m.status === "REVIEWED";
+        return [
+          { text: deptName(m.clusterId), options: { align: "right", fontSize: 8.5, color: INK, valign: "middle", ...AR } },
+          { text: waveShort(m.clusterId), options: { align: "center", fontSize: 8, color: INK, valign: "middle", ...AR } },
+          ...domNames.map((dn) => { const dom = (m.domains || []).find((d) => d.name === dn); return dom ? pctCell(domPct(dom, rev)) : { text: "—", options: { align: "center", fontSize: 8, color: MUTED } }; }),
+          pctCell(maturityOverall(m, false)),
+          rev ? pctCell(maturityOverall(m, true)) : { text: "بانتظار", options: { align: "center", fontSize: 8, color: MUTED, ...AR } },
+        ];
+      });
+      const PER = 15;
+      for (let i = 0; i < bodyRows.length; i += PER) {
+        const s = pptx.addSlide(); header(s, i === 0 ? "مصفوفة النضج حسب المحاور" : "مصفوفة النضج حسب المحاور (تابع)");
+        s.addTable([headRow, ...bodyRows.slice(i, i + PER)], { x: 0.3, y: 1.1, w: W - 0.6, colW, border: { type: "solid", color: "E6ECEA", pt: 0.5 }, valign: "middle", autoPage: false, rowH: 0.28 });
+      }
     }
   }
 
-  // شرائح الجدول التفصيلي (مقسّمة)
-  const t = tableFor(key);
+  // شرائح الجدول التفصيلي (مقسّمة) — النضج له مصفوفته الخاصة أعلاه
+  const t = key === "maturity" ? { head: [], rows: [] } : tableFor(key);
   if (t.head.length) {
     const MAX = 60, PER = 12;
     const rows = t.rows.slice(0, MAX);
