@@ -621,67 +621,6 @@ async function exportWord(key) {
   logReport(key);
 }
 
-// ---------- رسم مؤشرات الشاشة (حلقات نسبية وشريط توزيع) كصور لإدراجها في العرض ----------
-const escXml = (s) => String(s == null ? "" : s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
-const SVG_FONT = "Tahoma, 'Segoe UI', Arial, sans-serif";
-// تحويل SVG إلى PNG (data URL) عبر canvas — بلا موارد خارجية فلا يتلوّث الـ canvas
-function svgToPng(svg, w, h, scale = 3) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      try {
-        const cv = document.createElement("canvas");
-        cv.width = Math.round(w * scale); cv.height = Math.round(h * scale);
-        const ctx = cv.getContext("2d");
-        ctx.setTransform(scale, 0, 0, scale, 0, 0);
-        ctx.drawImage(img, 0, 0, w, h);
-        resolve(cv.toDataURL("image/png"));
-      } catch (e) { reject(e); }
-    };
-    img.onerror = () => reject(new Error("تعذّر رسم SVG"));
-    img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
-  });
-}
-// بطاقة حلقة نسبية (مطابقة لعنصر الشاشة): خلفية بيضاء + حلقة ملوّنة + النسبة + عنوان
-function ringCardSvg(pct, label, sub, color, size = 260) {
-  const p = (pct == null || isNaN(pct)) ? null : Math.max(0, Math.min(100, Math.round(pct)));
-  const r = size * 0.3, cx = size / 2, cy = size * 0.4, sw = size * 0.085, C = 2 * Math.PI * r;
-  const dash = p == null ? 0 : (p / 100) * C;
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" font-family="${SVG_FONT}">
-    <rect x="3" y="3" width="${size - 6}" height="${size - 6}" rx="18" fill="#ffffff" stroke="#e6ecea" stroke-width="2"/>
-    <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#eef2f0" stroke-width="${sw}"/>
-    ${p == null ? "" : `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${color}" stroke-width="${sw}" stroke-linecap="round" stroke-dasharray="${dash.toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 ${cx} ${cy})"/>`}
-    <text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central" font-size="${(size * 0.185).toFixed(0)}" font-weight="700" fill="${p == null ? "#8a8578" : color}">${p == null ? "—" : p + "%"}</text>
-    <text x="${cx}" y="${(size * 0.79).toFixed(0)}" text-anchor="middle" font-size="${(size * 0.077).toFixed(0)}" font-weight="600" fill="#1a2c27">${escXml(label)}</text>
-    ${sub ? `<text x="${cx}" y="${(size * 0.9).toFixed(0)}" text-anchor="middle" font-size="${(size * 0.06).toFixed(0)}" fill="#5d6c66">${escXml(sub)}</text>` : ""}
-  </svg>`;
-}
-// بطاقة رقم (لعدد التجمعات / المعتمدة)
-function numCardSvg(value, label, sub, color, size = 260) {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" font-family="${SVG_FONT}">
-    <rect x="3" y="3" width="${size - 6}" height="${size - 6}" rx="18" fill="#ffffff" stroke="#e6ecea" stroke-width="2"/>
-    <text x="${size / 2}" y="${size * 0.43}" text-anchor="middle" dominant-baseline="central" font-size="${(size * 0.25).toFixed(0)}" font-weight="800" fill="${color}">${escXml(value)}</text>
-    <text x="${size / 2}" y="${(size * 0.66).toFixed(0)}" text-anchor="middle" font-size="${(size * 0.079).toFixed(0)}" font-weight="600" fill="#1a2c27">${escXml(label)}</text>
-    ${sub ? `<text x="${size / 2}" y="${(size * 0.77).toFixed(0)}" text-anchor="middle" font-size="${(size * 0.06).toFixed(0)}" fill="#5d6c66">${escXml(sub)}</text>` : ""}
-  </svg>`;
-}
-// شريط توزيع المستويات المتدرّج + وسيلة إيضاح (مطابق للشاشة)
-function distributionSvg(items, width = 1180) {
-  const barH = 46, lh = 62, height = barH + lh;
-  const total = items.reduce((s, d) => s + d.count, 0) || 1;
-  let x = 0, segs = "";
-  for (const d of items) { if (d.count <= 0) continue; const w = (d.count / total) * width; segs += `<rect x="${x.toFixed(1)}" y="0" width="${w.toFixed(1)}" height="${barH}" fill="${d.color}"/>`; x += w; }
-  if (!segs) segs = `<rect x="0" y="0" width="${width}" height="${barH}" fill="#e6ecea"/>`;
-  const gap = width / items.length;
-  const legend = items.map((d, i) => {
-    const lx = i * gap + 14, ly = barH + 30;
-    return `<rect x="${lx}" y="${ly - 14}" width="16" height="16" rx="4" fill="${d.color}"/><text x="${lx + 24}" y="${ly}" font-size="20" fill="#1a2c27" font-family="${SVG_FONT}">${escXml(d.label)} ${d.count}</text>`;
-  }).join("");
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" font-family="${SVG_FONT}">
-    <defs><clipPath id="rc"><rect x="0" y="0" width="${width}" height="${barH}" rx="${barH / 2}"/></clipPath></defs>
-    <g clip-path="url(#rc)">${segs}</g>${legend}</svg>`;
-}
-
 // ---------- تصدير عرض تقديمي (PowerPoint .pptx) ----------
 async function exportPptx(key) {
   if (typeof PptxGenJS === "undefined") throw new Error("مكتبة العروض التقديمية لم تُحمَّل — تحقق من اتصالك وأعد تحميل الصفحة");
@@ -719,6 +658,43 @@ async function exportPptx(key) {
       slide.addText(String(kp.v), { x, y: 2.72, w, h: 0.9, fontSize: 30, bold: true, color: kp.c, align: "center", fontFace: "Arial" });
       slide.addText(kp.l, { x, y: 3.62, w, h: 0.55, fontSize: 12, color: INK, align: "center", ...AR });
       if (kp.s) slide.addText(kp.s, { x, y: 4.12, w, h: 0.4, fontSize: 9.5, color: MUTED, align: "center", ...AR });
+    });
+  };
+
+  // ---- عناصر أصلية قابلة للتحرير في PowerPoint (تطابق مؤشرات الشاشة، ليست صوراً) ----
+  const CARD_SHADOW = { type: "outer", color: "AEBEB8", blur: 5, offset: 2, angle: 90, opacity: 0.4 };
+  // حلقة نسبية = مخطط دونات (شريحتان) + نسبة نصية في المركز
+  const ringGauge = (slide, x, y, size, pct, colorHex, label, sub, card = true) => {
+    if (card) slide.addShape(pptx.ShapeType.roundRect, { x, y, w: size, h: size + 0.5, rectRadius: 0.08, fill: { color: "FFFFFF" }, line: { color: "E6ECEA", width: 1 }, shadow: CARD_SHADOW });
+    const p = (pct == null || isNaN(pct)) ? null : Math.max(0, Math.min(100, Math.round(pct)));
+    const d = size * 0.66, rx = x + (size - d) / 2, ry = y + 0.12;
+    slide.addChart(pptx.ChartType.doughnut, [{ name: "g", labels: ["v", "r"], values: p == null ? [0, 100] : [p, 100 - p] }], {
+      x: rx, y: ry, w: d, h: d, holeSize: 74, chartColors: [p == null ? "D8DAD6" : colorHex, "EEF2F0"],
+      showLegend: false, showValue: false, showTitle: false, showPercent: false, dataBorder: { pt: 1, color: "FFFFFF" },
+    });
+    slide.addText(p == null ? "—" : p + "%", { x: rx, y: ry, w: d, h: d, fontSize: Math.max(11, Math.round(size * 13)), bold: true, color: p == null ? "8A8578" : colorHex, align: "center", valign: "middle", fontFace: "Arial" });
+    slide.addText(label, { x, y: y + d + 0.16, w: size, h: 0.3, fontSize: size < 1.6 ? 9.5 : 11.5, bold: true, color: INK, align: "center", ...AR });
+    if (sub) slide.addText(sub, { x, y: y + d + 0.44, w: size, h: 0.26, fontSize: size < 1.6 ? 8 : 9, color: MUTED, align: "center", ...AR });
+  };
+  // بطاقة رقم = مستطيل + رقم كبير + عنوان
+  const numTile = (slide, x, y, size, value, colorHex, label, sub) => {
+    slide.addShape(pptx.ShapeType.roundRect, { x, y, w: size, h: size + 0.5, rectRadius: 0.08, fill: { color: "FFFFFF" }, line: { color: "E6ECEA", width: 1 }, shadow: CARD_SHADOW });
+    slide.addText(String(value), { x, y: y + 0.16, w: size, h: size * 0.62, fontSize: Math.round(size * 18), bold: true, color: colorHex, align: "center", valign: "middle", fontFace: "Arial" });
+    slide.addText(label, { x, y: y + size * 0.66, w: size, h: 0.32, fontSize: 11.5, bold: true, color: INK, align: "center", ...AR });
+    if (sub) slide.addText(sub, { x, y: y + size * 0.66 + 0.3, w: size, h: 0.26, fontSize: 9, color: MUTED, align: "center", ...AR });
+  };
+  // شريط توزيع متدرّج = مستطيلات ملوّنة متتابعة + وسيلة إيضاح (كلها أشكال أصلية)
+  const distributionBar = (slide, x, y, w, segs) => {
+    const total = segs.reduce((s, dd) => s + dd.count, 0) || 1;
+    const barH = 0.55;
+    slide.addShape(pptx.ShapeType.roundRect, { x, y, w, h: barH, rectRadius: barH / 2, fill: { color: "E6ECEA" } });
+    let cx = x;
+    segs.forEach((dd) => { if (dd.count <= 0) return; const sw = (dd.count / total) * w; slide.addShape(pptx.ShapeType.rect, { x: cx, y, w: sw, h: barH, fill: { color: dd.color } }); cx += sw; });
+    const gap = w / segs.length;
+    segs.forEach((dd, i) => {
+      const lx = x + i * gap;
+      slide.addShape(pptx.ShapeType.roundRect, { x: lx, y: y + barH + 0.3, w: 0.24, h: 0.24, rectRadius: 0.05, fill: { color: dd.color } });
+      slide.addText(`${dd.label} · ${dd.count}`, { x: lx + 0.32, y: y + barH + 0.24, w: gap - 0.4, h: 0.36, fontSize: 13, color: INK, align: "left", ...AR });
     });
   };
 
@@ -787,8 +763,6 @@ async function exportPptx(key) {
       const s = pptx.addSlide(); header(s, "المؤشرات الربعية للنضج");
       s.addText("لا توجد نتائج بعد — تظهر التقييمات المُرسلة أو المعتمدة", { x: 0.6, y: 3, w: W - 1.2, h: 1, fontSize: 16, color: MUTED, align: "center", ...AR });
     } else {
-      const matCss = (p) => "#" + matHex(p);
-      // بيانات مشتركة بين مسار الصور والبديل
       const lc = { good: 0, warning: 0, serious: 0, critical: 0 };
       for (const m of items) lc[maturityLevel(finalOf(m)).key]++;
       const grp = {}; CLUSTER_WAVE_ORDER.forEach((kk) => (grp[kk] = []));
@@ -796,70 +770,38 @@ async function exportPptx(key) {
       const wk = CLUSTER_WAVE_ORDER.filter((kk) => grp[kk].length);
       const waveAvg = (kk, rev) => avg((rev ? grp[kk].filter((m) => m.status === "REVIEWED") : grp[kk]).map((m) => maturityOverall(m, rev)));
 
-      let ok = false;
-      try {
-        // 1) بطاقات المؤشرات الربعية — حلقات وأرقام كصور مطابقة للشاشة
-        const sK = pptx.addSlide(); header(sK, "المؤشرات الربعية للنضج");
-        const cardImgs = await Promise.all([
-          svgToPng(ringCardSvg(avgSelf, "متوسط تقييم التجمعات", "التقييم الذاتي", matCss(avgSelf)), 260, 260),
-          svgToPng(reviewed.length ? ringCardSvg(avgRev, "متوسط بعد المراجعة", `${reviewed.length} معتمد`, matCss(avgRev)) : ringCardSvg(null, "متوسط بعد المراجعة", "لا يوجد معتمد", "#8a8578"), 260, 260),
-          svgToPng(numCardSvg(String(items.length), "تجمعات في النتائج", "", "#14705C"), 260, 260),
-          svgToPng(numCardSvg(String(reviewed.length), "تقييمات معتمدة", `${items.length - reviewed.length} بانتظار`, "#0CA30C"), 260, 260),
-        ]);
-        const iw = 2.55, gap = (W - 0.8 - 4 * iw) / 3;
-        cardImgs.forEach((data, i) => sK.addImage({ data, x: 0.4 + i * (iw + gap), y: 2.3, w: iw, h: iw }));
+      // 1) بطاقات المؤشرات الربعية — حلقتان نسبيتان + بطاقتا أرقام (كلها عناصر أصلية قابلة للتحرير)
+      const sK = pptx.addSlide(); header(sK, "المؤشرات الربعية للنضج");
+      const iw = 2.55, cgap = (W - 0.8 - 4 * iw) / 3, cy = 2.15;
+      const cardX = (i) => 0.4 + i * (iw + cgap);
+      ringGauge(sK, cardX(0), cy, iw, avgSelf, matHex(avgSelf), "متوسط تقييم التجمعات", "التقييم الذاتي");
+      ringGauge(sK, cardX(1), cy, iw, reviewed.length ? avgRev : null, matHex(avgRev), "متوسط بعد المراجعة", reviewed.length ? `${reviewed.length} معتمد` : "لا يوجد معتمد");
+      numTile(sK, cardX(2), cy, iw, items.length, TEAL, "تجمعات في النتائج", "");
+      numTile(sK, cardX(3), cy, iw, reviewed.length, "0CA30C", "تقييمات معتمدة", `${items.length - reviewed.length} بانتظار المراجعة`);
 
-        // 2) توزيع التجمعات حسب مستوى النضج — شريط متدرّج + وسيلة إيضاح كصورة
-        const sd = pptx.addSlide(); header(sd, "توزيع التجمعات حسب مستوى النضج");
-        const distImg = await svgToPng(distributionSvg([
-          { label: "مبتدئ", count: lc.critical, color: matCss(12) }, { label: "نامٍ", count: lc.serious, color: matCss(38) },
-          { label: "متقدم", count: lc.warning, color: matCss(63) }, { label: "رائد", count: lc.good, color: matCss(90) },
-        ], 1180), 1180, 108);
-        const dw = W - 1.4;
-        sd.addImage({ data: distImg, x: 0.7, y: 2.7, w: dw, h: dw * 108 / 1180 });
+      // 2) توزيع التجمعات حسب مستوى النضج — شريط متدرّج من مستطيلات أصلية + وسيلة إيضاح
+      const sd = pptx.addSlide(); header(sd, "توزيع التجمعات حسب مستوى النضج");
+      const distSegs = [
+        { label: "مبتدئ", count: lc.critical, color: matHex(12) }, { label: "نامٍ", count: lc.serious, color: matHex(38) },
+        { label: "متقدم", count: lc.warning, color: matHex(63) }, { label: "رائد", count: lc.good, color: matHex(90) },
+      ];
+      if (distSegs.some((x) => x.count > 0)) distributionBar(sd, 0.7, 2.9, W - 1.4, distSegs);
+      else sd.addText("لا توجد بيانات", { x: 0.6, y: 3, w: W - 1.2, h: 1, fontSize: 15, color: MUTED, align: "center", ...AR });
 
-        // 3) مقارنة الموجات — بطاقة لكل موجة بحلقتين (ذاتي / بعد المراجعة) كصور
-        if (wk.length) {
-          const s = pptx.addSlide(); header(s, "مقارنة الموجات");
-          const cardW = (W - 0.8) / wk.length;
-          for (let i = 0; i < wk.length; i++) {
-            const kk = wk[i], g = grp[kk], rev = g.filter((m) => m.status === "REVIEWED");
-            const x0 = 0.4 + i * cardW, rw = Math.min(2.2, (cardW - 0.4) / 2);
-            s.addText(CLUSTER_WAVES[kk].label, { x: x0 + 0.05, y: 1.35, w: cardW - 0.1, h: 0.5, fontSize: 13, bold: true, color: CLUSTER_WAVES[kk].color.replace("#", ""), align: "center", ...AR });
-            const [selfImg, revImg] = await Promise.all([
-              svgToPng(ringCardSvg(waveAvg(kk, false), "متوسط الذاتي", "", matCss(waveAvg(kk, false))), 240, 240),
-              svgToPng(rev.length ? ringCardSvg(waveAvg(kk, true), "بعد المراجعة", "", matCss(waveAvg(kk, true))) : ringCardSvg(null, "بعد المراجعة", "لا يوجد", "#8a8578"), 240, 240),
-            ]);
-            const gx = x0 + (cardW - (2 * rw + 0.15)) / 2;
-            s.addImage({ data: selfImg, x: gx, y: 2.0, w: rw, h: rw });
-            s.addImage({ data: revImg, x: gx + rw + 0.15, y: 2.0, w: rw, h: rw });
-            s.addText(`${g.length} تجمع`, { x: x0 + 0.05, y: 2.05 + rw, w: cardW - 0.1, h: 0.4, fontSize: 12, color: MUTED, align: "center", ...AR });
-          }
-        }
-        ok = true;
-      } catch (e) { console.warn("تعذّر رسم مؤشرات الصورة، استخدام رسوم بديلة", e); }
-
-      if (!ok) {
-        const sK = pptx.addSlide(); header(sK, "المؤشرات الربعية للنضج");
-        kpiCards(sK, [
-          { v: items.length, l: "تجمعات في النتائج", c: TEAL },
-          { v: avgSelf + "%", l: "متوسط تقييم التجمعات", s: "التقييم الذاتي", c: matHex(avgSelf) },
-          { v: reviewed.length ? avgRev + "%" : "—", l: "متوسط بعد المراجعة", s: reviewed.length ? `${reviewed.length} معتمد` : "لا يوجد معتمد", c: matHex(avgRev) },
-          { v: reviewed.length, l: "تقييمات معتمدة", s: `${items.length - reviewed.length} بانتظار المراجعة`, c: "0CA30C" },
-        ]);
-        const di = [
-          { label: "رائد", count: lc.good, color: matHex(90) }, { label: "متقدم", count: lc.warning, color: matHex(63) },
-          { label: "نامٍ", count: lc.serious, color: matHex(38) }, { label: "مبتدئ", count: lc.critical, color: matHex(12) },
-        ];
-        const sd = pptx.addSlide(); header(sd, "توزيع التجمعات حسب مستوى النضج");
-        if (di.some((x) => x.count > 0)) sd.addChart(pptx.ChartType.doughnut, [{ name: "المستوى", labels: di.map((x) => x.label), values: di.map((x) => x.count) }], { x: 1.0, y: 1.35, w: W - 2.0, h: 5.1, chartColors: di.map((x) => x.color), holeSize: 55, showLegend: true, legendPos: "r", legendFontSize: 13, showValue: true, dataLabelColor: "FFFFFF", dataLabelFontSize: 13, dataLabelFontBold: true, showTitle: false });
-        else sd.addText("لا توجد بيانات", { x: 0.6, y: 3, w: W - 1.2, h: 1, fontSize: 15, color: MUTED, align: "center", ...AR });
-        if (wk.length) {
-          const s = pptx.addSlide(); header(s, "متوسط النضج حسب الموجة");
-          s.addChart(pptx.ChartType.bar, [
-            { name: "تقييم التجمع (ذاتي)", labels: wk.map((kk) => CLUSTER_WAVES[kk].short), values: wk.map((kk) => waveAvg(kk, false)) },
-            { name: "بعد المراجعة", labels: wk.map((kk) => CLUSTER_WAVES[kk].short), values: wk.map((kk) => waveAvg(kk, true)) },
-          ], { x: 0.6, y: 1.35, w: W - 1.2, h: 5.1, barDir: "bar", barGrouping: "clustered", chartColors: ["2A78D6", "0CA30C"], showLegend: true, legendPos: "t", showValue: true, dataLabelColor: "FFFFFF", dataLabelFontSize: 10, dataLabelPosition: "inEnd", showTitle: false, catAxisLabelColor: INK, catAxisLabelFontSize: 11, valAxisHidden: true, valGridLine: { style: "none" }, barGapWidthPct: 30 });
+      // 3) مقارنة الموجات — بطاقة لكل موجة بحلقتين نسبيتين (ذاتي / بعد المراجعة)
+      if (wk.length) {
+        const s = pptx.addSlide(); header(s, "مقارنة الموجات");
+        const cardW = (W - 0.8) / wk.length;
+        for (let i = 0; i < wk.length; i++) {
+          const kk = wk[i], g = grp[kk], rev = g.filter((m) => m.status === "REVIEWED");
+          const x0 = 0.4 + i * cardW, cw = cardW - 0.2;
+          s.addShape(pptx.ShapeType.roundRect, { x: x0, y: 1.35, w: cw, h: 4.7, rectRadius: 0.1, fill: { color: "FFFFFF" }, line: { color: "E6ECEA", width: 1 }, shadow: CARD_SHADOW });
+          s.addShape(pptx.ShapeType.roundRect, { x: x0, y: 1.35, w: cw, h: 0.6, rectRadius: 0.1, fill: { color: CLUSTER_WAVES[kk].color.replace("#", "") } });
+          s.addText(CLUSTER_WAVES[kk].label, { x: x0 + 0.08, y: 1.35, w: cw - 0.16, h: 0.6, fontSize: 12, bold: true, color: "FFFFFF", align: "center", valign: "middle", ...AR });
+          const rw = Math.min(1.7, (cw - 0.4) / 2), gx = x0 + (cw - (2 * rw + 0.15)) / 2;
+          ringGauge(s, gx, 2.25, rw, waveAvg(kk, false), matHex(waveAvg(kk, false)), "متوسط الذاتي", "", false);
+          ringGauge(s, gx + rw + 0.15, 2.25, rw, rev.length ? waveAvg(kk, true) : null, matHex(waveAvg(kk, true)), "بعد المراجعة", rev.length ? "" : "لا يوجد", false);
+          s.addText(`${g.length} تجمع`, { x: x0 + 0.08, y: 2.35 + rw + 0.5, w: cw - 0.16, h: 0.4, fontSize: 12, color: MUTED, align: "center", ...AR });
         }
       }
 
