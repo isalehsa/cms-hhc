@@ -14,6 +14,7 @@ export const store = {
   disclosures: [],
   trainings: [],
   maturity: [],
+  meetings: [],
   directory: [],
   departments: [],
   authorities: [],
@@ -25,7 +26,7 @@ export const store = {
 
 export async function loadAll(force = false) {
   if (store.loaded && !force) return store;
-  const [requirements, risks, monitoring, planItems, assessments, findings, correspondence, disclosures, trainings, maturity, directory, departments, authorities, users, notifications] =
+  const [requirements, risks, monitoring, planItems, assessments, findings, correspondence, disclosures, trainings, maturity, meetings, directory, departments, authorities, users, notifications] =
     await Promise.all([
       listCol("requirements", "code").catch(() => []),
       listCol("risks", "code").catch(() => []),
@@ -37,6 +38,7 @@ export async function loadAll(force = false) {
       listCol("disclosures", "code").catch(() => []),
       listCol("trainings", "code").catch(() => []),
       listCol("maturity", "code").catch(() => []),
+      listCol("meetings").catch(() => []),
       listCol("directory").catch(() => []),
       listCol("departments", "name").catch(() => []),
       listCol("authorities", "name").catch(() => []),
@@ -44,7 +46,7 @@ export async function loadAll(force = false) {
       listCol("notifications").catch(() => []),
     ]);
   Object.assign(store, {
-    requirements, risks, monitoring, planItems, assessments, findings, correspondence, disclosures, trainings, maturity, directory,
+    requirements, risks, monitoring, planItems, assessments, findings, correspondence, disclosures, trainings, maturity, meetings, directory,
     departments, authorities, users, notifications, loaded: true,
   });
   return store;
