@@ -1,13 +1,64 @@
 // لوحة التحكم التنفيذية — مؤشرات الالتزام العامة والتنبيهات
-import { store, deptName } from "../state.js";
+import { store, deptName, deptOptions } from "../state.js";
 import {
-  esc, statTile, distBar, progressBar, fmtDate, daysUntil, levelBadge,
-  donutStat, riskHeatmap, hBars, monthCalendar, MONTH_NAMES, fmtSAR,
+  esc, statTile, progressBar, fmtDate, daysUntil, levelBadge, sel,
+  donutStat, donutChart, gaugeChart, trendChart, riskHeatmap, hBars, monthCalendar, MONTH_NAMES, fmtSAR,
 } from "../ui.js";
-import { riskLevel, CRITICALITY, FND_SEVERITY, MON_RESULT, SA_STATUS, CONTROL_TYPES } from "../meta.js";
+import { riskLevel, CRITICALITY, FND_SEVERITY, MON_RESULT, SA_STATUS, CONTROL_TYPES, STATUS_COLORS } from "../meta.js";
+
+const roleColor = (role) => STATUS_COLORS[role] || STATUS_COLORS.neutral;
 
 // شهر التقويم المعروض — يبقى بين عمليات إعادة الرسم
 const calState = { y: new Date().getFullYear(), m: new Date().getMonth() };
+// فلاتر اللوحة (تبقى بين عمليات إعادة الرسم)
+const dashFilter = { dept: "", year: "" };
+
+// نسبة التقييم الذاتي لتقييم نضج (0-100)
+function maturitySelfPct(m) {
+  const cs = (m.domains || []).flatMap((d) => d.criteria);
+  const max = cs.length * 3;
+  return max ? Math.round((cs.reduce((s, c) => s + (c.selfScore || 0), 0) / max) * 100) : 0;
+}
+
+// تطبيق فلاتر الإدارة/التجمع والسنة على مجموعات النظام
+function filteredStore() {
+  const { dept, year } = dashFilter;
+  const yr = (iso) => (iso ? String(iso).slice(0, 4) : "");
+  const byDept = (arr, field) => (dept ? arr.filter((x) => x[field] === dept) : arr);
+  const byYear = (arr, get) => (year ? arr.filter((x) => String(get(x) || "") === year) : arr);
+  return {
+    requirements: byDept(store.requirements, "ownerDeptId"),
+    risks: byDept(store.risks, "ownerDeptId"),
+    monitoring: byYear(byDept(store.monitoring, "targetDeptId"), (m) => yr(m.startDate || m.endDate)),
+    assessments: byDept(store.assessments, "departmentId"),
+    findings: byYear(byDept(store.findings, "departmentId"), (f) => yr(f.createdAt)),
+    planItems: byYear(byDept(store.planItems, "departmentId"), (p) => p.year),
+    correspondence: byYear(byDept(store.correspondence, "ownerDeptId"), (c) => yr(c.date)),
+    disclosures: byYear(byDept(store.disclosures, "departmentId"), (d) => yr(d.date)),
+    trainings: byYear(dept ? store.trainings.filter((t) => t.departmentId === dept || t.audienceType === "all") : store.trainings, (t) => yr(t.date)),
+    maturity: byYear(byDept(store.maturity, "clusterId"), (m) => m.year),
+  };
+}
+
+// السنوات المتاحة في البيانات (للفلتر)
+function availableYears() {
+  const ys = new Set();
+  store.planItems.forEach((p) => p.year && ys.add(String(p.year)));
+  store.maturity.forEach((m) => m.year && ys.add(String(m.year)));
+  store.findings.forEach((f) => f.createdAt && ys.add(String(f.createdAt).slice(0, 4)));
+  store.monitoring.forEach((m) => (m.startDate || m.endDate) && ys.add(String(m.startDate || m.endDate).slice(0, 4)));
+  return [...ys].filter(Boolean).sort((a, b) => b.localeCompare(a));
+}
+
+// اتجاه متوسط التقييم الذاتي للنضج حسب الربع (آخر 6 فترات)
+function maturityTrendPoints(mats) {
+  const byP = {};
+  for (const m of mats) (byP[`${m.year}-${m.quarter}`] ||= []).push(maturitySelfPct(m));
+  return Object.keys(byP)
+    .sort((a, b) => { const [ay, aq] = a.split("-").map(Number), [by, bq] = b.split("-").map(Number); return (ay * 4 + aq) - (by * 4 + bq); })
+    .slice(-6)
+    .map((k) => { const [y, q] = k.split("-"); const arr = byP[k]; return { label: `ر${q}/${y}`, value: Math.round(arr.reduce((s, x) => s + x, 0) / arr.length) }; });
+}
 
 // أحداث تقويم الالتزام من جميع الوحدات: مراجعات المتطلبات، نهايات المراقبة، استحقاقات المخاطر والملاحظات والفحوصات
 function calendarEvents() {
@@ -28,27 +79,23 @@ function calendarEvents() {
   return evs;
 }
 
-// الأرباع الأربعة الأخيرة وعدد الملاحظات المنشأة في كل ربع (والمفتوح منها)
-function findingsByQuarter() {
+// اتجاه الملاحظات المنشأة حسب الربع (آخر 6 أرباع) — يعيد نقاطاً للمخطط الخطي {label, value}
+function findingsByQuarter(findings, quarters = 6) {
   const now = new Date();
   const out = [];
-  for (let i = 3; i >= 0; i--) {
+  for (let i = quarters - 1; i >= 0; i--) {
     const d = new Date(now.getFullYear(), now.getMonth() - i * 3, 1);
     const q = Math.floor(d.getMonth() / 3);
     const start = new Date(d.getFullYear(), q * 3, 1).toISOString();
     const end = new Date(d.getFullYear(), q * 3 + 3, 1).toISOString();
-    const inQ = store.findings.filter((f) => f.createdAt >= start && f.createdAt < end);
-    out.push({
-      label: `الربع ${q + 1} — ${d.getFullYear()}`,
-      count: inQ.length,
-      tip: `${inQ.length} ملاحظة أُنشئت، منها ${inQ.filter((f) => f.status !== "CLOSED").length} ما تزال مفتوحة`,
-    });
+    const inQ = findings.filter((f) => f.createdAt >= start && f.createdAt < end);
+    out.push({ label: `ر${q + 1}/${d.getFullYear()}`, value: inQ.length });
   }
   return out;
 }
 
 export function renderDashboard(el, nav) {
-  const s = store;
+  const s = filteredStore();
 
   // مؤشرات المتطلبات
   const activeReqs = s.requirements.filter((r) => r.status !== "CANCELLED");
@@ -160,17 +207,34 @@ export function renderDashboard(el, nav) {
   }
   alerts.sort((a, b) => (b.overdue ? 1 : 0) - (a.overdue ? 1 : 0));
 
+  const years = availableYears();
+  const activeFilter = dashFilter.dept || dashFilter.year;
   el.innerHTML = `
-    <div class="page-head"><h1>لوحة التحكم</h1><p class="muted">مؤشرات الالتزام العامة — ${new Date().toLocaleDateString("ar-SA-u-ca-gregory-nu-latn", { dateStyle: "long" })}</p></div>
+    <div class="page-head">
+      <div><h1>لوحة التحكم</h1><p class="muted">مؤشرات الالتزام العامة — ${new Date().toLocaleDateString("ar-SA-u-ca-gregory-nu-latn", { dateStyle: "long" })}</p></div>
+      <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">
+        ${sel("dash-dept", deptOptions(), dashFilter.dept, { empty: "كل الإدارات والتجمعات" })}
+        ${sel("dash-year", years.map((y) => ({ id: y, name: y })), dashFilter.year, { empty: "كل السنوات" })}
+        ${activeFilter ? '<button class="secondary small" id="dash-clear" title="إلغاء الفلاتر">✕ مسح</button>' : ""}
+      </div>
+    </div>
+    ${activeFilter ? `<p class="muted" style="margin:-4px 0 10px">مُصفّى: ${dashFilter.dept ? esc(deptName(dashFilter.dept)) : "كل الإدارات"}${dashFilter.year ? " · سنة " + esc(dashFilter.year) : ""}</p>` : ""}
 
-    <div class="stats">
-      ${donutStat(compScore, "نسبة الالتزام العامة", compScore === null ? "" : `من ${scoreParts.length} نتيجة مراقبة وفحص ذاتي`)}
-      ${statTile(activeReqs.length, "المتطلبات النظامية", `${critReqs} ${esc("حرجة")}`)}
-      ${statTile(s.risks.length, "مخاطر الالتزام", levelBadge("CRITICAL", `${riskCounts.CRITICAL + riskCounts.HIGH} عالية فأكثر`))}
-      ${statTile(`${monTotal ? Math.round((monDone / monTotal) * 100) : 0}%`, "إنجاز برنامج المراقبة", `${monDone} من ${monTotal} نشاطاً`)}
-      ${statTile(openFindings.length, "ملاحظات مفتوحة", levelBadge(highFindings ? "HIGH" : "LOW", `${highFindings} عالية الخطورة`))}
-      ${statTile(`${Math.round(planAvg)}%`, `إنجاز خطة ${year}`, `${planYear.length} مبادرة`)}
-      ${statTile(`${saTotal ? Math.round((saDone / saTotal) * 100) : 0}%`, "الفحص الذاتي المكتمل", `${saPending.length} بانتظار الإدارات`)}
+    <div class="grid-2" style="align-items:stretch">
+      <section class="card" style="display:flex;flex-direction:column;justify-content:center">
+        <h2 style="text-align:center">نسبة الالتزام العامة</h2>
+        ${gaugeChart(compScore, { label: "", sub: compScore === null ? "لا توجد نتائج بعد" : `من ${scoreParts.length} نتيجة مراقبة وفحص ذاتي` })}
+      </section>
+      <section class="card">
+        <div class="stats" style="margin:0">
+          ${statTile(activeReqs.length, "المتطلبات النظامية", `${critReqs} ${esc("حرجة")}`)}
+          ${statTile(s.risks.length, "مخاطر الالتزام", levelBadge("CRITICAL", `${riskCounts.CRITICAL + riskCounts.HIGH} عالية فأكثر`))}
+          ${statTile(`${monTotal ? Math.round((monDone / monTotal) * 100) : 0}%`, "إنجاز المراقبة", `${monDone} من ${monTotal}`)}
+          ${statTile(openFindings.length, "ملاحظات مفتوحة", levelBadge(highFindings ? "HIGH" : "LOW", `${highFindings} عالية الخطورة`))}
+          ${statTile(`${Math.round(planAvg)}%`, `إنجاز خطة ${year}`, `${planYear.length} مبادرة`)}
+          ${statTile(`${saTotal ? Math.round((saDone / saTotal) * 100) : 0}%`, "الفحص الذاتي المكتمل", `${saPending.length} بانتظار`)}
+        </div>
+      </section>
     </div>
 
     <div class="stats">
@@ -207,59 +271,63 @@ export function renderDashboard(el, nav) {
     <div class="grid-2">
       <section class="card">
         <h2>المخاطر حسب المستوى (بعد الضوابط)</h2>
-        ${distBar([
-          { label: "حرج", count: riskCounts.CRITICAL, role: "critical" },
-          { label: "عالٍ", count: riskCounts.HIGH, role: "serious" },
-          { label: "متوسط", count: riskCounts.MEDIUM, role: "warning" },
-          { label: "منخفض", count: riskCounts.LOW, role: "good" },
-        ])}
+        ${donutChart([
+          { label: "حرج", count: riskCounts.CRITICAL, color: roleColor("critical") },
+          { label: "عالٍ", count: riskCounts.HIGH, color: roleColor("serious") },
+          { label: "متوسط", count: riskCounts.MEDIUM, color: roleColor("warning") },
+          { label: "منخفض", count: riskCounts.LOW, color: roleColor("good") },
+        ], { unit: "خطر" })}
       </section>
       <section class="card">
         <h2>نتائج أنشطة المراقبة المنفذة</h2>
-        ${distBar([
-          { label: MON_RESULT.COMPLIANT, count: monResults.COMPLIANT, role: "good" },
-          { label: MON_RESULT.PARTIAL, count: monResults.PARTIAL, role: "warning" },
-          { label: MON_RESULT.NON_COMPLIANT, count: monResults.NON_COMPLIANT, role: "critical" },
-        ])}
+        ${donutChart([
+          { label: MON_RESULT.COMPLIANT, count: monResults.COMPLIANT, color: roleColor("good") },
+          { label: MON_RESULT.PARTIAL, count: monResults.PARTIAL, color: roleColor("warning") },
+          { label: MON_RESULT.NON_COMPLIANT, count: monResults.NON_COMPLIANT, color: roleColor("critical") },
+        ], { unit: "نشاط" })}
       </section>
     </div>
 
     <div class="grid-2">
       <section class="card">
         <h2>فعالية الضوابط المسجلة (${allControls.length})</h2>
-        ${distBar([
-          { label: "فعّال", count: allControls.filter((c) => c.effectiveness === "فعّال").length, role: "good" },
-          { label: "فعّال جزئيًا", count: allControls.filter((c) => c.effectiveness === "فعّال جزئيًا").length, role: "warning" },
-          { label: "غير فعّال", count: allControls.filter((c) => c.effectiveness === "غير فعّال").length, role: "critical" },
-        ])}
+        ${donutChart([
+          { label: "فعّال", count: allControls.filter((c) => c.effectiveness === "فعّال").length, color: roleColor("good") },
+          { label: "فعّال جزئيًا", count: allControls.filter((c) => c.effectiveness === "فعّال جزئيًا").length, color: roleColor("warning") },
+          { label: "غير فعّال", count: allControls.filter((c) => c.effectiveness === "غير فعّال").length, color: roleColor("critical") },
+        ], { unit: "ضابط" })}
         <h2 style="margin-top:18px">الضوابط حسب النوع</h2>
         ${allControls.length ? hBars(ctlTypes) : '<p class="muted">لا توجد ضوابط بعد</p>'}
       </section>
       <section class="card">
-        <h2>الملاحظات المنشأة حسب الربع (آخر سنة)</h2>
-        ${hBars(findingsByQuarter())}
+        <h2>📈 اتجاه الملاحظات المنشأة (آخر 6 أرباع)</h2>
+        ${trendChart(findingsByQuarter(s.findings, 6), { unit: " ملاحظة", color: "#ec835a" })}
+        <h2 style="margin-top:18px">📊 اتجاه متوسط نضج التجمعات</h2>
+        ${maturityTrendPoints(s.maturity).length > 1
+          ? trendChart(maturityTrendPoints(s.maturity), { unit: "%", color: "#14705c" })
+          : '<p class="muted">يظهر الاتجاه عند توفّر تقييمات نضج لفترتين أو أكثر</p>'}
       </section>
     </div>
 
     <div class="grid-2">
       <section class="card">
         <h2>أهمية المتطلبات النشطة</h2>
-        ${distBar(
+        ${donutChart(
           Object.entries(CRITICALITY).map(([k, label]) => ({
             label,
             count: activeReqs.filter((r) => r.criticality === k).length,
-            role: { CRITICAL: "critical", HIGH: "serious", MEDIUM: "warning", LOW: "good" }[k],
-          }))
+            color: roleColor({ CRITICAL: "critical", HIGH: "serious", MEDIUM: "warning", LOW: "good" }[k]),
+          })), { unit: "متطلب" }
         )}
       </section>
       <section class="card">
         <h2>الملاحظات المفتوحة حسب الخطورة</h2>
-        ${distBar(
+        ${donutChart(
           Object.entries(FND_SEVERITY).map(([k, label]) => ({
             label,
             count: openFindings.filter((f) => f.severity === k).length,
-            role: { CRITICAL: "critical", HIGH: "serious", MEDIUM: "warning", LOW: "good" }[k],
-          })).reverse()
+            color: roleColor({ CRITICAL: "critical", HIGH: "serious", MEDIUM: "warning", LOW: "good" }[k]),
+          })).reverse(), { unit: "ملاحظة" }
         )}
       </section>
     </div>
@@ -306,6 +374,10 @@ export function renderDashboard(el, nav) {
     ev.addEventListener("click", () => nav(ev.dataset.nav))
   );
   const rerender = () => renderDashboard(el, nav);
+  // فلاتر اللوحة
+  el.querySelector("#dash-dept")?.addEventListener("change", (e) => { dashFilter.dept = e.target.value; rerender(); });
+  el.querySelector("#dash-year")?.addEventListener("change", (e) => { dashFilter.year = e.target.value; rerender(); });
+  el.querySelector("#dash-clear")?.addEventListener("click", () => { dashFilter.dept = ""; dashFilter.year = ""; rerender(); });
   const shift = (d) => {
     const x = new Date(calState.y, calState.m + d, 1);
     calState.y = x.getFullYear();

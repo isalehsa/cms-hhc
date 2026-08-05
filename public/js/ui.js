@@ -75,6 +75,13 @@ export function chip(text) {
   return `<span class="chip">${esc(text)}</span>`;
 }
 
+// شارة موجة التجمع — تقبل كائن الموجة {short, label, tone, color}
+export function waveBadge(wave, { full = false } = {}) {
+  if (!wave) return '<span class="muted" style="font-size:.72rem">قيد التجهيز</span>';
+  const c = wave.color || STATUS_COLORS[wave.tone] || STATUS_COLORS.neutral;
+  return `<span class="lvl" style="background:${c}1f;border-color:${c}55;color:${c}"><span class="dot" style="background:${c}"></span>${esc(full ? wave.label : wave.short)}</span>`;
+}
+
 // ---------- نوافذ منبثقة ----------
 export function modal(html, { wide = false } = {}) {
   const overlay = document.createElement("div");
@@ -174,6 +181,24 @@ export function progressBar(pct) {
   return `<div class="prog"><div class="prog-bar"><div class="prog-fill" style="width:${p}%"></div></div><span class="prog-num">${p}%</span></div>`;
 }
 
+// لون النضج على تدرّج لوني مستمر من الأحمر (0٪) إلى الأخضر (100٪) — يعكس مستوى النضج
+export function maturityColor(pct) {
+  const p = Math.max(0, Math.min(100, Math.round(pct || 0)));
+  return `hsl(${Math.round(p * 1.2)}, 58%, 44%)`; // 0=أحمر · 60=أصفر · 120=أخضر
+}
+
+// شريط تقدّم النضج بلون يعكس المستوى (أحمر للمنخفض ← أخضر للمرتفع)
+export function maturityBar(pct) {
+  const p = Math.max(0, Math.min(100, Math.round(pct || 0)));
+  return `<div class="prog"><div class="prog-bar"><div class="prog-fill" style="width:${p}%;background:${maturityColor(p)}"></div></div><span class="prog-num" style="color:${maturityColor(p)};font-weight:600">${p}%</span></div>`;
+}
+
+// شارة مستوى النضج بلون متدرّج من الأحمر إلى الأخضر بحسب النسبة
+export function maturityLevelBadge(pct, label) {
+  const color = maturityColor(pct);
+  return `<span class="lvl" style="background:${color};border-color:transparent;color:#fff"><span class="dot" style="background:rgba(255,255,255,.9)"></span>${esc(label)}</span>`;
+}
+
 export function emptyMsg(msg) {
   return `<p class="muted" style="padding:14px">${esc(msg)}</p>`;
 }
@@ -195,6 +220,101 @@ export function donutStat(pct, label, sub = "") {
     </svg>
     <div><div class="lbl">${esc(label)}</div>${sub ? `<div class="sub muted">${esc(sub)}</div>` : ""}</div>
   </div>`;
+}
+
+// مخطط دائري (دونات) SVG ذاتي الاحتواء بألوان صريحة — يعمل داخل التطبيق وفي نافذة التقارير
+// items = [{label, count, color}] · القيم والنِّسب تظهر نصاً في وسيلة الإيضاح (اللون لا يحمل المعنى وحده)
+export function donutChart(items, { size = 150, thickness = 24, unit = "الإجمالي" } = {}) {
+  const total = items.reduce((s, i) => s + (Number(i.count) || 0), 0);
+  const r = (size - thickness) / 2, cx = size / 2, cy = size / 2, circ = 2 * Math.PI * r;
+  let off = 0;
+  const segs = (total ? items.filter((i) => i.count > 0) : []).map((i) => {
+    const len = (i.count / total) * circ;
+    const seg = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${i.color}" stroke-width="${thickness}" stroke-dasharray="${len.toFixed(2)} ${(circ - len).toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}" transform="rotate(-90 ${cx} ${cy})"><title>${esc(i.label)}: ${i.count}</title></circle>`;
+    off += len;
+    return seg;
+  }).join("");
+  const legend = items.map((i) => {
+    const pct = total ? Math.round((i.count / total) * 100) : 0;
+    return `<div style="display:flex;align-items:center;gap:7px;font-size:.8rem;margin:3px 0">
+      <span style="width:11px;height:11px;border-radius:3px;background:${i.color};flex-shrink:0"></span>
+      <span style="flex:1">${esc(i.label)}</span><strong>${i.count}</strong>
+      <span style="color:#8a8578;min-width:36px;text-align:left">${pct}%</span></div>`;
+  }).join("");
+  return `<div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap">
+    <svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" style="flex-shrink:0" role="img" aria-label="مخطط دائري: ${esc(unit)} ${total}">
+      <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="rgba(120,130,125,.15)" stroke-width="${thickness}"/>
+      ${segs}
+      <text x="${cx}" y="${cy - size * 0.02}" text-anchor="middle" style="font-size:${(size * 0.24).toFixed(0)}px;font-weight:800;fill:currentColor">${total}</text>
+      <text x="${cx}" y="${cy + size * 0.15}" text-anchor="middle" style="font-size:${(size * 0.093).toFixed(0)}px;fill:#8a8578">${esc(unit)}</text>
+    </svg>
+    <div style="flex:1;min-width:150px">${legend}</div>
+  </div>`;
+}
+
+// معرّف فريد لعناصر SVG (لتفادي تعارض معرّفات التدرّج عند تكرار المخططات)
+let _uid = 0;
+const uid = () => `u${(++_uid).toString(36)}`;
+
+// عدّاد نصف دائري (Gauge) لنسبة واحدة — القوس ملوّن بتدرّج الأحمر→الأخضر حسب القيمة
+export function gaugeChart(pct, { label = "", sub = "", size = 200 } = {}) {
+  if (pct === null || pct === undefined || isNaN(pct)) return statTile("—", label, sub);
+  const p = Math.max(0, Math.min(100, Math.round(pct)));
+  const w = size, cy = size * 0.56, r = size * 0.4, sw = size * 0.12, cx = w / 2, h = cy + sw / 2 + 6;
+  const pol = (deg) => { const a = (deg * Math.PI) / 180; return [cx + r * Math.cos(a), cy - r * Math.sin(a)]; };
+  const arc = (a0, a1) => { const [x0, y0] = pol(a0), [x1, y1] = pol(a1); return `M ${x0.toFixed(2)} ${y0.toFixed(2)} A ${r} ${r} 0 0 1 ${x1.toFixed(2)} ${y1.toFixed(2)}`; };
+  const color = maturityColor(p);
+  return `<div style="text-align:center">
+    <svg viewBox="0 0 ${w} ${h}" width="100%" style="max-width:${w}px" role="img" aria-label="${esc(label)}: ${p}%">
+      <path d="${arc(180, 0)}" fill="none" stroke="rgba(120,130,125,.18)" stroke-width="${sw}" stroke-linecap="round"/>
+      <path d="${arc(180, 180 - p * 1.8)}" fill="none" stroke="${color}" stroke-width="${sw}" stroke-linecap="round"/>
+      <text x="${cx}" y="${cy - size * 0.02}" text-anchor="middle" style="font-size:${(size * 0.24).toFixed(0)}px;font-weight:800;fill:${color}">${p}%</text>
+      ${label ? `<text x="${cx}" y="${cy + size * 0.14}" text-anchor="middle" style="font-size:${(size * 0.078).toFixed(0)}px;fill:#5d6c66">${esc(label)}</text>` : ""}
+    </svg>${sub ? `<div class="muted" style="font-size:.78rem;margin-top:-4px">${esc(sub)}</div>` : ""}</div>`;
+}
+
+// مخطط خطي/مساحي لاتجاه زمني — points = [{label, value}]، مع قيمة كل نقطة نصاً
+export function trendChart(points, { unit = "", color = "#14705c", height = 170 } = {}) {
+  if (!points.length) return '<p class="muted" style="padding:12px">لا توجد بيانات كافية للاتجاه</p>';
+  const n = points.length, w = Math.max(300, n * 78), h = height;
+  const padL = 10, padR = 10, padT = 22, padB = 28, plotW = w - padL - padR, plotH = h - padT - padB;
+  const max = Math.max(...points.map((p) => Number(p.value) || 0), 1);
+  const x = (i) => padL + (n === 1 ? plotW / 2 : (i / (n - 1)) * plotW);
+  const y = (v) => padT + plotH - ((Number(v) || 0) / max) * plotH;
+  const line = points.map((p, i) => `${x(i).toFixed(1)},${y(p.value).toFixed(1)}`).join(" ");
+  const area = `${padL},${(padT + plotH).toFixed(1)} ${line} ${(padL + plotW).toFixed(1)},${(padT + plotH).toFixed(1)}`;
+  const gid = uid();
+  const dots = points.map((p, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(p.value).toFixed(1)}" r="4" fill="#fff" stroke="${color}" stroke-width="2"><title>${esc(p.label)}: ${p.value}${esc(unit)}</title></circle>
+    <text x="${x(i).toFixed(1)}" y="${(y(p.value) - 9).toFixed(1)}" text-anchor="middle" style="font-size:11px;font-weight:700;fill:${color}">${esc(String(p.value))}</text>`).join("");
+  const labels = points.map((p, i) => `<text x="${x(i).toFixed(1)}" y="${h - 9}" text-anchor="middle" style="font-size:10px;fill:#8a8578">${esc(p.label)}</text>`).join("");
+  return `<div style="overflow-x:auto"><svg viewBox="0 0 ${w} ${h}" width="100%" ${w > 560 ? `style="min-width:${w}px"` : ""} preserveAspectRatio="xMidYMid meet" role="img">
+    <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${color}" stop-opacity="0.3"/><stop offset="1" stop-color="${color}" stop-opacity="0.02"/></linearGradient></defs>
+    <polygon points="${area}" fill="url(#${gid})"/>
+    <polyline points="${line}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round"/>
+    ${dots}${labels}
+  </svg></div>`;
+}
+
+// أعمدة مجمّعة للمقارنة بين سلسلتين لكل فئة — cats=[..], a/b={name,color,values:[]}
+export function groupedBarChart(cats, a, b) {
+  if (!cats.length) return '<p class="muted" style="padding:12px">لا توجد بيانات للمقارنة</p>';
+  const max = Math.max(...a.values, ...b.values, 1);
+  const rows = cats.map((c, i) => {
+    const av = Number(a.values[i]) || 0, bv = Number(b.values[i]) || 0;
+    return `<div style="margin:8px 0">
+      <div style="font-size:.8rem;margin-bottom:3px">${esc(c)}</div>
+      <div style="display:flex;align-items:center;gap:6px;margin:2px 0"><span style="width:9px;height:9px;border-radius:2px;background:${a.color};flex-shrink:0"></span>
+        <span style="flex:1;height:12px;background:rgba(120,130,125,.12);border-radius:6px;overflow:hidden"><span style="display:block;height:100%;width:${Math.max(2, Math.round(av / max * 100))}%;background:${a.color}"></span></span>
+        <strong style="min-width:40px;text-align:left;font-size:.8rem">${av}</strong></div>
+      <div style="display:flex;align-items:center;gap:6px;margin:2px 0"><span style="width:9px;height:9px;border-radius:2px;background:${b.color};flex-shrink:0"></span>
+        <span style="flex:1;height:12px;background:rgba(120,130,125,.12);border-radius:6px;overflow:hidden"><span style="display:block;height:100%;width:${Math.max(2, Math.round(bv / max * 100))}%;background:${b.color}"></span></span>
+        <strong style="min-width:40px;text-align:left;font-size:.8rem">${bv}</strong></div>
+    </div>`;
+  }).join("");
+  return `<div><div class="row" style="gap:14px;margin-bottom:6px;font-size:.78rem">
+    <span style="display:flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:${a.color}"></span>${esc(a.name)}</span>
+    <span style="display:flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:${b.color}"></span>${esc(b.name)}</span>
+  </div>${rows}</div>`;
 }
 
 // أعمدة أفقية بلون واحد مع التسمية والقيمة نصاً: items = [{label, count, tip?}]
