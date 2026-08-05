@@ -805,6 +805,51 @@ async function exportPptx(key) {
         }
       }
 
+      // 3.5) قائمة نضج التجمعات — أشرطة تقدّم أصلية (تطابق شاشة «التقييمات» بنفس التصميم)
+      const listRows = store.maturity.slice().sort((a, b) => (b.year - a.year) || (b.quarter - a.quarter) || (b.createdAt || "").localeCompare(a.createdAt || ""));
+      if (listRows.length) {
+        const RX = 13.03; // الحافة اليمنى للمحتوى
+        const cols = { code: 1.0, name: 3.1, wave: 1.55, quarter: 1.2, bar: 3.0, level: 1.15, status: 1.45 };
+        const cx = {}; let acc = RX;
+        for (const kk of ["code", "name", "wave", "quarter", "bar", "level", "status"]) { cx[kk] = acc - cols[kk]; acc = cx[kk]; }
+        const stColor = { DRAFT: "8A8578", SUBMITTED: "FAB219", REVIEWED: "0CA30C" };
+        const rh = 0.46, yTop = 1.12, PER_L = 11;
+        // شارة حبّة (pill): خلفية مستديرة + نص — عنصر أصلي قابل للتحرير
+        const pill = (slide, x, y, w, h, fillHex, txtHex, text, fs, borderHex) => {
+          slide.addShape(pptx.ShapeType.roundRect, { x, y: y + (rh - h) / 2, w, h, rectRadius: h / 2, fill: { color: fillHex }, ...(borderHex ? { line: { color: borderHex, width: 0.75 } } : {}) });
+          slide.addText(text, { x: x + 0.03, y, w: w - 0.06, h: rh, fontSize: fs, color: txtHex, bold: true, align: "center", valign: "middle", ...AR });
+        };
+        const drawHeader = (slide) => {
+          slide.addShape(pptx.ShapeType.roundRect, { x: cx.status, y: yTop, w: RX - cx.status, h: 0.42, rectRadius: 0.06, fill: { color: GREEN } });
+          const htxt = (x, w, t, al) => slide.addText(t, { x: x + 0.05, y: yTop, w: w - 0.1, h: 0.42, fontSize: 9, bold: true, color: "FFFFFF", align: al || "center", valign: "middle", ...AR });
+          htxt(cx.code, cols.code, "الرقم"); htxt(cx.name, cols.name, "التجمع", "right"); htxt(cx.wave, cols.wave, "الموجة");
+          htxt(cx.quarter, cols.quarter, "الفترة"); htxt(cx.bar, cols.bar, "النضج المعتمد"); htxt(cx.level, cols.level, "المستوى"); htxt(cx.status, cols.status, "الحالة");
+        };
+        for (let i = 0; i < listRows.length; i += PER_L) {
+          const slide = pptx.addSlide(); header(slide, i === 0 ? "قائمة نضج التجمعات" : "قائمة نضج التجمعات (تابع)");
+          drawHeader(slide);
+          listRows.slice(i, i + PER_L).forEach((m, j) => {
+            const y = yTop + 0.5 + j * rh;
+            const pct = maturityOverall(m, m.status === "REVIEWED");
+            const wv = clusterWave(m.clusterId), lvl = maturityLevel(pct);
+            if (j % 2 === 1) slide.addShape(pptx.ShapeType.rect, { x: cx.status, y, w: RX - cx.status, h: rh, fill: { color: "EEF3F1" } });
+            slide.addText(m.code || "—", { x: cx.code, y, w: cols.code, h: rh, fontSize: 8.5, bold: true, color: INK, align: "center", valign: "middle", fontFace: "Arial" });
+            slide.addText(deptName(m.clusterId), { x: cx.name + 0.05, y, w: cols.name - 0.1, h: rh, fontSize: 9, color: INK, align: "right", valign: "middle", ...AR });
+            if (wv) { const wc = (wv.color || "#8a8578").replace("#", ""); pill(slide, cx.wave + 0.1, y, cols.wave - 0.2, 0.28, lighten(wc, 0.82), wc, wv.short, 8, lighten(wc, 0.45)); }
+            else slide.addText("قيد التجهيز", { x: cx.wave, y, w: cols.wave, h: rh, fontSize: 8, color: MUTED, align: "center", valign: "middle", ...AR });
+            slide.addText(`الربع ${m.quarter} / ${m.year}`, { x: cx.quarter, y, w: cols.quarter, h: rh, fontSize: 8, color: MUTED, align: "center", valign: "middle", ...AR });
+            // شريط النضج: مسار + تعبئة ملوّنة تنمو من اليمين (RTL) + النسبة نصاً
+            const bx = cx.bar, pctW = 0.5, trackX = bx + pctW + 0.08, trackW = cols.bar - pctW - 0.16, trackH = 0.17, trackY = y + (rh - trackH) / 2;
+            slide.addShape(pptx.ShapeType.roundRect, { x: trackX, y: trackY, w: trackW, h: trackH, rectRadius: trackH / 2, fill: { color: "E9EEEC" } });
+            if (pct > 0) { const fw = Math.max(trackH, trackW * pct / 100); slide.addShape(pptx.ShapeType.roundRect, { x: trackX + trackW - fw, y: trackY, w: fw, h: trackH, rectRadius: trackH / 2, fill: { color: matHex(pct) } }); }
+            slide.addText(pct + "%", { x: bx, y, w: pctW, h: rh, fontSize: 9, bold: true, color: matHex(pct), align: "center", valign: "middle", fontFace: "Arial" });
+            pill(slide, cx.level + 0.08, y, cols.level - 0.16, 0.28, matHex(pct), "FFFFFF", lvl.label, 8.5);
+            const scol = stColor[m.status] || "8A8578";
+            pill(slide, cx.status + 0.05, y, cols.status - 0.1, 0.28, lighten(scol, 0.82), scol, MATURITY_STATUS[m.status] || m.status, 7, lighten(scol, 0.5));
+          });
+        }
+      }
+
       // 4) مصفوفة النضج حسب المحاور (جدول ملوّن يطابق الشاشة)
       const domNames = MATURITY_MODEL.map((d) => d.name);
       const domShort = domNames.map((n) => (n.length > 15 ? n.slice(0, 14) + "…" : n));
