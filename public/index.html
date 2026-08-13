@@ -19,6 +19,37 @@
   <script defer src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
 </head>
 <body>
+  <!-- علامة مائية متحركة عامة (درع + حلقات دوّارة) خلف كل الصفحات — تُموَّه عبر زجاجية البطاقات -->
+  <div class="app-bg" aria-hidden="true">
+    <svg class="app-bg-svg" viewBox="0 0 520 520" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <radialGradient id="wmGlow" cx="50%" cy="46%" r="55%">
+          <stop offset="0" stop-color="#2fe3b4" stop-opacity="0.16"/>
+          <stop offset="1" stop-color="#2fe3b4" stop-opacity="0"/>
+        </radialGradient>
+        <linearGradient id="wmShield" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#34e7b8" stop-opacity="0.14"/>
+          <stop offset="1" stop-color="#0e9c78" stop-opacity="0.06"/>
+        </linearGradient>
+      </defs>
+      <circle cx="260" cy="250" r="250" fill="url(#wmGlow)">
+        <animate attributeName="opacity" values="0.8;1;0.8" dur="9s" repeatCount="indefinite"/>
+      </circle>
+      <circle cx="260" cy="250" r="215" fill="none" stroke="#7fe9cd" stroke-opacity="0.12" stroke-width="2" stroke-dasharray="5 12">
+        <animateTransform attributeName="transform" type="rotate" from="0 260 250" to="360 260 250" dur="70s" repeatCount="indefinite"/>
+      </circle>
+      <circle cx="260" cy="250" r="170" fill="none" stroke="#7fe9cd" stroke-opacity="0.14" stroke-width="2" stroke-dasharray="2 14">
+        <animateTransform attributeName="transform" type="rotate" from="360 260 250" to="0 260 250" dur="95s" repeatCount="indefinite"/>
+      </circle>
+      <circle cx="260" cy="250" r="120" fill="none" stroke="#34e7b8" stroke-opacity="0.16" stroke-width="2">
+        <animateTransform attributeName="transform" type="rotate" from="0 260 250" to="360 260 250" dur="120s" repeatCount="indefinite"/>
+      </circle>
+      <g transform="translate(260 250)">
+        <path d="M0 -120 L100 -76 V10 C100 78 52 126 0 146 C-52 126 -100 78 -100 10 V-76 Z" fill="url(#wmShield)" stroke="#7fe9cd" stroke-opacity="0.22" stroke-width="3"/>
+        <path d="M-40 6 L-10 36 L46 -34" fill="none" stroke="#7fe9cd" stroke-opacity="0.5" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
+    </svg>
+  </div>
   <div class="layout">
     <aside id="sidebar" class="sidebar"></aside>
     <main id="app">

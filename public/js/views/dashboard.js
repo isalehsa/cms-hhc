@@ -51,7 +51,28 @@ function kpiCard({ title, ic, big, tag, tagRole, sub, ring }) {
   </div>`;
 }
 
-// ملاحظة: الدرع الزخرفي أصبح علامة مائية عامة باهتة خلف كل الصفحات (styles.css: body::before)
+// لوحة زخرفية: درع متوهّج بحلقات وأيقونات طائرة في ترويسة لوحة التحكم
+function shieldArt() {
+  return `<div class="hero-art" aria-hidden="true">
+    <svg class="shield-art" viewBox="0 0 320 320">
+      <defs>
+        <radialGradient id="hglow" cx="50%" cy="45%" r="55%"><stop offset="0" stop-color="#21d6a6" stop-opacity=".38"/><stop offset="1" stop-color="#21d6a6" stop-opacity="0"/></radialGradient>
+        <linearGradient id="hsg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#34e7b8"/><stop offset="1" stop-color="#0e9c78"/></linearGradient>
+      </defs>
+      <circle cx="160" cy="150" r="150" fill="url(#hglow)"/>
+      <circle class="ring ring-dash" cx="160" cy="150" r="128" fill="none" stroke="rgba(120,220,190,.28)" stroke-width="1.5" stroke-dasharray="4 10"/>
+      <circle cx="160" cy="150" r="98" fill="none" stroke="rgba(120,220,190,.22)" stroke-width="1.5"/>
+      <circle cx="160" cy="150" r="70" fill="none" stroke="rgba(33,214,166,.3)" stroke-width="1.5"/>
+      <g transform="translate(160 150)">
+        <path d="M0 -72 L60 -46 V6 C60 47 31 76 0 88 C-31 76 -60 47 -60 6 V-46 Z" fill="url(#hsg)" stroke="rgba(255,255,255,.28)" stroke-width="2"/>
+        <path d="M-24 4 L-6 22 L28 -20" fill="none" stroke="#04241c" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
+    </svg>
+    <span class="float f1">${icon("scale", 20)}</span>
+    <span class="float f2">${icon("users", 20)}</span>
+    <span class="float f3">${icon("doc", 20)}</span>
+  </div>`;
+}
 
 // شهر التقويم المعروض — يبقى بين عمليات إعادة الرسم
 const calState = { y: new Date().getFullYear(), m: new Date().getMonth() };
@@ -263,6 +284,7 @@ export function renderDashboard(el, nav) {
           ${activeFilter ? '<button class="secondary small" id="dash-clear" title="إلغاء الفلاتر">✕ مسح</button>' : ""}
         </div>
       </div>
+      ${shieldArt()}
     </section>
 
     <!-- صف المؤشرات الرئيسية -->

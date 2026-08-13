@@ -708,8 +708,6 @@ h2 .ic { vertical-align: -4px; }
 }
 /* أسطح مكتوبة مباشرةً بالأبيض/الداكن — تصحيحها للوضع الفاتح */
 [data-theme="light"] .sidebar { background: linear-gradient(175deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.46)); box-shadow: 8px 0 40px rgba(15, 55, 45, 0.06); }
-[data-theme="light"] .nav-item.active { color: #fff; }
-[data-theme="light"] button, [data-theme="light"] .subtab.active { color: #fff; }
 [data-theme="light"] .nav-group-head:hover { background: rgba(20, 112, 92, 0.08); }
 [data-theme="light"] .card.sub { background: rgba(255, 255, 255, 0.5); border-color: rgba(24, 66, 54, 0.1); }
 [data-theme="light"] button.secondary { background: rgba(20, 112, 92, 0.1); border-color: rgba(20, 112, 92, 0.18); color: var(--primary-dark); }
@@ -758,6 +756,7 @@ h2 .ic { vertical-align: -4px; }
 [data-theme="light"] .kpi-tag.serious { color: #a5502a; background: rgba(236, 131, 90, 0.16); }
 [data-theme="light"] .kpi-tag.critical { color: #b02a2a; background: rgba(208, 59, 59, 0.14); }
 [data-theme="light"] input[type="date"]::-webkit-calendar-picker-indicator { filter: none; }
+[data-theme="light"] .task-item.overdue .task-date { color: #b02a2a; }
 
 /* زر تبديل السمة */
 .theme-toggle { display: inline-flex; align-items: center; justify-content: center; }
@@ -775,19 +774,12 @@ h2 .ic { vertical-align: -4px; }
   main { padding: 16px; }
 }
 
-/* ---------- علامة مائية عامة: درع وحلقات باهتة خلف كل الصفحات (تُموَّه عبر زجاجية البطاقات) ---------- */
+/* ---------- علامة مائية متحركة عامة: درع وحلقات دوّارة خلف كل الصفحات (تُموَّه عبر زجاجية البطاقات) ---------- */
 .layout { position: relative; z-index: 1; }
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20520%20520%22%3E%3Cdefs%3E%3CradialGradient%20id%3D%22g%22%20cx%3D%2250%25%22%20cy%3D%2246%25%22%20r%3D%2255%25%22%3E%3Cstop%20offset%3D%220%22%20stop-color%3D%22%232fe3b4%22%20stop-opacity%3D%220.16%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%232fe3b4%22%20stop-opacity%3D%220%22%2F%3E%3C%2FradialGradient%3E%3ClinearGradient%20id%3D%22s%22%20x1%3D%220%22%20y1%3D%220%22%20x2%3D%220%22%20y2%3D%221%22%3E%3Cstop%20offset%3D%220%22%20stop-color%3D%22%2334e7b8%22%20stop-opacity%3D%220.14%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%230e9c78%22%20stop-opacity%3D%220.06%22%2F%3E%3C%2FlinearGradient%3E%3C%2Fdefs%3E%3Ccircle%20cx%3D%22260%22%20cy%3D%22250%22%20r%3D%22250%22%20fill%3D%22url(%23g)%22%2F%3E%3Ccircle%20cx%3D%22260%22%20cy%3D%22250%22%20r%3D%22215%22%20fill%3D%22none%22%20stroke%3D%22%237fe9cd%22%20stroke-opacity%3D%220.12%22%20stroke-width%3D%222%22%20stroke-dasharray%3D%225%2012%22%2F%3E%3Ccircle%20cx%3D%22260%22%20cy%3D%22250%22%20r%3D%22170%22%20fill%3D%22none%22%20stroke%3D%22%237fe9cd%22%20stroke-opacity%3D%220.14%22%20stroke-width%3D%222%22%2F%3E%3Ccircle%20cx%3D%22260%22%20cy%3D%22250%22%20r%3D%22120%22%20fill%3D%22none%22%20stroke%3D%22%2334e7b8%22%20stroke-opacity%3D%220.16%22%20stroke-width%3D%222%22%2F%3E%3Cg%20transform%3D%22translate(260%20250)%22%3E%3Cpath%20d%3D%22M0%20-120%20L100%20-76%20V10%20C100%2078%2052%20126%200%20146%20C-52%20126%20-100%2078%20-100%2010%20V-76%20Z%22%20fill%3D%22url(%23s)%22%20stroke%3D%22%237fe9cd%22%20stroke-opacity%3D%220.22%22%20stroke-width%3D%223%22%2F%3E%3Cpath%20d%3D%22M-40%206%20L-10%2036%20L46%20-34%22%20fill%3D%22none%22%20stroke%3D%22%237fe9cd%22%20stroke-opacity%3D%220.5%22%20stroke-width%3D%2214%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
-  background-repeat: no-repeat;
-  background-position: 34% 52%;
-  background-size: min(88vh, 820px) auto;
-  opacity: 1;
+.app-bg {
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  display: flex; align-items: center; justify-content: center; overflow: hidden;
 }
-:root[data-theme="light"] body::before { opacity: 0.85; }
-@media (max-width: 800px) { body::before { background-size: 480px auto; background-position: 50% 26%; } }
+.app-bg-svg { width: min(90vh, 860px); height: auto; opacity: 1; }
+:root[data-theme="light"] .app-bg-svg { opacity: 0.8; }
+@media (max-width: 800px) { .app-bg-svg { width: 480px; } }
