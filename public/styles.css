@@ -103,8 +103,8 @@ body {
 
 /* شريط التنقّل الأفقي بأيقونات خطّية */
 .tb-nav {
-  flex: 1; display: flex; align-items: center; justify-content: center; gap: 3px;
-  overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; min-width: 0;
+  flex: 1; display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 3px;
+  overflow-x: auto; overflow-y: hidden; flex-wrap: nowrap; scrollbar-width: none; min-width: 0;
 }
 .tb-nav::-webkit-scrollbar { display: none; }
 .tb-item {
@@ -138,44 +138,6 @@ body {
 .brand h1 { margin: 0; font-size: 1.02rem; letter-spacing: -0.01em; }
 .subtitle { margin: 2px 0 0; color: var(--muted); font-size: 0.74rem; }
 
-#side-nav { display: flex; flex-direction: column; gap: 4px; flex: 1; overflow-y: auto; }
-.nav-item {
-  display: flex; align-items: center; gap: 10px;
-  background: transparent; border: none; border-radius: var(--radius-sm);
-  padding: 10px 14px; font: inherit; color: var(--text);
-  cursor: pointer; text-align: right;
-  transition: background 0.18s, transform 0.18s, box-shadow 0.18s, color 0.18s;
-  box-shadow: none;
-}
-.nav-item:hover { background: rgba(33, 214, 166, 0.12); transform: translateX(-3px); }
-.nav-item.active {
-  background: var(--primary-grad);
-  color: #06231b;
-  font-weight: 700;
-  box-shadow: 0 8px 24px rgba(23, 194, 153, 0.4);
-}
-
-/* مجموعات القائمة الجانبية القابلة للطي */
-.nav-group { display: flex; flex-direction: column; }
-.nav-group-head {
-  display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  background: transparent; border: none; border-radius: var(--radius-sm);
-  padding: 9px 12px; margin-top: 2px; font: inherit; color: var(--muted);
-  cursor: pointer; text-align: right; font-size: 0.8rem; font-weight: 700; letter-spacing: -0.01em;
-  transition: background 0.18s, color 0.18s;
-}
-.nav-group-head:hover { background: rgba(255, 255, 255, 0.05); color: var(--text); }
-.nav-group-head.has-active { color: var(--primary-dark); }
-.nav-group-title { display: inline-flex; align-items: center; gap: 8px; }
-.nav-caret { font-size: 0.7rem; transition: transform 0.2s; opacity: 0.7; }
-.nav-group.open .nav-caret { transform: rotate(180deg); }
-.nav-group-items {
-  display: none; flex-direction: column; gap: 3px;
-  margin: 2px 4px 4px; padding-right: 8px;
-  border-right: 2px solid var(--border-soft);
-}
-.nav-group.open .nav-group-items { display: flex; }
-.nav-item.child { padding: 8px 12px; font-size: 0.9rem; }
 
 .user-chip {
   display: inline-flex; align-items: center; gap: 8px;
