@@ -239,14 +239,14 @@ export function donutChart(items, { size = 150, thickness = 24, unit = "الإج
     return `<div style="display:flex;align-items:center;gap:7px;font-size:.8rem;margin:3px 0">
       <span style="width:11px;height:11px;border-radius:3px;background:${i.color};flex-shrink:0"></span>
       <span style="flex:1">${esc(i.label)}</span><strong>${i.count}</strong>
-      <span style="color:#8a8578;min-width:36px;text-align:left">${pct}%</span></div>`;
+      <span style="color:var(--muted);min-width:36px;text-align:left">${pct}%</span></div>`;
   }).join("");
   return `<div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap">
     <svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" style="flex-shrink:0" role="img" aria-label="مخطط دائري: ${esc(unit)} ${total}">
       <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="rgba(120,130,125,.15)" stroke-width="${thickness}"/>
       ${segs}
       <text x="${cx}" y="${cy - size * 0.02}" text-anchor="middle" style="font-size:${(size * 0.24).toFixed(0)}px;font-weight:800;fill:currentColor">${total}</text>
-      <text x="${cx}" y="${cy + size * 0.15}" text-anchor="middle" style="font-size:${(size * 0.093).toFixed(0)}px;fill:#8a8578">${esc(unit)}</text>
+      <text x="${cx}" y="${cy + size * 0.15}" text-anchor="middle" style="font-size:${(size * 0.093).toFixed(0)}px;fill:var(--muted)">${esc(unit)}</text>
     </svg>
     <div style="flex:1;min-width:150px">${legend}</div>
   </div>`;
@@ -269,12 +269,12 @@ export function gaugeChart(pct, { label = "", sub = "", size = 200 } = {}) {
       <path d="${arc(180, 0)}" fill="none" stroke="rgba(120,130,125,.18)" stroke-width="${sw}" stroke-linecap="round"/>
       <path d="${arc(180, 180 - p * 1.8)}" fill="none" stroke="${color}" stroke-width="${sw}" stroke-linecap="round"/>
       <text x="${cx}" y="${cy - size * 0.02}" text-anchor="middle" style="font-size:${(size * 0.24).toFixed(0)}px;font-weight:800;fill:${color}">${p}%</text>
-      ${label ? `<text x="${cx}" y="${cy + size * 0.14}" text-anchor="middle" style="font-size:${(size * 0.078).toFixed(0)}px;fill:#5d6c66">${esc(label)}</text>` : ""}
+      ${label ? `<text x="${cx}" y="${cy + size * 0.14}" text-anchor="middle" style="font-size:${(size * 0.078).toFixed(0)}px;fill:var(--muted)">${esc(label)}</text>` : ""}
     </svg>${sub ? `<div class="muted" style="font-size:.78rem;margin-top:-4px">${esc(sub)}</div>` : ""}</div>`;
 }
 
 // مخطط خطي/مساحي لاتجاه زمني — points = [{label, value}]، مع قيمة كل نقطة نصاً
-export function trendChart(points, { unit = "", color = "#14705c", height = 170 } = {}) {
+export function trendChart(points, { unit = "", color = "#22d6a6", height = 170 } = {}) {
   if (!points.length) return '<p class="muted" style="padding:12px">لا توجد بيانات كافية للاتجاه</p>';
   const n = points.length, w = Math.max(300, n * 78), h = height;
   const padL = 10, padR = 10, padT = 22, padB = 28, plotW = w - padL - padR, plotH = h - padT - padB;
@@ -286,7 +286,7 @@ export function trendChart(points, { unit = "", color = "#14705c", height = 170 
   const gid = uid();
   const dots = points.map((p, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(p.value).toFixed(1)}" r="4" fill="#fff" stroke="${color}" stroke-width="2"><title>${esc(p.label)}: ${p.value}${esc(unit)}</title></circle>
     <text x="${x(i).toFixed(1)}" y="${(y(p.value) - 9).toFixed(1)}" text-anchor="middle" style="font-size:11px;font-weight:700;fill:${color}">${esc(String(p.value))}</text>`).join("");
-  const labels = points.map((p, i) => `<text x="${x(i).toFixed(1)}" y="${h - 9}" text-anchor="middle" style="font-size:10px;fill:#8a8578">${esc(p.label)}</text>`).join("");
+  const labels = points.map((p, i) => `<text x="${x(i).toFixed(1)}" y="${h - 9}" text-anchor="middle" style="font-size:10px;fill:var(--muted)">${esc(p.label)}</text>`).join("");
   return `<div style="overflow-x:auto"><svg viewBox="0 0 ${w} ${h}" width="100%" ${w > 560 ? `style="min-width:${w}px"` : ""} preserveAspectRatio="xMidYMid meet" role="img">
     <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${color}" stop-opacity="0.3"/><stop offset="1" stop-color="${color}" stop-opacity="0.02"/></linearGradient></defs>
     <polygon points="${area}" fill="url(#${gid})"/>
