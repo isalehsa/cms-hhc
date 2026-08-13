@@ -825,6 +825,7 @@ h2 .ic { vertical-align: -4px; }
   position: fixed; inset: 0; z-index: 0; pointer-events: none;
   display: flex; align-items: center; justify-content: center; overflow: hidden;
 }
-.app-bg-svg { width: min(90vh, 860px); height: auto; opacity: 1; }
-:root[data-theme="light"] .app-bg-svg { opacity: 0.8; }
-@media (max-width: 800px) { .app-bg-svg { width: 480px; } }
+.app-bg-svg { width: min(70vh, 600px); height: auto; opacity: 0.55; }
+:root[data-theme="light"] .app-bg-svg { opacity: 0.4; }
+.auth-mode .app-bg { opacity: 0.45; }
+@media (max-width: 800px) { .app-bg-svg { width: 360px; } }
