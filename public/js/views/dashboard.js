@@ -1,30 +1,34 @@
 // لوحة التحكم التنفيذية — مؤشرات الالتزام العامة والتنبيهات (تصميم لوحة حديث)
 import { store, deptName, deptOptions } from "../state.js";
 import {
-  esc, statTile, progressBar, fmtDate, daysUntil, levelBadge, sel,
-  donutStat, donutChart, gaugeChart, trendChart, riskHeatmap, hBars, monthCalendar, MONTH_NAMES, fmtSAR,
+  esc, statTile, progressBar, fmtDate, daysUntil, levelBadge, sel, lineIcon, sparkline,
+  donutStat, donutChart, gaugeChart, trendChart, groupedBarChart, riskHeatmap, hBars, monthCalendar, MONTH_NAMES, fmtSAR,
 } from "../ui.js";
 import { riskLevel, CRITICALITY, FND_SEVERITY, MON_RESULT, SA_STATUS, CONTROL_TYPES, STATUS_COLORS } from "../meta.js";
 
 const roleColor = (role) => STATUS_COLORS[role] || STATUS_COLORS.neutral;
+const icon = (name, size = 22) => lineIcon(name, size);
 
-// ---------- أيقونات خطّية (SVG) بنمط موحّد بدل الرموز التعبيرية ----------
-const ICONS = {
-  shield: '<path d="M12 3l7 3v5c0 4.5-3 7.6-7 9-4-1.4-7-4.5-7-9V6l7-3z"/><path d="M9 12l2 2 4-4"/>',
-  alert: '<path d="M12 4l9 15H3l9-15z"/><line x1="12" y1="10" x2="12" y2="14"/><circle cx="12" cy="17" r=".7" fill="currentColor" stroke="none"/>',
-  chat: '<path d="M4 5h16v10H9l-4 4V5z"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="12" x2="13" y2="12"/>',
-  cap: '<path d="M2 9l10-4 10 4-10 4L2 9z"/><path d="M6 11v4c0 1.6 2.7 3 6 3s6-1.4 6-3v-4"/>',
-  book: '<path d="M5 4h11a2 2 0 0 1 2 2v14H7a2 2 0 0 1-2-2V4z"/><line x1="9" y1="8" x2="14" y2="8"/>',
-  scale: '<line x1="12" y1="4" x2="12" y2="20"/><line x1="6" y1="8" x2="18" y2="8"/><path d="M6 8l-2.5 5.5a3 3 0 0 0 5 0L6 8z"/><path d="M18 8l-2.5 5.5a3 3 0 0 0 5 0L18 8z"/>',
-  users: '<circle cx="9" cy="8" r="3"/><path d="M3.5 20a5.5 6 0 0 1 11 0"/><path d="M16 5.5a3 3 0 0 1 0 6"/><path d="M17 20a5.5 6 0 0 0-3-5.3"/>',
-  doc: '<path d="M7 3h7l4 4v14H7V3z"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="15" y2="16"/>',
-  plus: '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
-  calendar: '<rect x="4" y="5" width="16" height="16" rx="2"/><line x1="4" y1="9" x2="20" y2="9"/><line x1="9" y1="3" x2="9" y2="6"/><line x1="15" y1="3" x2="15" y2="6"/>',
-  trend: '<polyline points="4,15 9,10 13,13 20,6"/><polyline points="20,10 20,6 16,6"/>',
-  search: '<circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/>',
-  target: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.5"/>',
-};
-const icon = (name, size = 22) => `<svg class="ic" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ""}</svg>`;
+// عدد العناصر لكل شهر (آخر N أشهر) — سلسلة زمنية حقيقية للـ sparkline
+function seriesByMonth(items, getDate, months = 8) {
+  const now = new Date();
+  const out = [];
+  for (let i = months - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const start = d.toISOString().slice(0, 7);
+    out.push(items.filter((x) => String(getDate(x) || "").slice(0, 7) === start).length);
+  }
+  return out;
+}
+// فرق النقطتين الأخيرتين كنسبة — { pct, dir, good }
+function pctDelta(series, upIsGood = true) {
+  const a = series[series.length - 2] || 0, b = series[series.length - 1] || 0;
+  if (a === 0 && b === 0) return null;
+  const pct = a === 0 ? 100 : Math.round(((b - a) / a) * 100);
+  const dir = b >= a ? "up" : "down";
+  return { pct, dir, good: dir === "up" ? upIsGood : !upIsGood };
+}
+const deltaChip = (d) => (d ? `<span class="kpi-chip ${d.good ? "good" : "bad"}">${d.dir === "up" ? "▲" : "▼"} ${Math.abs(d.pct)}%</span>` : "");
 
 // حلقة نسبية صغيرة لبطاقة مؤشر
 function miniRing(pct, color) {
@@ -36,18 +40,18 @@ function miniRing(pct, color) {
     <text x="36" y="41" text-anchor="middle" style="font-size:16px;font-weight:800;fill:var(--text)">${p}%</text></svg>`;
 }
 
-// بطاقة مؤشر رئيسية بنمط اللوحة
-function kpiCard({ title, ic, big, tag, tagRole, sub, ring }) {
+// بطاقة مؤشر رئيسية بنمط اللوحة — بخط مؤشر مصغّر ونسبة تغيّر
+function kpiCard({ title, ic, big, tag, tagRole, sub, ring, spark, sparkColor, delta }) {
   return `<div class="kpi">
     <div class="kpi-head"><span class="kpi-title">${ic ? `<span class="kpi-ic">${ic}</span>` : ""}${esc(title)}</span><span class="kpi-menu">⋯</span></div>
     <div class="kpi-body">
       ${ring ? `<div class="kpi-ring">${ring}</div>` : ""}
       <div class="kpi-main">
-        <div class="kpi-val">${big}</div>
-        ${tag ? `<span class="kpi-tag ${tagRole || ""}">${tag}</span>` : ""}
+        <div class="kpi-valrow"><span class="kpi-val">${big}</span>${delta ? deltaChip(delta) : (tag ? `<span class="kpi-tag ${tagRole || ""}">${tag}</span>` : "")}</div>
         ${sub ? `<div class="kpi-delta">${sub}</div>` : ""}
       </div>
     </div>
+    ${spark ? `<div class="kpi-spark">${sparkline(spark, { color: sparkColor || "#22d6a6" })}</div>` : ""}
   </div>`;
 }
 
@@ -271,6 +275,17 @@ export function renderDashboard(el, nav) {
     { k: "COMPLIANT", role: "good" }, { k: "PARTIAL", role: "warning" }, { k: "NON_COMPLIANT", role: "critical" },
   ].map((x) => `<div class="ov-leg"><span class="dot" style="background:${roleColor(x.role)}"></span>${esc(MON_RESULT[x.k])}<strong>${monResults[x.k]}</strong></div>`).join("");
 
+  // سلاسل زمنية شهرية حقيقية للخطوط المصغّرة + نِسب التغيّر
+  const riskSeries = seriesByMonth(s.risks, (r) => r.createdAt);
+  const findingSeries = seriesByMonth(s.findings, (f) => f.createdAt);
+  const trainingSeries = seriesByMonth(s.trainings, (t) => t.date || t.createdAt);
+  const riskDelta = pctDelta(riskSeries, false);
+  const findingDelta = pctDelta(findingSeries, false);
+  const trainingDelta = pctDelta(trainingSeries, true);
+  // مقارنة المخاطر: الكامنة (قبل الضوابط) مقابل المتبقية (بعد الضوابط)
+  const inh = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 };
+  for (const r of s.risks) inh[riskLevel(r.likelihood, r.impact).key]++;
+
   el.innerHTML = `
     <!-- بطاقة الترحيب + الدرع الزخرفي -->
     <section class="hero card">
@@ -290,10 +305,20 @@ export function renderDashboard(el, nav) {
     <!-- صف المؤشرات الرئيسية -->
     <div class="kpi-row">
       ${kpiCard({ title: "درجة الالتزام", ring: miniRing(compScore ?? 0, roleColor(scoreRole)), big: scoreLabel, tag: compScore === null ? "" : `${compScore}%`, tagRole: scoreRole, sub: compScore === null ? "لا نتائج بعد" : `من ${scoreParts.length} نتيجة مراقبة وفحص` })}
-      ${kpiCard({ title: "المخاطر المفتوحة", ic: icon("alert", 18), big: openRisks.length, sub: `متوسط: ${riskCounts.MEDIUM} · عالٍ فأكثر: ${riskCounts.HIGH + riskCounts.CRITICAL}` })}
-      ${kpiCard({ title: "الملاحظات المفتوحة", ic: icon("chat", 18), big: openFindings.length, sub: `${highFindings} عالية الخطورة` })}
-      ${kpiCard({ title: "إنجاز التدريب", ic: icon("cap", 18), big: `${trainingPct}%`, sub: `${trDone} من ${trTotal} نشاطاً` })}
+      ${kpiCard({ title: "المخاطر المفتوحة", ic: icon("alert", 18), big: openRisks.length, delta: riskDelta, spark: riskSeries, sparkColor: roleColor("serious"), sub: `متوسط: ${riskCounts.MEDIUM} · عالٍ فأكثر: ${riskCounts.HIGH + riskCounts.CRITICAL}` })}
+      ${kpiCard({ title: "الملاحظات المفتوحة", ic: icon("chat", 18), big: openFindings.length, delta: findingDelta, spark: findingSeries, sparkColor: roleColor("serious"), sub: `${highFindings} عالية الخطورة` })}
+      ${kpiCard({ title: "إنجاز التدريب", ic: icon("cap", 18), big: `${trainingPct}%`, delta: trainingDelta, spark: trainingSeries, sparkColor: roleColor("good"), sub: `${trDone} من ${trTotal} نشاطاً` })}
     </div>
+
+    <!-- مقارنة المخاطر: الكامنة مقابل المتبقية -->
+    <section class="card">
+      <div class="row" style="justify-content:space-between"><h2>مقارنة المخاطر — الكامنة مقابل المتبقية</h2><span class="muted">أثر الضوابط الحالية</span></div>
+      ${s.risks.length ? groupedBarChart(
+        ["حرج", "عالٍ", "متوسط", "منخفض"],
+        { name: "كامنة (قبل الضوابط)", color: roleColor("serious"), values: [inh.CRITICAL, inh.HIGH, inh.MEDIUM, inh.LOW] },
+        { name: "متبقية (بعد الضوابط)", color: roleColor("good"), values: [riskCounts.CRITICAL, riskCounts.HIGH, riskCounts.MEDIUM, riskCounts.LOW] }
+      ) : '<p class="muted">لا توجد مخاطر مسجّلة بعد</p>'}
+    </section>
 
     <!-- نظرة عامة على المخاطر + المستجدات التنظيمية -->
     <div class="dash-grid ov-layout">

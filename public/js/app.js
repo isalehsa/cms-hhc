@@ -4,7 +4,7 @@ import * as db from "./db.js";
 import * as authApi from "./auth.js";
 import { canEdit, canApprove, isClusterOfficer } from "./auth.js";
 import { store, loadAll, reload } from "./state.js";
-import { $, esc, toast, modal, fld, txt, val, spinnerHtml, fmtDate, initTooltips } from "./ui.js";
+import { $, esc, toast, modal, fld, txt, val, spinnerHtml, fmtDate, initTooltips, lineIcon } from "./ui.js";
 import { runAutoSync } from "./sync.js";
 import { ROLES } from "./meta.js";
 import { renderDashboard } from "./views/dashboard.js";
@@ -25,57 +25,46 @@ import { settings, aiEnabled } from "./views/regulations.js";
 import { renderAdmin } from "./views/admin.js";
 import { DEFAULT_MODEL } from "./analyzer.js";
 
-// مجموعات القائمة الجانبية (قابلة للطي) — التبويبات المتشابهة معاً
-const NAV_GROUPS = [
-  { key: "records", label: "السجلات", icon: "🗃" },
-  { key: "control", label: "المراقبة والالتزام", icon: "🔍" },
-  { key: "planning", label: "التخطيط والتطوير", icon: "📅" },
-  { key: "clusters", label: "التجمعات الصحية", icon: "🏥" },
-  { key: "meetings", label: "الاجتماعات", icon: "🗓" },
-  { key: "general", label: "عام", icon: "📌" },
-];
-
 const VIEWS = {
-  // لوحة التحكم — عنصر مستقل أعلى القائمة (بلا مجموعة)
-  dashboard: { icon: "🏠", label: "لوحة التحكم", render: renderDashboard },
+  dashboard: { ic: "grid", label: "لوحة التحكم", render: renderDashboard },
 
   // السجلات
-  library: { icon: "📖", label: "مكتبة الالتزام", render: renderLibrary, group: "records" },
-  risks: { icon: "⚠️", label: "سجل المخاطر", render: renderRisks, group: "records" },
-  correspondence: { icon: "📨", label: "سجل المراسلات", render: renderCorrespondence, group: "records" },
-  disclosures: { icon: "🗂", label: "سجل الإفصاحات", render: renderDisclosures, group: "records" },
+  library: { ic: "book", label: "مكتبة الالتزام", render: renderLibrary, group: "records" },
+  risks: { ic: "alert", label: "سجل المخاطر", render: renderRisks, group: "records" },
+  correspondence: { ic: "mail", label: "سجل المراسلات", render: renderCorrespondence, group: "records" },
+  disclosures: { ic: "folder", label: "سجل الإفصاحات", render: renderDisclosures, group: "records" },
 
   // المراقبة والالتزام
-  monitoring: { icon: "🔍", label: "برنامج المراقبة", render: renderMonitoring, group: "control" },
-  assessments: { icon: "📋", label: "الفحص الذاتي", render: renderAssessments, group: "control" },
-  findings: { icon: "🛠", label: "الملاحظات والتصحيح", render: renderFindings, group: "control" },
+  monitoring: { ic: "search", label: "برنامج المراقبة", render: renderMonitoring, group: "control" },
+  assessments: { ic: "clipboard", label: "الفحص الذاتي", render: renderAssessments, group: "control" },
+  findings: { ic: "tool", label: "الملاحظات والتصحيح", render: renderFindings, group: "control" },
 
   // التخطيط والتطوير
-  plan: { icon: "📅", label: "الخطة السنوية", render: renderPlan, group: "planning" },
-  training: { icon: "🎓", label: "التدريب والتوعية", render: renderTraining, group: "planning" },
+  plan: { ic: "calendar", label: "الخطة السنوية", render: renderPlan, group: "planning" },
+  training: { ic: "cap", label: "التدريب والتوعية", render: renderTraining, group: "planning" },
 
   // التجمعات الصحية
-  maturity: { icon: "📊", label: "تقييم نضج التجمعات", render: renderMaturity, group: "clusters", clusterVisible: true },
+  maturity: { ic: "bars", label: "تقييم نضج التجمعات", render: renderMaturity, group: "clusters", clusterVisible: true },
 
   // الاجتماعات
-  weekly: { icon: "🗓", label: "الاجتماع الأسبوعي", render: renderWeekly, group: "meetings" },
-  deptmeetings: { icon: "🤝", label: "اجتماعات الأقسام", render: renderDeptMeetings, group: "meetings" },
-  mytasks: { icon: "✅", label: "مهامي", render: renderMyTasks, group: "meetings" },
+  weekly: { ic: "calcheck", label: "الاجتماع الأسبوعي", render: renderWeekly, group: "meetings" },
+  deptmeetings: { ic: "users", label: "اجتماعات الأقسام", render: renderDeptMeetings, group: "meetings" },
+  mytasks: { ic: "checksq", label: "مهامي", render: renderMyTasks, group: "meetings" },
 
   // عام
-  directory: { icon: "📇", label: "دليل التواصل", render: renderDirectory, group: "general" },
-  reports: { icon: "📊", label: "التقارير", render: renderReports, group: "general" },
-  admin: { icon: "⚙️", label: "الإدارة", render: renderAdmin, group: "general" },
+  directory: { ic: "contact", label: "دليل التواصل", render: renderDirectory, group: "general" },
+  reports: { ic: "pie", label: "التقارير", render: renderReports, group: "general" },
+  admin: { ic: "gear", label: "الإدارة", render: renderAdmin, group: "general" },
 
   // موسوعة الوثائق مدمجة داخل مكتبة الالتزام كتبويب فرعي — المسار يبقى للروابط القديمة
   regulations: {
-    icon: "📚", label: "الوثائق", hidden: true,
+    ic: "book", label: "الوثائق", hidden: true,
     render: (el, navFn, refresh, params = {}) => renderLibrary(el, navFn, refresh, { ...params, tab: "analysis" }),
   },
 };
 
-// المجموعات المفتوحة حالياً في القائمة الجانبية
-const openGroups = new Set();
+// ترتيب المجموعات في الشريط العلوي (فواصل بينها)
+const NAV_GROUP_ORDER = ["records", "control", "planning", "clusters", "meetings", "general"];
 
 let currentView = "dashboard";
 const main = $("#app");
@@ -101,18 +90,16 @@ function renderShell() {
   $("#sidebar").innerHTML = `
     <div class="brand">
       <span class="logo">⚖️</span>
-      <div><h1>إدارة الالتزام</h1><p class="subtitle">CMS · ISO 37301</p></div>
+      <div class="brand-txt"><h1>إدارة الالتزام</h1><p class="subtitle">CMS · ISO 37301</p></div>
     </div>
-    <nav id="side-nav">${renderNavItems(u)}</nav>
-    <div class="side-foot">
-      <div class="user-chip" title="${esc(u.email)}">👤 ${esc(u.name)}<br/><small>${esc(ROLES[u.role] || u.role)}</small></div>
-      <div class="row">
-        <button class="secondary small theme-toggle" id="btn-theme" title="تبديل الوضع الداكن/الفاتح">${themeIcon()}</button>
-        <button class="secondary small" id="btn-notif" title="عرض التنبيهات الواردة">🔔<span id="notif-count" class="notif-count hidden"></span></button>
-        ${canEdit(u) ? '<button class="secondary small" id="btn-settings" title="إعدادات التحليل الذكي (مفتاح Claude API والنموذج)">⚙</button>' : ""}
-        <button class="secondary small" id="btn-refresh" title="إعادة تحميل جميع البيانات من الخادم">↻</button>
-        <button class="secondary small" id="btn-logout" title="تسجيل الخروج من النظام">خروج</button>
-      </div>
+    <nav id="side-nav" class="tb-nav">${renderNavItems(u)}</nav>
+    <div class="tb-actions">
+      <button class="tb-action theme-toggle" id="btn-theme" title="تبديل الوضع الداكن/الفاتح">${themeIcon()}</button>
+      <button class="tb-action" id="btn-notif" title="عرض التنبيهات الواردة">🔔<span id="notif-count" class="notif-count hidden"></span></button>
+      ${canEdit(u) ? '<button class="tb-action" id="btn-settings" title="إعدادات التحليل الذكي (مفتاح Claude API والنموذج)">⚙</button>' : ""}
+      <button class="tb-action" id="btn-refresh" title="إعادة تحميل جميع البيانات من الخادم">↻</button>
+      <div class="user-chip" title="${esc(u.email)}"><span class="user-av">${esc((u.name || "?").trim().charAt(0))}</span><span class="user-meta"><strong>${esc(u.name)}</strong><small>${esc(ROLES[u.role] || u.role)}</small></span></div>
+      <button class="tb-action" id="btn-logout" title="تسجيل الخروج من النظام">⎋</button>
     </div>`;
 
   $("#btn-logout").onclick = () => authApi.logout();
@@ -135,7 +122,7 @@ function toggleTheme() {
   if (btn) btn.textContent = themeIcon();
 }
 
-// ---------- القائمة الجانبية بمجموعات قابلة للطي ----------
+// ---------- الشريط العلوي الأفقي بأيقونات خطّية ----------
 function visibleViews(u) {
   return Object.entries(VIEWS).filter(([k, v]) => {
     if (v.hidden) return false;
@@ -145,34 +132,24 @@ function visibleViews(u) {
   });
 }
 
-function navBtn(k, v, child = false) {
-  return `<button class="nav-item ${child ? "child" : ""} ${k === currentView ? "active" : ""}" data-view="${k}"><span>${v.icon}</span> ${v.label}</button>`;
+function navBtn(k, v) {
+  return `<button class="tb-item ${k === currentView ? "active" : ""}" data-view="${k}" title="${esc(v.label)}" aria-label="${esc(v.label)}">${lineIcon(v.ic, 20)}</button>`;
 }
 
 function renderNavItems(u) {
   const entries = visibleViews(u);
-  // مسؤول التزام التجمع: عناصر مسطّحة بلا مجموعات
   if (isClusterOfficer(u)) return entries.map(([k, v]) => navBtn(k, v)).join("");
 
   const byGroup = {};
-  let top = "";
+  let html = "";
   for (const [k, v] of entries) {
-    if (!v.group) { top += navBtn(k, v); continue; }
+    if (!v.group) { html += navBtn(k, v); continue; }
     (byGroup[v.group] ||= []).push([k, v]);
   }
-  let html = top;
-  for (const g of NAV_GROUPS) {
-    const items = byGroup[g.key];
+  for (const g of NAV_GROUP_ORDER) {
+    const items = byGroup[g];
     if (!items || !items.length) continue;
-    const hasActive = items.some(([k]) => k === currentView);
-    const isOpen = openGroups.has(g.key) || hasActive;
-    html += `<div class="nav-group ${isOpen ? "open" : ""}">
-      <button class="nav-group-head ${hasActive ? "has-active" : ""}" data-group="${g.key}">
-        <span class="nav-group-title"><span>${g.icon}</span> ${g.label}</span>
-        <span class="nav-caret">▾</span>
-      </button>
-      <div class="nav-group-items">${items.map(([k, v]) => navBtn(k, v, true)).join("")}</div>
-    </div>`;
+    html += `<span class="tb-sep"></span>` + items.map(([k, v]) => navBtn(k, v)).join("");
   }
   return html;
 }
@@ -181,11 +158,6 @@ function bindNav() {
   const navEl = document.getElementById("side-nav");
   if (!navEl) return;
   navEl.querySelectorAll("[data-view]").forEach((b) => (b.onclick = () => nav(b.dataset.view)));
-  navEl.querySelectorAll("[data-group]").forEach((b) => (b.onclick = () => {
-    const g = b.dataset.group;
-    if (openGroups.has(g)) openGroups.delete(g); else openGroups.add(g);
-    renderShellNav();
-  }));
 }
 
 function renderShellNav() {

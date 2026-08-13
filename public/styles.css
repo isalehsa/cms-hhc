@@ -64,7 +64,7 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-.layout { display: flex; min-height: 100vh; }
+.layout { display: flex; flex-direction: column; min-height: 100vh; }
 
 /* ---------- التمرير ---------- */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
@@ -77,27 +77,56 @@ body {
 }
 ::-webkit-scrollbar-thumb:hover { background-color: rgba(33, 214, 166, 0.5); }
 
-/* ---------- القائمة الجانبية ---------- */
+/* ---------- الشريط العلوي الأفقي ---------- */
 .sidebar {
-  width: 256px;
-  flex-shrink: 0;
+  width: 100%;
   position: sticky;
   top: 0;
-  height: 100vh;
+  z-index: 20;
   display: flex;
-  flex-direction: column;
-  padding: 20px 14px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.015));
+  flex-direction: row;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 22px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02));
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
-  border-left: 1px solid var(--border);
-  box-shadow: 8px 0 40px rgba(0, 0, 0, 0.28);
+  border-bottom: 1px solid var(--border);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
 }
 
 .auth-mode .sidebar { display: none; }
 .auth-mode main { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
 
-.brand { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; }
+.brand { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.brand-txt { line-height: 1.1; }
+
+/* شريط التنقّل الأفقي بأيقونات خطّية */
+.tb-nav {
+  flex: 1; display: flex; align-items: center; justify-content: center; gap: 3px;
+  overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; min-width: 0;
+}
+.tb-nav::-webkit-scrollbar { display: none; }
+.tb-item {
+  flex-shrink: 0; width: 42px; height: 42px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: transparent; border: none; border-radius: 12px; color: var(--muted);
+  cursor: pointer; box-shadow: none;
+  transition: background 0.16s, color 0.16s, transform 0.16s, box-shadow 0.16s;
+}
+.tb-item:hover { background: rgba(33, 214, 166, 0.12); color: var(--text); transform: translateY(-1px); }
+.tb-item.active { background: var(--primary-grad); color: #06231b; box-shadow: 0 6px 18px rgba(23, 194, 153, 0.4); }
+.tb-sep { width: 1px; height: 22px; background: var(--border); margin: 0 5px; flex-shrink: 0; }
+
+.tb-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.tb-action {
+  width: 38px; height: 38px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 11px;
+  color: var(--text); font-size: 1rem; box-shadow: none; cursor: pointer;
+  transition: background 0.15s, transform 0.15s;
+}
+.tb-action:hover { background: var(--panel-hover); transform: translateY(-1px); }
 .logo {
   font-size: 1.6rem;
   width: 46px; height: 46px;
@@ -148,17 +177,25 @@ body {
 .nav-group.open .nav-group-items { display: flex; }
 .nav-item.child { padding: 8px 12px; font-size: 0.9rem; }
 
-.side-foot { border-top: 1px solid var(--border-soft); padding-top: 14px; display: flex; flex-direction: column; gap: 10px; }
-.copyright { text-align: center; font-size: 0.72rem; color: var(--muted); opacity: 0.7; padding-top: 6px; }
 .user-chip {
-  background: rgba(33, 214, 166, 0.1);
-  border: 1px solid rgba(33, 214, 166, 0.18);
-  color: var(--primary-dark);
-  border-radius: var(--radius-sm); padding: 8px 12px; font-size: 0.85rem; line-height: 1.5;
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 4px 12px 4px 5px;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 30px; color: var(--text);
 }
+.user-av {
+  width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+  background: var(--primary-grad); color: #06231b;
+  display: inline-flex; align-items: center; justify-content: center; font-weight: 800; font-size: 0.9rem;
+}
+.user-meta { display: flex; flex-direction: column; line-height: 1.15; }
+.user-meta strong { font-size: 0.82rem; }
+.user-meta small { font-size: 0.7rem; color: var(--muted); }
 
 /* ---------- المحتوى ---------- */
-main { flex: 1; padding: 28px 32px; max-width: 1400px; }
+main { flex: 1; padding: 24px 30px; max-width: 1560px; width: 100%; margin: 0 auto; }
+.app-foot { text-align: center; padding: 14px; color: var(--muted); font-size: 0.72rem; opacity: 0.7; }
+.auth-mode .app-foot { display: none; }
 
 .page-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
 .page-head h1 { margin: 0; font-size: 1.4rem; letter-spacing: -0.01em; }
@@ -617,6 +654,13 @@ code { background: rgba(255, 255, 255, 0.08); border-radius: 6px; padding: 2px 8
 .kpi-tag.serious { background: rgba(240, 138, 93, 0.18); color: #f4ab86; }
 .kpi-tag.critical { background: rgba(239, 77, 77, 0.18); color: #f39191; }
 .kpi-delta { margin-top: 6px; font-size: 0.78rem; color: var(--muted); }
+.kpi-valrow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.kpi-chip { font-size: 0.74rem; font-weight: 700; padding: 2px 8px; border-radius: 10px; white-space: nowrap; }
+.kpi-chip.good { background: rgba(34, 197, 94, 0.16); color: #7ee6a3; }
+.kpi-chip.bad { background: rgba(239, 77, 77, 0.16); color: #f39191; }
+.kpi-spark { margin-top: 12px; margin-bottom: -4px; }
+[data-theme="light"] .kpi-chip.good { color: #0a7a2f; }
+[data-theme="light"] .kpi-chip.bad { color: #b02a2a; }
 
 /* ---------- شبكات لوحة التحكم ---------- */
 .dash-grid { display: grid; gap: 18px; margin-bottom: 18px; }
@@ -768,10 +812,11 @@ h2 .ic { vertical-align: -4px; }
 
 /* ---------- الجوال ---------- */
 @media (max-width: 800px) {
-  .layout { flex-direction: column; }
-  .sidebar { width: 100%; height: auto; position: static; }
-  #side-nav { flex-direction: row; flex-wrap: wrap; }
-  main { padding: 16px; }
+  .sidebar { padding: 8px 12px; gap: 8px; }
+  .brand-txt { display: none; }
+  .user-meta { display: none; }
+  .tb-nav { justify-content: flex-start; }
+  main { padding: 14px; }
 }
 
 /* ---------- علامة مائية متحركة عامة: درع وحلقات دوّارة خلف كل الصفحات (تُموَّه عبر زجاجية البطاقات) ---------- */
