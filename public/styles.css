@@ -1,4 +1,13 @@
-/* نظام إدارة الالتزام — تصميم زجاجي داكن فاخر (Dark Emerald Glassmorphism) — عربي RTL */
+/* نظام إدارة الالتزام — تصميم زجاجي فاخر (داكن/فاتح) — عربي RTL */
+/* الخط الأساسي: SF Mada */
+@font-face {
+  font-family: "SF Mada";
+  src: url("fonts/sf-mada-bold.ttf") format("truetype");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   --bg-1: #0b1c17;
   --bg-2: #06110d;
@@ -34,15 +43,15 @@
 
 * { box-sizing: border-box; }
 
-/* قاعدة داكنة تحت كل شيء — تمنع ظهور أي بياض على الصفحات الطويلة */
-html { background: #06110d; }
+/* قاعدة تحت كل شيء — تتبع السمة (داكن/فاتح) */
+html { background: var(--bg-2); }
 
 ::selection { background: rgba(33, 214, 166, 0.28); }
 
 body {
   margin: 0;
-  /* الخط: Scala أولاً إن كان مثبتاً محلياً، وإلا البديل الويب IBM Plex Sans Arabic */
-  font-family: "Scala", "Scala Sans", "ScalaSans", "IBM Plex Sans Arabic", "Segoe UI", Tahoma, sans-serif;
+  /* الخط الأساسي SF Mada ثم بدائل عربية */
+  font-family: "SF Mada", "IBM Plex Sans Arabic", "Segoe UI", Tahoma, sans-serif;
   background:
     radial-gradient(1200px 720px at 92% -12%, rgba(33, 214, 166, 0.18) 0%, transparent 55%),
     radial-gradient(1000px 820px at -12% 112%, rgba(40, 120, 214, 0.13) 0%, transparent 55%),
@@ -658,6 +667,98 @@ h2 .ic { vertical-align: -4px; }
 
 /* فاصل قسم */
 .section-title { margin: 24px 0 12px; font-size: 1.15rem; padding-right: 12px; border-right: 4px solid var(--primary); }
+
+/* تقليل الحركة لمن يفضّل ذلك */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+
+/* ==================================================================
+   الوضع الفاتح (Light Mode) — يُفعَّل عبر <html data-theme="light">
+   يعيد تعريف متغيّرات اللوحة + تصحيح الأسطح المكتوبة مباشرةً للداكن
+   ================================================================== */
+:root[data-theme="light"] {
+  --bg-1: #eaf3ef;
+  --bg-2: #e7eef7;
+  --surface: linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.58));
+  --surface-strong: rgba(255, 255, 255, 0.9);
+  --surface-solid: #ffffff;
+  --panel: rgba(255, 255, 255, 0.8);
+  --panel-hover: #ffffff;
+  --border: rgba(255, 255, 255, 0.7);
+  --border-soft: rgba(24, 66, 54, 0.12);
+  --text: #13241d;
+  --muted: #566d64;
+  --primary: #14705c;
+  --primary-dark: #0d5243;
+  --primary-grad: linear-gradient(135deg, #1a8a70, #0d5243);
+  --accent: #2a78d6;
+  --danger: #c0402e;
+  --danger-grad: linear-gradient(135deg, #cc5340, #99301f);
+  --shadow: 0 12px 38px rgba(15, 55, 45, 0.12);
+  --shadow-soft: 0 5px 18px rgba(15, 55, 45, 0.08);
+  --glass-blur: blur(20px) saturate(1.4);
+  --st-good: #0ca30c;
+  --st-warning: #eaa000;
+  --st-serious: #e07a45;
+  --st-critical: #d03b3b;
+  --st-neutral: #8a8578;
+}
+/* أسطح مكتوبة مباشرةً بالأبيض/الداكن — تصحيحها للوضع الفاتح */
+[data-theme="light"] .sidebar { background: linear-gradient(175deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.46)); box-shadow: 8px 0 40px rgba(15, 55, 45, 0.06); }
+[data-theme="light"] .nav-item.active { color: #fff; }
+[data-theme="light"] button, [data-theme="light"] .subtab.active { color: #fff; }
+[data-theme="light"] .nav-group-head:hover { background: rgba(20, 112, 92, 0.08); }
+[data-theme="light"] .card.sub { background: rgba(255, 255, 255, 0.5); border-color: rgba(24, 66, 54, 0.1); }
+[data-theme="light"] button.secondary { background: rgba(20, 112, 92, 0.1); border-color: rgba(20, 112, 92, 0.18); color: var(--primary-dark); }
+[data-theme="light"] button.secondary:hover { background: rgba(20, 112, 92, 0.18); }
+[data-theme="light"] th, [data-theme="light"] td { border-bottom-color: rgba(24, 66, 54, 0.1); }
+[data-theme="light"] th { background: rgba(20, 112, 92, 0.08); }
+[data-theme="light"] .lvl { background: rgba(120, 130, 125, 0.12); border-color: rgba(120, 130, 125, 0.2); }
+[data-theme="light"] .subtabs { background: rgba(20, 112, 92, 0.09); border-color: rgba(255, 255, 255, 0.6); }
+[data-theme="light"] .subtab:hover { background: rgba(20, 112, 92, 0.14); }
+[data-theme="light"] .scale-note { background: rgba(20, 112, 92, 0.06); }
+[data-theme="light"] .icon-btn { background: rgba(20, 112, 92, 0.1); border-color: rgba(20, 112, 92, 0.16); }
+[data-theme="light"] .dist-bar,
+[data-theme="light"] .prog-bar,
+[data-theme="light"] .hbar-track,
+[data-theme="light"] .kpi-tag { background: rgba(120, 130, 125, 0.16); }
+[data-theme="light"] .donut-track { stroke: rgba(120, 130, 125, 0.2); }
+[data-theme="light"] .modal { background: rgba(255, 255, 255, 0.95); }
+[data-theme="light"] .notif-item { background: rgba(120, 130, 125, 0.08); }
+[data-theme="light"] .notif-item.unread { background: rgba(42, 120, 214, 0.1); }
+[data-theme="light"] .reg-list-item { border-bottom-color: rgba(24, 66, 54, 0.1); }
+[data-theme="light"] .reg-list-item:hover,
+[data-theme="light"] .links-panel td,
+[data-theme="light"] .upd-item:hover,
+[data-theme="light"] .task-item:hover,
+[data-theme="light"] .link-list li:hover,
+[data-theme="light"] .link-item:hover { background: rgba(20, 112, 92, 0.06); }
+[data-theme="light"] .cal-cell { background: rgba(255, 255, 255, 0.55); border-color: rgba(24, 66, 54, 0.08); }
+[data-theme="light"] code { background: rgba(120, 130, 125, 0.14); }
+[data-theme="light"] .hero-art .float { background: rgba(255, 255, 255, 0.78); border-color: rgba(24, 66, 54, 0.1); box-shadow: 0 8px 18px rgba(15, 55, 45, 0.12); }
+[data-theme="light"] .qa { background: rgba(255, 255, 255, 0.55); border-color: rgba(24, 66, 54, 0.1); }
+[data-theme="light"] .qa:hover { background: rgba(20, 112, 92, 0.1); }
+[data-theme="light"] .kpi-ic, [data-theme="light"] .task-ic, [data-theme="light"] .qa-ic { background: rgba(20, 112, 92, 0.12); }
+[data-theme="light"] .task-item.overdue .task-ic { background: rgba(208, 59, 59, 0.14); color: #b02a2a; }
+[data-theme="light"] .upd-ic { background: rgba(42, 120, 214, 0.12); color: #1d5aa8; }
+[data-theme="light"] .hm-cell { color: #13241d; }
+[data-theme="light"] .hm-good { background: rgba(12, 163, 12, 0.28); }
+[data-theme="light"] .hm-warning { background: rgba(250, 178, 25, 0.34); }
+[data-theme="light"] .hm-serious { background: rgba(236, 131, 90, 0.4); }
+[data-theme="light"] .hm-critical { background: rgba(208, 59, 59, 0.4); }
+[data-theme="light"] .chip { color: #1d5aa8; background: rgba(42, 120, 214, 0.12); border-color: rgba(42, 120, 214, 0.24); }
+[data-theme="light"] .chip-auto { color: #5f3ab0; background: rgba(122, 78, 214, 0.12); border-color: rgba(122, 78, 214, 0.24); }
+[data-theme="light"] .chip-penalty { color: #8a5000; background: rgba(250, 178, 25, 0.16); }
+[data-theme="light"] .penalty-chip { color: #8a5000; }
+[data-theme="light"] .kpi-tag.good { color: #0a7a2f; background: rgba(12, 163, 12, 0.14); }
+[data-theme="light"] .kpi-tag.warning { color: #8a5a00; background: rgba(250, 178, 25, 0.16); }
+[data-theme="light"] .kpi-tag.serious { color: #a5502a; background: rgba(236, 131, 90, 0.16); }
+[data-theme="light"] .kpi-tag.critical { color: #b02a2a; background: rgba(208, 59, 59, 0.14); }
+[data-theme="light"] input[type="date"]::-webkit-calendar-picker-indicator { filter: none; }
+
+/* زر تبديل السمة */
+.theme-toggle { display: inline-flex; align-items: center; justify-content: center; }
 
 /* تقليل الحركة لمن يفضّل ذلك */
 @media (prefers-reduced-motion: reduce) {

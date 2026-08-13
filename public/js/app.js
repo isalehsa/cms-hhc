@@ -107,6 +107,7 @@ function renderShell() {
     <div class="side-foot">
       <div class="user-chip" title="${esc(u.email)}">👤 ${esc(u.name)}<br/><small>${esc(ROLES[u.role] || u.role)}</small></div>
       <div class="row">
+        <button class="secondary small theme-toggle" id="btn-theme" title="تبديل الوضع الداكن/الفاتح">${themeIcon()}</button>
         <button class="secondary small" id="btn-notif" title="عرض التنبيهات الواردة">🔔<span id="notif-count" class="notif-count hidden"></span></button>
         ${canEdit(u) ? '<button class="secondary small" id="btn-settings" title="إعدادات التحليل الذكي (مفتاح Claude API والنموذج)">⚙</button>' : ""}
         <button class="secondary small" id="btn-refresh" title="إعادة تحميل جميع البيانات من الخادم">↻</button>
@@ -118,8 +119,20 @@ function renderShell() {
   $("#btn-refresh").onclick = async () => { toast("جاري التحديث…"); await refreshAll(); toast("حُدّثت البيانات"); };
   $("#btn-settings")?.addEventListener("click", openSettings);
   $("#btn-notif").onclick = openNotifications;
+  $("#btn-theme").onclick = toggleTheme;
   renderShellNav();
   updateNotifBadge();
+}
+
+// ---------- السمة (داكن/فاتح) ----------
+const currentTheme = () => (document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark");
+const themeIcon = () => (currentTheme() === "light" ? "☀️" : "🌙");
+function toggleTheme() {
+  const next = currentTheme() === "light" ? "dark" : "light";
+  document.documentElement.setAttribute("data-theme", next);
+  try { localStorage.setItem("cms-theme", next); } catch (e) { /* تجاهل */ }
+  const btn = $("#btn-theme");
+  if (btn) btn.textContent = themeIcon();
 }
 
 // ---------- القائمة الجانبية بمجموعات قابلة للطي ----------
