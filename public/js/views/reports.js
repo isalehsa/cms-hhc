@@ -683,21 +683,6 @@ async function exportPptx(key) {
     slide.addText(label, { x, y: y + size * 0.66, w: size, h: 0.32, fontSize: 11.5, bold: true, color: INK, align: "center", ...AR });
     if (sub) slide.addText(sub, { x, y: y + size * 0.66 + 0.3, w: size, h: 0.26, fontSize: 9, color: MUTED, align: "center", ...AR });
   };
-  // شريط توزيع متدرّج = مستطيلات ملوّنة متتابعة + وسيلة إيضاح (كلها أشكال أصلية)
-  const distributionBar = (slide, x, y, w, segs) => {
-    const total = segs.reduce((s, dd) => s + dd.count, 0) || 1;
-    const barH = 0.55;
-    slide.addShape(pptx.ShapeType.roundRect, { x, y, w, h: barH, rectRadius: barH / 2, fill: { color: "E6ECEA" } });
-    let cx = x;
-    segs.forEach((dd) => { if (dd.count <= 0) return; const sw = (dd.count / total) * w; slide.addShape(pptx.ShapeType.rect, { x: cx, y, w: sw, h: barH, fill: { color: dd.color } }); cx += sw; });
-    const gap = w / segs.length;
-    segs.forEach((dd, i) => {
-      const lx = x + i * gap;
-      slide.addShape(pptx.ShapeType.roundRect, { x: lx, y: y + barH + 0.3, w: 0.24, h: 0.24, rectRadius: 0.05, fill: { color: dd.color } });
-      slide.addText(`${dd.label} · ${dd.count}`, { x: lx + 0.32, y: y + barH + 0.24, w: gap - 0.4, h: 0.36, fontSize: 13, color: INK, align: "left", ...AR });
-    });
-  };
-
   // شريحة المؤشرات التنفيذية (لغير تقرير النضج — النضج له مؤشراته الربعية)
   if (key !== "maturity") {
     const k = kpis();
@@ -779,13 +764,18 @@ async function exportPptx(key) {
       numTile(sK, cardX(2), cy, iw, items.length, TEAL, "تجمعات في النتائج", "");
       numTile(sK, cardX(3), cy, iw, reviewed.length, "0CA30C", "تقييمات معتمدة", `${items.length - reviewed.length} بانتظار المراجعة`);
 
-      // 2) توزيع التجمعات حسب مستوى النضج — شريط متدرّج من مستطيلات أصلية + وسيلة إيضاح
+      // 2) توزيع التجمعات حسب مستوى النضج — مخطط دائري (دونات) أصلي قابل للتعديل
       const sd = pptx.addSlide(); header(sd, "توزيع التجمعات حسب مستوى النضج");
       const distSegs = [
         { label: "مبتدئ", count: lc.critical, color: matHex(12) }, { label: "نامٍ", count: lc.serious, color: matHex(38) },
         { label: "متقدم", count: lc.warning, color: matHex(63) }, { label: "رائد", count: lc.good, color: matHex(90) },
       ];
-      if (distSegs.some((x) => x.count > 0)) distributionBar(sd, 0.7, 2.9, W - 1.4, distSegs);
+      if (distSegs.some((x) => x.count > 0))
+        sd.addChart(pptx.ChartType.doughnut, [{ name: "المستوى", labels: distSegs.map((x) => x.label), values: distSegs.map((x) => x.count) }], {
+          x: 1.0, y: 1.5, w: W - 2.0, h: 5.0, chartColors: distSegs.map((x) => x.color), holeSize: 58,
+          showLegend: true, legendPos: "r", legendFontSize: 13, legendFontFace: "Arial",
+          showValue: true, dataLabelColor: "FFFFFF", dataLabelFontSize: 13, dataLabelFontBold: true, showTitle: false, showPercent: false,
+        });
       else sd.addText("لا توجد بيانات", { x: 0.6, y: 3, w: W - 1.2, h: 1, fontSize: 15, color: MUTED, align: "center", ...AR });
 
       // 3) مقارنة الموجات — بطاقة لكل موجة بحلقتين نسبيتين (ذاتي / بعد المراجعة)
