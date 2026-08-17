@@ -850,6 +850,29 @@ async function exportPptx(key) {
         }
       }
 
+      // 3.6) فجوات النضج حسب المحاور — أشرطة أفقية أصلية (الأضعف أولاً)
+      const gDomNames = MATURITY_MODEL.map((d) => d.name);
+      const domGaps = gDomNames.map((dn) => {
+        const scores = items.map((m) => { const dom = (m.domains || []).find((d) => d.name === dn); return dom ? domPct(dom, m.status === "REVIEWED") : null; }).filter((x) => x != null);
+        const av = scores.length ? Math.round(scores.reduce((s, x) => s + x, 0) / scores.length) : 0;
+        return { name: dn, avg: av, n: scores.length };
+      }).sort((a, b) => a.avg - b.avg);
+      if (domGaps.length) {
+        const s = pptx.addSlide(); header(s, "فجوات النضج حسب المحاور");
+        const weak = domGaps.filter((d) => d.n).slice(0, 3);
+        s.addText(weak.length ? `أبرز فجوات النضج في: ${weak.map((d) => `«${d.name}» (${d.avg}%)`).join("  ·  ")} — أولوية التطوير` : "لا توجد بيانات كافية",
+          { x: 0.4, y: 1.05, w: W - 0.8, h: 0.5, fontSize: 12, color: MUTED, align: "right", ...AR });
+        const bx = 0.4, labW = 3.2, numW = 0.8, trackX = bx + numW + 0.1, trackW = W - 0.8 - labW - numW - 0.3;
+        const rowH = Math.min(0.62, (5.4) / domGaps.length), y0 = 1.7;
+        domGaps.forEach((d, i) => {
+          const y = y0 + i * rowH, cy = y + (rowH - 0.34) / 2, barH = 0.24, byy = y + (rowH - barH) / 2, col = matHex(d.avg);
+          s.addText(d.name, { x: W - 0.4 - labW, y, w: labW, h: rowH, fontSize: 11, color: INK, align: "right", valign: "middle", ...AR });
+          s.addShape(pptx.ShapeType.roundRect, { x: trackX, y: byy, w: trackW, h: barH, rectRadius: barH / 2, fill: { color: "E9EEEC" } });
+          if (d.avg > 0) s.addShape(pptx.ShapeType.roundRect, { x: trackX + trackW - Math.max(barH, trackW * d.avg / 100), y: byy, w: Math.max(barH, trackW * d.avg / 100), h: barH, rectRadius: barH / 2, fill: { color: col } });
+          s.addText(d.avg + "%", { x: bx, y, w: numW, h: rowH, fontSize: 11, bold: true, color: col, align: "center", valign: "middle", fontFace: "Arial" });
+        });
+      }
+
       // 4) مصفوفة النضج حسب المحاور (جدول ملوّن يطابق الشاشة)
       const domNames = MATURITY_MODEL.map((d) => d.name);
       const domShort = domNames.map((n) => (n.length > 15 ? n.slice(0, 14) + "…" : n));
