@@ -225,6 +225,33 @@ function renderResults(rows) {
   </div>`;
 
   const domNames = MATURITY_MODEL.map((d) => d.name);
+
+  // فجوات النضج حسب المحاور: متوسط كل محور عبر التجمعات، الأضعف أولاً
+  const domGaps = domNames.map((dn) => {
+    const scores = items.map((m) => {
+      const dom = (m.domains || []).find((d) => d.name === dn);
+      return dom ? domainPct(dom, isReviewed(m)) : null;
+    }).filter((x) => x != null);
+    const av = scores.length ? Math.round(scores.reduce((s, x) => s + x, 0) / scores.length) : 0;
+    return { name: dn, avg: av, gap: 100 - av, n: scores.length };
+  }).sort((a, b) => a.avg - b.avg);
+  const weakest = domGaps.filter((d) => d.n).slice(0, 3);
+  const gapBars = domGaps.map((d) => {
+    const c = maturityColor(d.avg);
+    return `<div class="hbar-row" data-tip="${esc(d.name)} — متوسط النضج ${d.avg}٪ · الفجوة ${d.gap}٪ (${d.n} تجمع)">
+      <span class="hbar-lbl" style="min-width:170px">${esc(d.name)}</span>
+      <span class="hbar-track"><span class="hbar-fill" style="width:${Math.max(3, d.avg)}%;background:${c}"></span></span>
+      <span class="hbar-num" style="color:${c}">${d.avg}٪</span>
+    </div>`;
+  }).join("");
+  const gapsCard = items.length ? `
+    <section class="card">
+      <h2>🔎 فجوات النضج حسب المحاور</h2>
+      <p class="muted" style="margin-top:0">متوسط نضج كل محور عبر التجمعات المعروضة — الأضعف أولاً (الأقل نضجاً = الأكبر فجوةً)</p>
+      ${weakest.length ? `<div class="scale-note">أبرز فجوات النضج في: ${weakest.map((d) => `<strong style="color:${maturityColor(d.avg)}">«${esc(d.name)}» (${d.avg}٪)</strong>`).join(" · ")} — تستحق أولوية التطوير</div>` : ""}
+      <div class="hbars">${gapBars}</div>
+    </section>` : "";
+
   const rowsHtml = items
     .sort((a, b) => finalPct(b) - finalPct(a))
     .map((m) => {
@@ -256,6 +283,7 @@ function renderResults(rows) {
       <div style="display:flex;height:16px;border-radius:8px;overflow:hidden;margin:6px 0">${distSeg}</div>
       <div class="row" style="gap:8px;flex-wrap:wrap;margin-bottom:6px">${distLegend}</div>
     </section>
+    ${gapsCard}
     <section class="card">
       <h2>مصفوفة النضج حسب المحاور (أحدث تقييم لكل تجمع)</h2>
       <p class="muted" style="margin-top:0">«تقييم التجمع» = التقييم الذاتي · «بعد المراجعة» = النتيجة المعتمدة من إدارة الالتزام</p>
