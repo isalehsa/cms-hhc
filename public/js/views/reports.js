@@ -852,15 +852,16 @@ async function exportPptx(key) {
         const weak = domGaps.filter((d) => d.n).slice(0, 3);
         s.addText(weak.length ? `أبرز فجوات النضج في: ${weak.map((d) => `«${d.name}» (${d.avg}%)`).join("  ·  ")} — أولوية التطوير` : "لا توجد بيانات كافية",
           { x: 0.4, y: 1.05, w: W - 0.8, h: 0.5, fontSize: 12, color: MUTED, align: "right", ...AR });
-        // أشرطة أفقية مستديرة الحواف (تصميم أنيق) — عناصر أصلية قابلة للتعديل، كل شريط بلون مستواه
+        // أشرطة أفقية مستديرة الحواف بإطار (تصميم أنيق) — عناصر أصلية قابلة للتعديل، كل شريط بلون مستواه
+        const darken = (hex, amt) => { const n = (i) => parseInt(hex.substr(i, 2), 16); const mm = (x) => Math.round(x * (1 - amt)).toString(16).padStart(2, "0").toUpperCase(); return mm(n(0)) + mm(n(2)) + mm(n(4)); };
         const bx = 0.4, labW = 3.2, numW = 0.8, trackX = bx + numW + 0.1, trackW = W - 0.8 - labW - numW - 0.3;
         const rowH = Math.min(0.62, 5.4 / domGaps.length), y0 = 1.7;
         domGaps.forEach((d, i) => {
           const y = y0 + i * rowH, barH = 0.26, byy = y + (rowH - barH) / 2, col = matHex(d.avg);
           s.addText(d.name, { x: W - 0.4 - labW, y, w: labW, h: rowH, fontSize: 11, color: INK, align: "right", valign: "middle", ...AR });
-          s.addShape(pptx.ShapeType.roundRect, { x: trackX, y: byy, w: trackW, h: barH, rectRadius: barH / 2, fill: { color: "E9EEEC" } });
-          if (d.avg > 0) { const fw = Math.max(barH, trackW * d.avg / 100); s.addShape(pptx.ShapeType.roundRect, { x: trackX + trackW - fw, y: byy, w: fw, h: barH, rectRadius: barH / 2, fill: { color: col } }); }
-          s.addText(d.avg + "%", { x: bx, y, w: numW, h: rowH, fontSize: 11, bold: true, color: col, align: "center", valign: "middle", fontFace: "Arial" });
+          s.addShape(pptx.ShapeType.roundRect, { x: trackX, y: byy, w: trackW, h: barH, rectRadius: barH / 2, fill: { color: "EEF2F0" }, line: { color: "DCE3E0", width: 0.75 } });
+          if (d.avg > 0) { const fw = Math.max(barH, trackW * d.avg / 100); s.addShape(pptx.ShapeType.roundRect, { x: trackX + trackW - fw, y: byy, w: fw, h: barH, rectRadius: barH / 2, fill: { color: col }, line: { color: darken(col, 0.3), width: 1.25 } }); }
+          s.addText(d.avg + "%", { x: bx, y, w: numW, h: rowH, fontSize: 11, bold: true, color: darken(col, 0.15), align: "center", valign: "middle", fontFace: "Arial" });
         });
       }
 
