@@ -861,15 +861,13 @@ async function exportPptx(key) {
         const s = pptx.addSlide(); header(s, "فجوات النضج حسب المحاور");
         const weak = domGaps.filter((d) => d.n).slice(0, 3);
         s.addText(weak.length ? `أبرز فجوات النضج في: ${weak.map((d) => `«${d.name}» (${d.avg}%)`).join("  ·  ")} — أولوية التطوير` : "لا توجد بيانات كافية",
-          { x: 0.4, y: 1.05, w: W - 0.8, h: 0.5, fontSize: 12, color: MUTED, align: "right", ...AR });
-        const bx = 0.4, labW = 3.2, numW = 0.8, trackX = bx + numW + 0.1, trackW = W - 0.8 - labW - numW - 0.3;
-        const rowH = Math.min(0.62, (5.4) / domGaps.length), y0 = 1.7;
-        domGaps.forEach((d, i) => {
-          const y = y0 + i * rowH, cy = y + (rowH - 0.34) / 2, barH = 0.24, byy = y + (rowH - barH) / 2, col = matHex(d.avg);
-          s.addText(d.name, { x: W - 0.4 - labW, y, w: labW, h: rowH, fontSize: 11, color: INK, align: "right", valign: "middle", ...AR });
-          s.addShape(pptx.ShapeType.roundRect, { x: trackX, y: byy, w: trackW, h: barH, rectRadius: barH / 2, fill: { color: "E9EEEC" } });
-          if (d.avg > 0) s.addShape(pptx.ShapeType.roundRect, { x: trackX + trackW - Math.max(barH, trackW * d.avg / 100), y: byy, w: Math.max(barH, trackW * d.avg / 100), h: barH, rectRadius: barH / 2, fill: { color: col } });
-          s.addText(d.avg + "%", { x: bx, y, w: numW, h: rowH, fontSize: 11, bold: true, color: col, align: "center", valign: "middle", fontFace: "Arial" });
+          { x: 0.4, y: 1.0, w: W - 0.8, h: 0.5, fontSize: 12, color: MUTED, align: "right", ...AR });
+        // مخطط أعمدة أفقي حقيقي (قابل للتعديل) — كل عمود ملوّن بمستوى نضجه
+        s.addChart(pptx.ChartType.bar, [{ name: "متوسط النضج", labels: domGaps.map((d) => d.name), values: domGaps.map((d) => d.avg) }], {
+          x: 0.5, y: 1.6, w: W - 1.0, h: 5.2, barDir: "bar", chartColors: domGaps.map((d) => matHex(d.avg)),
+          showValue: true, dataLabelColor: INK, dataLabelFontSize: 11, dataLabelFontBold: true, dataLabelPosition: "outEnd", dataLabelFormatCode: '0"%"',
+          showLegend: false, showTitle: false, valAxisHidden: true, valAxisMaxVal: 100, valGridLine: { style: "none" },
+          catAxisLabelColor: INK, catAxisLabelFontSize: 10.5, catAxisLabelFontFace: "Arial", catAxisLineShow: false, barGapWidthPct: 45,
         });
       }
 
