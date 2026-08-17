@@ -133,7 +133,7 @@ function visibleViews(u) {
 }
 
 function navBtn(k, v) {
-  return `<button class="tb-item ${k === currentView ? "active" : ""}" data-view="${k}" title="${esc(v.label)}" aria-label="${esc(v.label)}">${lineIcon(v.ic, 36)}</button>`;
+  return `<button class="tb-item ${k === currentView ? "active" : ""}" data-view="${k}" title="${esc(v.label)}" aria-label="${esc(v.label)}">${lineIcon(v.ic, 46)}</button>`;
 }
 
 function renderNavItems(u) {
