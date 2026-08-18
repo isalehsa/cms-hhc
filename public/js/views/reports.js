@@ -528,7 +528,8 @@ function viewReport(key) {
     <title>${esc(REPORTS.find((r) => r.key === key).title)}</title>
     <style>
       *{box-sizing:border-box}
-      body{font-family:"IBM Plex Sans Arabic","Segoe UI",Tahoma,sans-serif;margin:0;padding:28px 32px;color:#1a2c27;background:#f6f9f8;line-height:1.6}
+      @font-face{font-family:"SF Mada";src:url("${location.origin}/fonts/sf-mada-bold.ttf") format("truetype");font-weight:100 900;font-display:swap}
+      body{font-family:"SF Mada","IBM Plex Sans Arabic","Segoe UI",Tahoma,sans-serif;margin:0;padding:28px 32px;color:#1a2c27;background:#f6f9f8;line-height:1.6}
       h1{font-size:1.5rem;margin:0}
       h2{font-size:1.1rem;margin:24px 0 10px;color:#0d5243;border-right:4px solid #14705c;padding-right:10px}
       h3{font-size:.95rem;margin:0 0 8px;color:#0d5243}
@@ -615,7 +616,7 @@ async function exportExcel(key) {
 async function exportWord(key) {
   const meta = REPORTS.find((r) => r.key === key);
   const html = `<html xmlns:w="urn:schemas-microsoft-com:office:word" lang="ar" dir="rtl"><head><meta charset="utf-8"/>
-    <style>body{font-family:Arial;direction:rtl}table{border-collapse:collapse;width:100%}th,td{border:1px solid #999;padding:5px;text-align:right}th{background:#eef3f0}h2{color:#1d5c4d}</style>
+    <style>@font-face{font-family:"SF Mada";src:url("${location.origin}/fonts/sf-mada-bold.ttf") format("truetype")}body{font-family:"SF Mada",Arial;direction:rtl}table{border-collapse:collapse;width:100%}th,td{border:1px solid #999;padding:5px;text-align:right}th{background:#eef3f0}h2{color:#1d5c4d}</style>
     </head><body>${reportHtml(key)}</body></html>`;
   downloadBlob(new Blob(["﻿" + html], { type: "application/msword" }), `${meta.title}.doc`);
   logReport(key);
@@ -632,7 +633,7 @@ async function exportPptx(key) {
   pptx.rtlMode = true;
   pptx.author = "نظام إدارة الالتزام";
   const W = 13.333, GREEN = "0D5243", TEAL = "14705C", INK = "1A2C27", MUTED = "5D6C66", BG = "F6F9F8";
-  const AR = { fontFace: "Arial", rtlMode: true };
+  const AR = { fontFace: "SF Mada", rtlMode: true }; // خط النظام — يتوفّر بديل تلقائي إن لم يكن مثبتاً
 
   // شريحة العنوان
   const s1 = pptx.addSlide();
