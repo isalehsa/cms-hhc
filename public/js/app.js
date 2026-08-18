@@ -4,7 +4,7 @@ import * as db from "./db.js";
 import * as authApi from "./auth.js";
 import { canEdit, canApprove, isClusterOfficer } from "./auth.js";
 import { store, loadAll, reload } from "./state.js";
-import { $, esc, toast, modal, fld, txt, val, spinnerHtml, fmtDate, initTooltips } from "./ui.js";
+import { $, esc, toast, modal, fld, txt, val, spinnerHtml, fmtDate, initTooltips, lineIcon } from "./ui.js";
 import { runAutoSync } from "./sync.js";
 import { ROLES } from "./meta.js";
 import { renderDashboard } from "./views/dashboard.js";
@@ -18,6 +18,7 @@ import { renderCorrespondence } from "./views/correspondence.js";
 import { renderDisclosures } from "./views/disclosures.js";
 import { renderTraining } from "./views/training.js";
 import { renderMaturity } from "./views/maturity.js";
+import { renderWeekly, renderDeptMeetings, renderMyTasks } from "./views/weekly.js";
 import { renderDirectory } from "./views/directory.js";
 import { renderReports } from "./views/reports.js";
 import { settings, aiEnabled } from "./views/regulations.js";
@@ -25,26 +26,45 @@ import { renderAdmin } from "./views/admin.js";
 import { DEFAULT_MODEL } from "./analyzer.js";
 
 const VIEWS = {
-  dashboard: { icon: "🏠", label: "لوحة التحكم", render: renderDashboard },
-  library: { icon: "📖", label: "مكتبة الالتزام", render: renderLibrary },
-  risks: { icon: "⚠️", label: "سجل المخاطر", render: renderRisks },
-  monitoring: { icon: "🔍", label: "برنامج المراقبة", render: renderMonitoring },
-  plan: { icon: "📅", label: "الخطة السنوية", render: renderPlan },
-  training: { icon: "🎓", label: "التدريب والتوعية", render: renderTraining },
-  assessments: { icon: "📋", label: "الفحص الذاتي", render: renderAssessments },
-  findings: { icon: "🛠", label: "الملاحظات والتصحيح", render: renderFindings },
-  correspondence: { icon: "📨", label: "سجل المراسلات", render: renderCorrespondence },
-  disclosures: { icon: "🗂", label: "سجل الإفصاحات", render: renderDisclosures },
-  maturity: { icon: "📊", label: "تقييم نضج التجمعات", render: renderMaturity, clusterVisible: true },
-  directory: { icon: "📇", label: "دليل التواصل", render: renderDirectory },
+  dashboard: { ic: "grid", label: "لوحة التحكم", render: renderDashboard },
+
+  // السجلات
+  library: { ic: "book", label: "مكتبة الالتزام", render: renderLibrary, group: "records" },
+  risks: { ic: "alert", label: "سجل المخاطر", render: renderRisks, group: "records" },
+  correspondence: { ic: "mail", label: "سجل المراسلات", render: renderCorrespondence, group: "records" },
+  disclosures: { ic: "folder", label: "سجل الإفصاحات", render: renderDisclosures, group: "records" },
+
+  // المراقبة والالتزام
+  monitoring: { ic: "search", label: "برنامج المراقبة", render: renderMonitoring, group: "control" },
+  assessments: { ic: "clipboard", label: "الفحص الذاتي", render: renderAssessments, group: "control" },
+  findings: { ic: "tool", label: "الملاحظات والتصحيح", render: renderFindings, group: "control" },
+
+  // التخطيط والتطوير
+  plan: { ic: "calendar", label: "الخطة السنوية", render: renderPlan, group: "planning" },
+  training: { ic: "cap", label: "التدريب والتوعية", render: renderTraining, group: "planning" },
+
+  // التجمعات الصحية
+  maturity: { ic: "bars", label: "تقييم نضج التجمعات", render: renderMaturity, group: "clusters", clusterVisible: true },
+
+  // الاجتماعات
+  weekly: { ic: "calcheck", label: "الاجتماع الأسبوعي", render: renderWeekly, group: "meetings" },
+  deptmeetings: { ic: "users", label: "اجتماعات الأقسام", render: renderDeptMeetings, group: "meetings" },
+  mytasks: { ic: "checksq", label: "مهامي", render: renderMyTasks, group: "meetings" },
+
+  // عام
+  directory: { ic: "contact", label: "دليل التواصل", render: renderDirectory, group: "general" },
+  reports: { ic: "pie", label: "التقارير", render: renderReports, group: "general" },
+  admin: { ic: "gear", label: "الإدارة", render: renderAdmin, group: "general" },
+
   // موسوعة الوثائق مدمجة داخل مكتبة الالتزام كتبويب فرعي — المسار يبقى للروابط القديمة
   regulations: {
-    icon: "📚", label: "الوثائق", hidden: true,
+    ic: "book", label: "الوثائق", hidden: true,
     render: (el, navFn, refresh, params = {}) => renderLibrary(el, navFn, refresh, { ...params, tab: "analysis" }),
   },
-  reports: { icon: "📊", label: "التقارير", render: renderReports },
-  admin: { icon: "⚙️", label: "الإدارة", render: renderAdmin },
 };
+
+// ترتيب المجموعات في الشريط العلوي (فواصل بينها)
+const NAV_GROUP_ORDER = ["records", "control", "planning", "clusters", "meetings", "general"];
 
 let currentView = "dashboard";
 const main = $("#app");
@@ -70,42 +90,81 @@ function renderShell() {
   $("#sidebar").innerHTML = `
     <div class="brand">
       <span class="logo">⚖️</span>
-      <div><h1>إدارة الالتزام</h1><p class="subtitle">CMS · ISO 37301</p></div>
+      <div class="brand-txt"><h1>إدارة الالتزام</h1><p class="subtitle">CMS · ISO 37301</p></div>
     </div>
-    <nav id="side-nav">
-      ${Object.entries(VIEWS)
-        .filter(([k, v]) => {
-          if (v.hidden) return false;
-          // مسؤول التزام التجمع يرى فقط أداة التقييم الذاتي والنتائج الربعية
-          if (isClusterOfficer(u)) return v.clusterVisible === true;
-          return k !== "admin" || canApprove(u);
-        })
-        .map(([k, v]) => `<button class="nav-item" data-view="${k}"><span>${v.icon}</span> ${v.label}</button>`)
-        .join("")}
-    </nav>
-    <div class="side-foot">
-      <div class="user-chip" title="${esc(u.email)}">👤 ${esc(u.name)}<br/><small>${esc(ROLES[u.role] || u.role)}</small></div>
-      <div class="row">
-        <button class="secondary small" id="btn-notif" title="عرض التنبيهات الواردة">🔔<span id="notif-count" class="notif-count hidden"></span></button>
-        ${canEdit(u) ? '<button class="secondary small" id="btn-settings" title="إعدادات التحليل الذكي (مفتاح Claude API والنموذج)">⚙</button>' : ""}
-        <button class="secondary small" id="btn-refresh" title="إعادة تحميل جميع البيانات من الخادم">↻</button>
-        <button class="secondary small" id="btn-logout" title="تسجيل الخروج من النظام">خروج</button>
-      </div>
+    <nav id="side-nav" class="tb-nav">${renderNavItems(u)}</nav>
+    <div class="tb-actions">
+      <button class="tb-action theme-toggle" id="btn-theme" title="تبديل الوضع الداكن/الفاتح">${themeIcon()}</button>
+      <button class="tb-action" id="btn-notif" title="عرض التنبيهات الواردة">🔔<span id="notif-count" class="notif-count hidden"></span></button>
+      ${canEdit(u) ? '<button class="tb-action" id="btn-settings" title="إعدادات التحليل الذكي (مفتاح Claude API والنموذج)">⚙</button>' : ""}
+      <button class="tb-action" id="btn-refresh" title="إعادة تحميل جميع البيانات من الخادم">↻</button>
+      <div class="user-chip" title="${esc(u.email)}"><span class="user-av">${esc((u.name || "?").trim().charAt(0))}</span><span class="user-meta"><strong>${esc(u.name)}</strong><small>${esc(ROLES[u.role] || u.role)}</small></span></div>
+      <button class="tb-action" id="btn-logout" title="تسجيل الخروج من النظام">⎋</button>
     </div>`;
 
   $("#btn-logout").onclick = () => authApi.logout();
   $("#btn-refresh").onclick = async () => { toast("جاري التحديث…"); await refreshAll(); toast("حُدّثت البيانات"); };
   $("#btn-settings")?.addEventListener("click", openSettings);
   $("#btn-notif").onclick = openNotifications;
-  $("#side-nav").querySelectorAll("[data-view]").forEach((b) => (b.onclick = () => nav(b.dataset.view)));
+  $("#btn-theme").onclick = toggleTheme;
   renderShellNav();
   updateNotifBadge();
 }
 
+// ---------- السمة (داكن/فاتح) ----------
+const currentTheme = () => (document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark");
+const themeIcon = () => (currentTheme() === "light" ? "☀️" : "🌙");
+function toggleTheme() {
+  const next = currentTheme() === "light" ? "dark" : "light";
+  document.documentElement.setAttribute("data-theme", next);
+  try { localStorage.setItem("cms-theme", next); } catch (e) { /* تجاهل */ }
+  const btn = $("#btn-theme");
+  if (btn) btn.textContent = themeIcon();
+}
+
+// ---------- الشريط العلوي الأفقي بأيقونات خطّية ----------
+function visibleViews(u) {
+  return Object.entries(VIEWS).filter(([k, v]) => {
+    if (v.hidden) return false;
+    // مسؤول التزام التجمع يرى فقط أداة التقييم الذاتي والنتائج الربعية
+    if (isClusterOfficer(u)) return v.clusterVisible === true;
+    return k !== "admin" || canApprove(u);
+  });
+}
+
+function navBtn(k, v) {
+  return `<button class="tb-item ${k === currentView ? "active" : ""}" data-view="${k}" title="${esc(v.label)}" aria-label="${esc(v.label)}">${lineIcon(v.ic, 46)}</button>`;
+}
+
+function renderNavItems(u) {
+  const entries = visibleViews(u);
+  if (isClusterOfficer(u)) return entries.map(([k, v]) => navBtn(k, v)).join("");
+
+  const byGroup = {};
+  let html = "";
+  for (const [k, v] of entries) {
+    if (!v.group) { html += navBtn(k, v); continue; }
+    (byGroup[v.group] ||= []).push([k, v]);
+  }
+  for (const g of NAV_GROUP_ORDER) {
+    const items = byGroup[g];
+    if (!items || !items.length) continue;
+    html += `<span class="tb-sep"></span>` + items.map(([k, v]) => navBtn(k, v)).join("");
+  }
+  return html;
+}
+
+function bindNav() {
+  const navEl = document.getElementById("side-nav");
+  if (!navEl) return;
+  navEl.querySelectorAll("[data-view]").forEach((b) => (b.onclick = () => nav(b.dataset.view)));
+}
+
 function renderShellNav() {
-  document.querySelectorAll("#side-nav .nav-item").forEach((b) =>
-    b.classList.toggle("active", b.dataset.view === currentView)
-  );
+  const navEl = document.getElementById("side-nav");
+  if (!navEl) return;
+  navEl.innerHTML = renderNavItems(store.user);
+  bindNav();
 }
 
 // ---------- التنبيهات ----------

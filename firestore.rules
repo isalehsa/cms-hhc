@@ -94,6 +94,24 @@ service cloud.firestore {
       allow write: if isEditor();
     }
 
+    // محاضر الاجتماعات (الأسبوعي + اجتماعات الإدارة مع الأقسام)
+    match /meetings/{id} {
+      allow read: if signedIn();
+      allow write: if isEditor();
+    }
+
+    // مهام الاجتماعات: بند/إجراء له مسؤول وحالة — مصدر واحد للحقيقة عبر كل الاجتماعات
+    match /tasks/{id} {
+      allow read: if signedIn();
+      allow create, delete: if isEditor();
+      // المحرّر يحدّث كل شيء؛ وأي مسؤول عن المهمة (فردي أو ضمن قائمة المسؤولين) يحدّث حالتها فقط
+      allow update: if isEditor()
+        || (signedIn()
+            && (resource.data.assigneeId == request.auth.uid
+                || (resource.data.assigneeIds is list && request.auth.uid in resource.data.assigneeIds))
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'closedAt', 'closedById', 'updatedAt']));
+    }
+
     match /directory/{id} {
       allow read: if signedIn();
       allow write: if isEditor();
