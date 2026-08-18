@@ -104,9 +104,11 @@ service cloud.firestore {
     match /tasks/{id} {
       allow read: if signedIn();
       allow create, delete: if isEditor();
-      // المحرّر يحدّث كل شيء؛ والمسؤول عن المهمة يحدّث حالتها فقط (إغلاقها/إعادة فتحها)
+      // المحرّر يحدّث كل شيء؛ وأي مسؤول عن المهمة (فردي أو ضمن قائمة المسؤولين) يحدّث حالتها فقط
       allow update: if isEditor()
-        || (signedIn() && resource.data.assigneeId == request.auth.uid
+        || (signedIn()
+            && (resource.data.assigneeId == request.auth.uid
+                || (resource.data.assigneeIds is list && request.auth.uid in resource.data.assigneeIds))
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'closedAt', 'closedById', 'updatedAt']));
     }
 

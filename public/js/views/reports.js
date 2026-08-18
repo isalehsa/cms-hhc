@@ -62,6 +62,7 @@ export function renderReports(el) {
           <p class="muted" style="min-height:2.4em">${esc(r.desc)}</p>
           <div class="row" style="flex-wrap:wrap;gap:6px">
             <button class="small" data-view="${r.key}">👁 عرض / PDF</button>
+            <button class="secondary small" data-present="${r.key}">🎬 عرض ويب</button>
             <button class="secondary small" data-pptx="${r.key}">📊 عرض تقديمي</button>
             <button class="secondary small" data-xlsx="${r.key}">⬇ Excel</button>
             <button class="secondary small" data-doc="${r.key}">⬇ Word</button>
@@ -71,6 +72,7 @@ export function renderReports(el) {
     </div>`;
 
   el.querySelectorAll("[data-view]").forEach((b) => (b.onclick = () => viewReport(b.dataset.view)));
+  el.querySelectorAll("[data-present]").forEach((b) => (b.onclick = () => presentReport(b.dataset.present)));
   el.querySelectorAll("[data-pptx]").forEach((b) => (b.onclick = () => exportPptx(b.dataset.pptx).catch((e) => toast(e.message, true))));
   el.querySelectorAll("[data-xlsx]").forEach((b) => (b.onclick = () => exportExcel(b.dataset.xlsx).catch((e) => toast(e.message, true))));
   el.querySelectorAll("[data-doc]").forEach((b) => (b.onclick = () => exportWord(b.dataset.doc).catch((e) => toast(e.message, true))));
@@ -528,7 +530,8 @@ function viewReport(key) {
     <title>${esc(REPORTS.find((r) => r.key === key).title)}</title>
     <style>
       *{box-sizing:border-box}
-      body{font-family:"IBM Plex Sans Arabic","Segoe UI",Tahoma,sans-serif;margin:0;padding:28px 32px;color:#1a2c27;background:#f6f9f8;line-height:1.6}
+      @font-face{font-family:"SF Mada";src:url("${location.origin}/fonts/sf-mada-bold.ttf") format("truetype");font-weight:100 900;font-display:swap}
+      body{font-family:"SF Mada","IBM Plex Sans Arabic","Segoe UI",Tahoma,sans-serif;margin:0;padding:28px 32px;color:#1a2c27;background:#f6f9f8;line-height:1.6}
       h1{font-size:1.5rem;margin:0}
       h2{font-size:1.1rem;margin:24px 0 10px;color:#0d5243;border-right:4px solid #14705c;padding-right:10px}
       h3{font-size:.95rem;margin:0 0 8px;color:#0d5243}
@@ -563,6 +566,351 @@ function viewReport(key) {
     </style></head><body>
     <button class="print-btn" onclick="window.print()">🖨 طباعة / حفظ PDF</button>
     ${reportHtml(key)}
+    </body></html>`);
+  win.document.close();
+  logReport(key);
+}
+
+// ---------- عرض ويب تفاعلي (Motion) بملء الشاشة يُتحكَّم به بالأسهم ----------
+// لبِنات بصرية للشرائح (تتحرك عند ظهور الشريحة عبر أصناف CSS + JS)
+const pCount = (v) => { const n = String(v).replace(/[^\d.]/g, ""); const suffix = String(v).replace(/[\d.,\s]/g, ""); return n ? `<span class="p-count" data-to="${n}">0</span>${suffix ? `<span class="p-suf">${esc(suffix)}</span>` : ""}` : esc(String(v)); };
+
+function pGauge(pct, label, color) {
+  const r = 54, circ = 2 * Math.PI * r, off = circ * (1 - Math.max(0, Math.min(100, pct)) / 100);
+  return `<div class="p-gauge">
+    <svg viewBox="0 0 140 140">
+      <circle cx="70" cy="70" r="${r}" class="pg-track"/>
+      <circle cx="70" cy="70" r="${r}" class="pg-fill" stroke="${color}" stroke-dasharray="${circ.toFixed(1)}" stroke-dashoffset="${circ.toFixed(1)}" data-off="${off.toFixed(1)}"/>
+    </svg>
+    <div class="pg-center"><div class="pg-num" style="color:${color}">${pCount(pct + "%")}</div></div>
+    <div class="pg-lbl">${esc(label)}</div>
+  </div>`;
+}
+
+function pDonut(items, centerTop, centerSub) {
+  const total = items.reduce((s, i) => s + i.count, 0) || 1;
+  let acc = 0;
+  const stops = items.map((i) => { const from = (acc / total) * 360; acc += i.count; const to = (acc / total) * 360; return `${i.color} ${from.toFixed(1)}deg ${to.toFixed(1)}deg`; }).join(",");
+  return `<div class="p-donutbox">
+    <div class="p-donutwrap">
+      <div class="p-donut" style="--stops:${stops}"></div>
+      <div class="p-donut-hole"><div class="pd-top">${pCount(centerTop)}</div><div class="pd-sub">${esc(centerSub || "")}</div></div>
+    </div>
+    <div class="p-legend">${items.map((i) => `<div class="pl-row"><span class="pl-dot" style="background:${i.color}"></span><span class="pl-lbl">${esc(i.label)}</span><span class="pl-val">${i.count}</span></div>`).join("")}</div>
+  </div>`;
+}
+
+function pKpi(value, label, color, sub) {
+  return `<div class="p-kpi" style="--kc:${color}">
+    <div class="pk-num">${pCount(value)}</div>
+    <div class="pk-lbl">${esc(label)}</div>
+    ${sub ? `<div class="pk-sub">${esc(sub)}</div>` : ""}
+  </div>`;
+}
+
+const P_SHIELD = `<svg class="p-shield" viewBox="0 0 520 520">
+  <circle cx="260" cy="250" r="215" fill="none" stroke="#7fe9cd" stroke-opacity="0.18" stroke-width="1.5" stroke-dasharray="5 12"><animateTransform attributeName="transform" type="rotate" from="0 260 250" to="360 260 250" dur="60s" repeatCount="indefinite"/></circle>
+  <circle cx="260" cy="250" r="168" fill="none" stroke="#34e7b8" stroke-opacity="0.22" stroke-width="1.5" stroke-dasharray="2 14"><animateTransform attributeName="transform" type="rotate" from="360 260 250" to="0 260 250" dur="80s" repeatCount="indefinite"/></circle>
+  <g transform="translate(260 250)">
+    <path d="M0 -120 L100 -76 V10 C100 78 52 126 0 146 C-52 126 -100 78 -100 10 V-76 Z" fill="rgba(52,231,184,.10)" stroke="#7fe9cd" stroke-opacity="0.5" stroke-width="2.5"/>
+    <path d="M-40 6 L-10 36 L46 -34" fill="none" stroke="#7fe9cd" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+  </g></svg>`;
+
+function slideCover(meta, today) {
+  return { label: "الغلاف", html: `<div class="s-cover">
+    ${P_SHIELD}
+    <div class="sc-tag">نظام إدارة الالتزام · Compliance Management System</div>
+    <h1 class="sc-title">${esc(meta.title)}</h1>
+    <p class="sc-desc">${esc(meta.desc)}</p>
+    <div class="sc-date">تاريخ الإصدار: ${today}</div>
+    <div class="sc-hint">استخدم مفاتيح الأسهم ← → للتنقل · F لملء الشاشة</div>
+  </div>` };
+}
+
+function presentSlides(key, today) {
+  const meta = REPORTS.find((r) => r.key === key);
+  const slides = [slideCover(meta, today)];
+  const k = kpis();
+  const monPct = store.monitoring.length ? Math.round((k.monDone / store.monitoring.length) * 100) : 0;
+
+  if (key === "executive") {
+    const { top, recs } = execHighlights();
+    const monResults = { COMPLIANT: 0, PARTIAL: 0, NON_COMPLIANT: 0 };
+    for (const m of store.monitoring) if (m.result && monResults[m.result] !== undefined) monResults[m.result]++;
+    const monTot = monResults.COMPLIANT + monResults.PARTIAL + monResults.NON_COMPLIANT;
+    const compScore = monTot ? Math.round((monResults.COMPLIANT / monTot) * 100) : 0;
+    const highRisk = k.riskCounts.CRITICAL + k.riskCounts.HIGH;
+    // مؤشر التزام عام مركّب
+    const overall = Math.round((monPct * 0.3 + k.planAvg * 0.25 + compScore * 0.25 + Math.max(0, 100 - highRisk * 8) * 0.2));
+
+    slides.push({ label: "المؤشرات", html: `<div class="s-pad">
+      <h2 class="s-h">المؤشرات الرئيسية للالتزام</h2>
+      <div class="p-kgrid">
+        ${pKpi(k.activeReqs.length, "متطلب نظامي نشط", "#34e7b8")}
+        ${pKpi(store.risks.length, "خطر مسجّل", "#5aa9ff")}
+        ${pKpi(highRisk, "مخاطر عالية فأكثر", highRisk ? "#ff6f61" : "#34e7b8")}
+        ${pKpi(monPct + "%", "إنجاز برنامج المراقبة", "#ffcf5a")}
+        ${pKpi(k.openFnd.length, "ملاحظة مفتوحة", k.openFnd.length ? "#ffcf5a" : "#34e7b8")}
+        ${pKpi(k.planAvg + "%", "إنجاز الخطة السنوية", "#a78bfa")}
+      </div>
+    </div>` });
+
+    slides.push({ label: "مؤشر الالتزام", html: `<div class="s-pad s-center">
+      <h2 class="s-h">مؤشر الالتزام المؤسسي العام</h2>
+      <div class="p-gaugerow">
+        ${pGauge(overall, "المؤشر العام المركّب", "#34e7b8")}
+        ${pGauge(monPct, "إنجاز المراقبة", "#ffcf5a")}
+        ${pGauge(k.planAvg, "إنجاز الخطة", "#a78bfa")}
+        ${pGauge(compScore, "التزام الأنشطة الرقابية", "#5aa9ff")}
+      </div>
+      <p class="s-note">مؤشر مركّب يوازن بين إنجاز المراقبة والخطة والتزام الأنشطة الرقابية وحِدّة المخاطر عالية المستوى.</p>
+    </div>` });
+
+    slides.push({ label: "المخاطر", html: `<div class="s-pad">
+      <h2 class="s-h">خريطة المخاطر بعد الضوابط</h2>
+      <div class="s-split">
+        ${pDonut([
+          { label: "حرج", count: k.riskCounts.CRITICAL, color: "#ff6f61" },
+          { label: "عالٍ", count: k.riskCounts.HIGH, color: "#ff9f5a" },
+          { label: "متوسط", count: k.riskCounts.MEDIUM, color: "#ffcf5a" },
+          { label: "منخفض", count: k.riskCounts.LOW, color: "#34e7b8" },
+        ], store.risks.length, "إجمالي المخاطر")}
+        <div class="s-side">
+          <div class="s-bigstat" style="color:${highRisk ? "#ff6f61" : "#34e7b8"}">${pCount(highRisk)}</div>
+          <div class="s-bigstat-lbl">مخاطر عالية فأكثر تتطلب متابعة تنفيذية</div>
+          <ul class="s-ul">
+            <li>${k.riskCounts.CRITICAL} خطر حرج يحتاج معالجة عاجلة</li>
+            <li>${k.riskCounts.HIGH} خطر عالٍ ضمن خطط المعالجة</li>
+            <li>${k.riskCounts.MEDIUM + k.riskCounts.LOW} خطر ضمن المستويات المقبولة</li>
+          </ul>
+        </div>
+      </div>
+    </div>` });
+
+    slides.push({ label: "أداء المراقبة", html: `<div class="s-pad">
+      <h2 class="s-h">أداء أنشطة المراقبة</h2>
+      <div class="s-split">
+        ${pDonut([
+          { label: "ملتزم", count: monResults.COMPLIANT, color: "#34e7b8" },
+          { label: "ملتزم جزئياً", count: monResults.PARTIAL, color: "#ffcf5a" },
+          { label: "غير ملتزم", count: monResults.NON_COMPLIANT, color: "#ff6f61" },
+        ], monTot, "نشاط منفّذ")}
+        <div class="s-side">
+          ${pGauge(monPct, "نسبة إنجاز البرنامج", "#5aa9ff")}
+        </div>
+      </div>
+    </div>` });
+
+    if (top.length) slides.push({ label: "أبرز المخاطر", html: `<div class="s-pad">
+      <h2 class="s-h">أبرز المخاطر عالية المستوى</h2>
+      <table class="s-table"><thead><tr><th>الرقم</th><th>الخطر</th><th>المستوى</th><th>الإدارة</th></tr></thead>
+      <tbody>${top.map((x, i) => `<tr style="--d:${i}"><td>${esc(x.r.code)}</td><td>${esc(x.r.title)}</td><td><span class="s-pill" style="--pc:${LVL_COLOR[x.lvl.key] || C.neutral}">${esc(x.lvl.label)} (${x.lvl.score})</span></td><td>${esc(deptName(x.r.ownerDeptId))}</td></tr>`).join("")}</tbody></table>
+    </div>` });
+
+    slides.push({ label: "التوصيات", html: `<div class="s-pad">
+      <h2 class="s-h">أبرز التوصيات</h2>
+      <ul class="s-reclist">${recs.map((r, i) => `<li style="--d:${i}">${esc(r)}</li>`).join("") || "<li>لا توجد توصيات مسجلة حالياً</li>"}</ul>
+    </div>` });
+  } else {
+    // تقارير عامة: مؤشرات التوزيع + جدول مختصر
+    const specs = distSpecs(key);
+    const st = cardStat(key);
+    slides.push({ label: "المؤشر", html: `<div class="s-pad s-center">
+      <h2 class="s-h">مؤشر ${esc(meta.title.replace("تقرير ", ""))}</h2>
+      <div class="s-bigstat" style="color:#34e7b8">${pCount(st.value)}</div>
+      <div class="s-bigstat-lbl">${esc(st.label)}</div>
+    </div>` });
+    for (const s of specs) {
+      const total = s.items.reduce((a, b) => a + b.count, 0);
+      slides.push({ label: s.title, html: `<div class="s-pad">
+        <h2 class="s-h">${esc(s.title)}</h2>
+        <div class="s-split">
+          ${s.bars
+            ? `<div class="s-side" style="width:100%">${s.items.map((i) => `<div class="p-bar"><span class="pb-lbl">${esc(i.label)}</span><span class="pb-track"><span class="pb-fill" style="--w:${Math.max(3, Math.min(100, i.count))}%;background:${i.color}"></span></span><span class="pb-val">${i.count}%</span></div>`).join("")}</div>`
+            : pDonut(s.items, total, "الإجمالي")}
+        </div>
+      </div>` });
+    }
+    const t = tableFor(key);
+    const rows = t.rows.slice(0, 12);
+    if (rows.length) slides.push({ label: "التفاصيل", html: `<div class="s-pad">
+      <h2 class="s-h">أبرز السجلات (${rows.length} من ${t.rows.length})</h2>
+      <div class="s-tablewrap"><table class="s-table"><thead><tr>${t.head.slice(0, 6).map((h) => `<th>${esc(h)}</th>`).join("")}</tr></thead>
+      <tbody>${rows.map((row, i) => `<tr style="--d:${i}">${row.slice(0, 6).map((c) => `<td>${esc(String(c ?? ""))}</td>`).join("")}</tr>`).join("")}</tbody></table></div>
+    </div>` });
+  }
+
+  slides.push({ label: "خاتمة", html: `<div class="s-cover s-end">
+    ${P_SHIELD}
+    <h1 class="sc-title">شكراً لكم</h1>
+    <p class="sc-desc">نظام إدارة الالتزام — رؤية موحّدة لحوكمة الالتزام المؤسسي</p>
+    <div class="sc-date">${today}</div>
+  </div>` });
+  return slides;
+}
+
+function presentReport(key) {
+  const meta = REPORTS.find((r) => r.key === key);
+  const today = new Date().toLocaleDateString("ar-SA-u-ca-gregory-nu-latn", { dateStyle: "long" });
+  const win = window.open("", "_blank");
+  if (!win) return toast("اسمح بالنوافذ المنبثقة لعرض التقرير", true);
+  const slides = presentSlides(key, today);
+  const slidesHtml = slides.map((s, i) => `<section class="slide${i === 0 ? " active" : ""}" data-i="${i}">${s.html}</section>`).join("");
+  const dots = slides.map((s, i) => `<button class="p-dot${i === 0 ? " on" : ""}" data-go="${i}" title="${esc(s.label)}"></button>`).join("");
+
+  win.document.write(`<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"/>
+    <title>${esc(meta.title)} — عرض ويب</title>
+    <style>
+      *{box-sizing:border-box;margin:0;padding:0}
+      @font-face{font-family:"SF Mada";src:url("${location.origin}/fonts/sf-mada-bold.ttf") format("truetype");font-weight:100 900;font-display:swap}
+      :root{--emerald:#34e7b8;--ink:#eafff7}
+      html,body{height:100%}
+      body{font-family:"SF Mada","IBM Plex Sans Arabic","Segoe UI",Tahoma,sans-serif;background:radial-gradient(1200px 800px at 78% -10%,#0f5c48 0%,transparent 55%),radial-gradient(1000px 700px at 12% 110%,#0a3d5c 0%,transparent 55%),linear-gradient(160deg,#04120d,#071b16 60%,#04120d);color:var(--ink);overflow:hidden;height:100vh}
+      .stage{position:relative;height:100vh;width:100vw}
+      .slide{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;padding:3.4vh 4vw;opacity:0;transform:translateX(-40px) scale(.98);pointer-events:none;transition:opacity .55s ease,transform .55s cubic-bezier(.2,.8,.2,1)}
+      .slide.active{opacity:1;transform:none;pointer-events:auto}
+      .slide.prev{transform:translateX(40px) scale(.98)}
+      .s-pad{width:min(1180px,94vw);margin:0 auto}
+      .s-center{text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%}
+      .s-h{font-size:clamp(1.5rem,3.4vw,2.6rem);color:#fff;margin-bottom:3vh;position:relative;padding-inline-start:18px}
+      .s-h::before{content:"";position:absolute;inset-inline-start:0;top:8%;height:84%;width:6px;border-radius:4px;background:linear-gradient(var(--emerald),#0e9c78)}
+      /* الغلاف */
+      .s-cover{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;position:relative}
+      .p-shield{position:absolute;width:min(78vh,620px);opacity:.5;filter:drop-shadow(0 0 40px rgba(52,231,184,.25));z-index:0}
+      .s-cover>*:not(.p-shield){position:relative;z-index:1}
+      .sc-tag{letter-spacing:.5px;color:var(--emerald);font-size:clamp(.8rem,1.5vw,1rem);margin-bottom:2.2vh;opacity:.9}
+      .sc-title{font-size:clamp(2rem,6vw,4.4rem);color:#fff;line-height:1.1;text-shadow:0 4px 30px rgba(0,0,0,.4)}
+      .sc-desc{font-size:clamp(1rem,2.2vw,1.5rem);color:#bfeede;margin-top:2.4vh;max-width:900px}
+      .sc-date{margin-top:3.4vh;color:#8fd8c3;font-size:1rem}
+      .sc-hint{margin-top:5vh;color:#6fb3a3;font-size:.85rem;border:1px solid rgba(52,231,184,.25);padding:8px 16px;border-radius:30px;animation:pulse 2.6s infinite}
+      @keyframes pulse{0%,100%{opacity:.5}50%{opacity:1}}
+      /* KPI */
+      .p-kgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:2.2vh 2vw}
+      .p-kpi{background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.08);border-top:4px solid var(--kc);border-radius:18px;padding:3vh 1.4vw;text-align:center;backdrop-filter:blur(8px);box-shadow:0 10px 40px rgba(0,0,0,.25)}
+      .pk-num{font-size:clamp(2rem,4.6vw,3.4rem);font-weight:800;color:var(--kc);line-height:1}
+      .pk-lbl{margin-top:1vh;color:#cfeee3;font-size:clamp(.85rem,1.5vw,1.05rem)}
+      .pk-sub{color:#8fd8c3;font-size:.8rem;margin-top:.5vh}
+      .p-suf{font-size:.6em}
+      /* Gauges */
+      .p-gaugerow{display:flex;gap:3vw;justify-content:center;flex-wrap:wrap;margin-top:1vh}
+      .p-gauge{position:relative;width:min(30vh,220px);text-align:center}
+      .p-gauge svg{width:100%;transform:rotate(-90deg)}
+      .pg-track{fill:none;stroke:rgba(255,255,255,.09);stroke-width:11}
+      .pg-fill{fill:none;stroke-width:11;stroke-linecap:round;transition:stroke-dashoffset 1.3s cubic-bezier(.2,.8,.2,1)}
+      .pg-center{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;top:-14%}
+      .pg-num{font-size:clamp(1.4rem,3vw,2.2rem);font-weight:800}
+      .pg-lbl{margin-top:1vh;color:#cfeee3;font-size:.95rem}
+      /* Donut */
+      .s-split{display:flex;gap:4vw;align-items:center;justify-content:center;flex-wrap:wrap}
+      .p-donutbox{display:flex;gap:2vw;align-items:center;flex-wrap:wrap;justify-content:center}
+      .p-donutwrap{position:relative;width:min(42vh,320px);aspect-ratio:1}
+      .p-donut{width:100%;height:100%;border-radius:50%;background:conic-gradient(var(--stops));-webkit-mask:radial-gradient(transparent 55%,#000 56%);mask:radial-gradient(transparent 55%,#000 56%);animation:spin-in 1.1s ease both}
+      @keyframes spin-in{from{transform:rotate(-90deg) scale(.7);opacity:0}to{transform:none;opacity:1}}
+      .p-donut-hole{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+      .pd-top{font-size:clamp(1.6rem,3.4vw,2.6rem);font-weight:800;color:#fff}
+      .pd-sub{color:#9fe0cf;font-size:.9rem}
+      .p-legend{display:flex;flex-direction:column;gap:1.2vh;min-width:230px}
+      .pl-row{display:flex;align-items:center;gap:12px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:12px;padding:10px 14px}
+      .pl-dot{width:14px;height:14px;border-radius:4px;flex-shrink:0}
+      .pl-lbl{flex:1;color:#dbf3ea}.pl-val{font-weight:800;font-size:1.15rem}
+      .s-side{text-align:center}
+      .s-bigstat{font-size:clamp(3rem,9vw,6rem);font-weight:900;line-height:1}
+      .s-bigstat-lbl{color:#bfeede;font-size:1.1rem;margin-top:1vh;max-width:360px}
+      .s-ul{list-style:none;margin-top:2.4vh;text-align:right}
+      .s-ul li{color:#cfeee3;padding:8px 0 8px 0;border-bottom:1px dashed rgba(255,255,255,.1)}
+      .s-ul li::before{content:"▸";color:var(--emerald);margin-inline-end:8px}
+      .s-note{color:#8fd8c3;margin-top:2.6vh;text-align:center;font-size:.95rem}
+      /* bars */
+      .p-bar{display:flex;align-items:center;gap:16px;margin:1.4vh 0}
+      .pb-lbl{min-width:190px;color:#dbf3ea;font-size:1rem}
+      .pb-track{flex:1;height:20px;border-radius:11px;background:rgba(255,255,255,.08);overflow:hidden}
+      .pb-fill{display:block;height:100%;width:0;border-radius:11px;transition:width 1.2s cubic-bezier(.2,.8,.2,1)}
+      .slide.active .pb-fill{width:var(--w)}
+      .pb-val{font-weight:800;min-width:56px}
+      /* tables */
+      .s-tablewrap{max-height:70vh;overflow:auto}
+      .s-table{width:100%;border-collapse:collapse;font-size:clamp(.8rem,1.5vw,1.05rem)}
+      .s-table th{background:linear-gradient(135deg,#1a8a70,#0d5243);color:#fff;padding:14px 16px;text-align:right;position:sticky;top:0}
+      .s-table td{padding:12px 16px;text-align:right;border-bottom:1px solid rgba(255,255,255,.08);color:#e6fff5}
+      .s-table tbody tr{opacity:0;transform:translateY(14px);animation:rowin .5s ease forwards;animation-delay:calc(var(--d,0) * .09s + .2s)}
+      .slide:not(.active) .s-table tbody tr{animation:none;opacity:1;transform:none}
+      @keyframes rowin{to{opacity:1;transform:none}}
+      .s-pill{display:inline-block;padding:3px 12px;border-radius:20px;font-size:.85rem;font-weight:700;color:var(--pc);background:color-mix(in srgb,var(--pc) 18%,transparent);border:1px solid color-mix(in srgb,var(--pc) 45%,transparent)}
+      .s-reclist{list-style:none;display:flex;flex-direction:column;gap:1.6vh}
+      .s-reclist li{background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.08);border-inline-start:4px solid var(--emerald);border-radius:14px;padding:16px 20px;color:#e6fff5;font-size:1.05rem;opacity:0;transform:translateX(-18px);animation:rowin .5s ease forwards;animation-delay:calc(var(--d,0) * .12s + .2s)}
+      .s-end .p-shield{opacity:.4}
+      /* chrome */
+      .p-top{position:fixed;top:16px;left:16px;right:16px;display:flex;justify-content:space-between;align-items:center;z-index:20;pointer-events:none}
+      .p-clock{color:#8fd8c3;font-size:.85rem;background:rgba(0,0,0,.25);padding:6px 12px;border-radius:20px;pointer-events:auto}
+      .p-ctrls{display:flex;gap:8px;pointer-events:auto}
+      .p-btn{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);color:#eafff7;width:40px;height:40px;border-radius:12px;cursor:pointer;font-size:1.1rem;transition:.2s}
+      .p-btn:hover{background:var(--emerald);color:#04120d}
+      .p-bottom{position:fixed;bottom:18px;left:0;right:0;display:flex;flex-direction:column;align-items:center;gap:10px;z-index:20}
+      .p-dots{display:flex;gap:8px}
+      .p-dot{width:11px;height:11px;border-radius:50%;background:rgba(255,255,255,.22);border:none;cursor:pointer;transition:.25s;padding:0}
+      .p-dot.on{background:var(--emerald);transform:scale(1.35);box-shadow:0 0 12px rgba(52,231,184,.7)}
+      .p-prog{position:fixed;top:0;left:0;height:3px;background:linear-gradient(90deg,var(--emerald),#5aa9ff);z-index:30;transition:width .4s ease}
+      @media(max-width:760px){.p-kgrid{grid-template-columns:repeat(2,1fr)}.pb-lbl{min-width:120px}}
+    </style></head><body>
+    <div class="p-prog" id="prog"></div>
+    <div class="p-top">
+      <div class="p-clock" id="clock"></div>
+      <div class="p-ctrls">
+        <button class="p-btn" id="fs" title="ملء الشاشة (F)">⛶</button>
+        <button class="p-btn" id="prev" title="السابق">›</button>
+        <button class="p-btn" id="next" title="التالي">‹</button>
+      </div>
+    </div>
+    <div class="stage" id="stage">${slidesHtml}</div>
+    <div class="p-bottom"><div class="p-dots">${dots}</div></div>
+    <script>
+      var slides=[].slice.call(document.querySelectorAll('.slide'));
+      var dots=[].slice.call(document.querySelectorAll('.p-dot'));
+      var cur=0;
+      function animate(sl){
+        sl.querySelectorAll('.p-count').forEach(function(el){
+          var to=parseFloat(el.dataset.to)||0,dur=1100,t0=performance.now(),dec=(to%1!==0);
+          function step(t){var p=Math.min(1,(t-t0)/dur);var e=1-Math.pow(1-p,3);var v=to*e;el.textContent=dec?v.toFixed(1):Math.round(v);if(p<1)requestAnimationFrame(step);}
+          requestAnimationFrame(step);
+        });
+        sl.querySelectorAll('.pg-fill').forEach(function(el){el.style.strokeDashoffset=el.dataset.off;});
+      }
+      function reset(sl){
+        sl.querySelectorAll('.p-count').forEach(function(el){el.textContent='0';});
+        sl.querySelectorAll('.pg-fill').forEach(function(el){el.style.strokeDashoffset=el.getAttribute('stroke-dasharray');});
+      }
+      function go(i){
+        if(i<0||i>=slides.length)return;
+        var old=slides[cur];old.classList.remove('active');old.classList.add('prev');reset(old);
+        cur=i;
+        var sl=slides[cur];sl.classList.remove('prev');sl.classList.add('active');
+        dots.forEach(function(d,j){d.classList.toggle('on',j===cur);});
+        document.getElementById('prog').style.width=((cur+1)/slides.length*100)+'%';
+        requestAnimationFrame(function(){requestAnimationFrame(function(){animate(sl);});});
+      }
+      dots.forEach(function(d){d.onclick=function(){go(+d.dataset.go);};});
+      document.getElementById('next').onclick=function(){go(cur+1);};
+      document.getElementById('prev').onclick=function(){go(cur-1);};
+      function fs(){if(!document.fullscreenElement){(document.documentElement.requestFullscreen||function(){})();}else{document.exitFullscreen();}}
+      document.getElementById('fs').onclick=fs;
+      document.addEventListener('keydown',function(e){
+        if(e.key==='ArrowLeft'||e.key==='PageDown'||e.key===' ')go(cur+1);
+        else if(e.key==='ArrowRight'||e.key==='PageUp')go(cur-1);
+        else if(e.key==='ArrowDown')go(cur+1);
+        else if(e.key==='ArrowUp')go(cur-1);
+        else if(e.key==='Home')go(0);
+        else if(e.key==='End')go(slides.length-1);
+        else if(e.key==='f'||e.key==='F')fs();
+        else if(e.key==='Escape'&&document.fullscreenElement)document.exitFullscreen();
+      });
+      // لمس/سحب للأجهزة اللمسية
+      var tx=0;document.addEventListener('touchstart',function(e){tx=e.touches[0].clientX;},{passive:true});
+      document.addEventListener('touchend',function(e){var dx=e.changedTouches[0].clientX-tx;if(Math.abs(dx)>50){go(cur+(dx>0?-1:1));}},{passive:true});
+      function tick(){var d=new Date();document.getElementById('clock').textContent=d.toLocaleTimeString('ar-SA',{hour:'2-digit',minute:'2-digit'});}
+      tick();setInterval(tick,10000);
+      document.getElementById('prog').style.width=(1/slides.length*100)+'%';
+      requestAnimationFrame(function(){animate(slides[0]);});
+    <\/script>
     </body></html>`);
   win.document.close();
   logReport(key);
@@ -615,7 +963,7 @@ async function exportExcel(key) {
 async function exportWord(key) {
   const meta = REPORTS.find((r) => r.key === key);
   const html = `<html xmlns:w="urn:schemas-microsoft-com:office:word" lang="ar" dir="rtl"><head><meta charset="utf-8"/>
-    <style>body{font-family:Arial;direction:rtl}table{border-collapse:collapse;width:100%}th,td{border:1px solid #999;padding:5px;text-align:right}th{background:#eef3f0}h2{color:#1d5c4d}</style>
+    <style>@font-face{font-family:"SF Mada";src:url("${location.origin}/fonts/sf-mada-bold.ttf") format("truetype")}body{font-family:"SF Mada",Arial;direction:rtl}table{border-collapse:collapse;width:100%}th,td{border:1px solid #999;padding:5px;text-align:right}th{background:#eef3f0}h2{color:#1d5c4d}</style>
     </head><body>${reportHtml(key)}</body></html>`;
   downloadBlob(new Blob(["﻿" + html], { type: "application/msword" }), `${meta.title}.doc`);
   logReport(key);
@@ -632,7 +980,7 @@ async function exportPptx(key) {
   pptx.rtlMode = true;
   pptx.author = "نظام إدارة الالتزام";
   const W = 13.333, GREEN = "0D5243", TEAL = "14705C", INK = "1A2C27", MUTED = "5D6C66", BG = "F6F9F8";
-  const AR = { fontFace: "Arial", rtlMode: true };
+  const AR = { fontFace: "SF Mada", rtlMode: true }; // خط النظام — يتوفّر بديل تلقائي إن لم يكن مثبتاً
 
   // شريحة العنوان
   const s1 = pptx.addSlide();
