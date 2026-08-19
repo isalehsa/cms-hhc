@@ -86,6 +86,15 @@ export function renderAdmin(el, nav, refresh) {
     </section>
 
     <section class="card">
+      <div class="row" style="justify-content:space-between;align-items:flex-start">
+        <div><h2>🔌 التكامل الخارجي والـ API</h2>
+          <p class="muted">مفتاح واجهة REST للأنظمة المؤسسية، ورابط تغذية مستجدات الجهات الرقابية. تُستهلَك عبر Cloud Functions (راجع مجلّد functions).</p></div>
+        <button class="secondary" id="int-config" title="ضبط مفتاح الـ API ورابط التغذية">⚙ إعداد التكامل</button>
+      </div>
+      <div id="int-summary" class="muted">جاري تحميل إعدادات التكامل…</div>
+    </section>
+
+    <section class="card">
       <h2>📜 سجل التدقيق (آخر 100 حركة)</h2>
       <div style="overflow-x:auto">
         <table>
@@ -125,6 +134,13 @@ export function renderAdmin(el, nav, refresh) {
       toast(err.message, true);
     }
   });
+
+  // إعدادات التكامل
+  db.getConfig("integration", {}).then((cfg) => {
+    const el2 = $("#int-summary", el);
+    if (el2) el2.innerHTML = `مفتاح الـ API: ${cfg.apiKey ? '<span class="lvl lvl-good"><span class="dot"></span>مضبوط</span>' : '<span class="lvl lvl-neutral"><span class="dot"></span>غير مضبوط</span>'} · تغذية الجهات: ${cfg.feedUrl ? esc(cfg.feedUrl) : "—"}`;
+  });
+  $("#int-config", el)?.addEventListener("click", () => openIntegrationConfig(rerender));
 
   // سجل التدقيق يُحمَّل عند الطلب (قد يكون كبيراً)
   db.listCol("auditLog").then((logs) => {
@@ -271,6 +287,34 @@ async function openReminderConfig(done) {
       await db.audit("UPDATE", "Config", "reminders", "تعديل إعدادات التنبيهات الآلية");
       ov.remove();
       toast("حُفظت الإعدادات");
+      done();
+    } catch (err) {
+      toast(err.message, true);
+    }
+  };
+}
+
+// ---------- إعداد التكامل الخارجي ----------
+async function openIntegrationConfig(done) {
+  const cfg = await db.getConfig("integration", { apiKey: "", feedUrl: "", feedHeaders: {} });
+  const gen = () => "cms_" + Array.from(crypto.getRandomValues(new Uint8Array(24))).map((b) => b.toString(16).padStart(2, "0")).join("");
+  const ov = modal(`
+    <h2>🔌 إعداد التكامل الخارجي</h2>
+    ${fld("مفتاح واجهة REST (x-api-key)", `<div class="row"><input type="text" id="int-key" dir="ltr" class="grow" value="${esc(cfg.apiKey || "")}" placeholder="مفتاح سرّي" /><button class="secondary small" id="int-gen" type="button">توليد</button></div>`)}
+    ${fld("رابط تغذية الجهات الرقابية (JSON)", `<input type="text" id="int-feed" dir="ltr" value="${esc(cfg.feedUrl || "")}" placeholder="https://…" />`)}
+    <p class="muted">تُستهلَك هذه الإعدادات من Cloud Functions: واجهة <code>/api</code> تتحقق من المفتاح، والوظيفة المجدولة تسحب التغذية يومياً. راجع <code>functions/README.md</code>.</p>
+    <div class="row" style="margin-top:14px">
+      <button id="int-save">حفظ</button>
+      <button class="secondary" id="int-cancel">إلغاء</button>
+    </div>`, { wide: true });
+  $("#int-gen", ov).onclick = () => { $("#int-key", ov).value = gen(); };
+  $("#int-cancel", ov).onclick = () => ov.remove();
+  $("#int-save", ov).onclick = async () => {
+    try {
+      await db.setConfig("integration", { apiKey: val("int-key", ov), feedUrl: val("int-feed", ov) });
+      await db.audit("UPDATE", "Config", "integration", "تعديل إعدادات التكامل الخارجي والـ API");
+      ov.remove();
+      toast("حُفظت إعدادات التكامل");
       done();
     } catch (err) {
       toast(err.message, true);
