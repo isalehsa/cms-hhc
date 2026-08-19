@@ -30,6 +30,7 @@ import { scanWorkflowEscalations } from "./workflow.js";
 import { registerServiceWorker, ensureNotificationPermission, notificationsState, showLocalNotification } from "./pwa.js";
 import { renderDirectory } from "./views/directory.js";
 import { renderReports } from "./views/reports.js";
+import { renderAssistant } from "./views/assistant.js";
 import { settings, aiEnabled } from "./views/regulations.js";
 import { renderAdmin } from "./views/admin.js";
 import { DEFAULT_MODEL } from "./analyzer.js";
@@ -59,6 +60,7 @@ const VIEWS = {
     render: (el, navFn, refresh, params = {}) => renderLibrary(el, navFn, refresh, { ...params, tab: "analysis" }),
   },
   reports: { icon: "📊", label: "التقارير", render: renderReports },
+  assistant: { icon: "🤖", label: "المساعد الذكي", render: renderAssistant },
   admin: { icon: "⚙️", label: "الإدارة", render: renderAdmin },
 };
 
