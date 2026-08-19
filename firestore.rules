@@ -116,6 +116,12 @@ service cloud.firestore {
       allow write: if isEditor();
     }
 
+    // مسارات الاعتماد وسير العمل — الأدوار مفروضة في الواجهة، والكتابة للمحرر
+    match /workflows/{id} {
+      allow read: if signedIn();
+      allow write: if isEditor();
+    }
+
     match /findings/{id} {
       allow read: if signedIn();
       allow create, delete: if isEditor();

@@ -15,6 +15,7 @@ export const store = {
   maturity: [],
   meetings: [],
   regChanges: [],
+  workflows: [],
   directory: [],
   departments: [],
   authorities: [],
@@ -26,7 +27,7 @@ export const store = {
 
 export async function loadAll(force = false) {
   if (store.loaded && !force) return store;
-  const [requirements, risks, monitoring, planItems, assessments, findings, correspondence, disclosures, trainings, maturity, meetings, regChanges, directory, departments, authorities, users, notifications] =
+  const [requirements, risks, monitoring, planItems, assessments, findings, correspondence, disclosures, trainings, maturity, meetings, regChanges, workflows, directory, departments, authorities, users, notifications] =
     await Promise.all([
       listCol("requirements", "code").catch(() => []),
       listCol("risks", "code").catch(() => []),
@@ -40,6 +41,7 @@ export async function loadAll(force = false) {
       listCol("maturity", "code").catch(() => []),
       listCol("meetings", "code").catch(() => []),
       listCol("regChanges", "code").catch(() => []),
+      listCol("workflows", "code").catch(() => []),
       listCol("directory").catch(() => []),
       listCol("departments", "name").catch(() => []),
       listCol("authorities", "name").catch(() => []),
@@ -47,7 +49,7 @@ export async function loadAll(force = false) {
       listCol("notifications").catch(() => []),
     ]);
   Object.assign(store, {
-    requirements, risks, monitoring, planItems, assessments, findings, correspondence, disclosures, trainings, maturity, meetings, regChanges, directory,
+    requirements, risks, monitoring, planItems, assessments, findings, correspondence, disclosures, trainings, maturity, meetings, regChanges, workflows, directory,
     departments, authorities, users, notifications, loaded: true,
   });
   return store;
@@ -55,7 +57,7 @@ export async function loadAll(force = false) {
 
 // إعادة تحميل مجموعة واحدة بعد التعديل
 export async function reload(...cols) {
-  const orderFields = { requirements: "code", risks: "code", monitoring: "code", findings: "code", correspondence: "code", disclosures: "code", trainings: "code", maturity: "code", meetings: "code", regChanges: "code", departments: "name", authorities: "name" };
+  const orderFields = { requirements: "code", risks: "code", monitoring: "code", findings: "code", correspondence: "code", disclosures: "code", trainings: "code", maturity: "code", meetings: "code", regChanges: "code", workflows: "code", departments: "name", authorities: "name" };
   await Promise.all(
     cols.map(async (c) => {
       store[c] = await listCol(c, orderFields[c] || null).catch(() => []);

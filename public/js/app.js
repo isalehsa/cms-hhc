@@ -24,6 +24,8 @@ import { renderTraining } from "./views/training.js";
 import { renderMaturity } from "./views/maturity.js";
 import { renderMeetings } from "./views/meetings.js";
 import { renderRegChange } from "./views/regchange.js";
+import { renderWorkflow } from "./views/workflow.js";
+import { scanWorkflowEscalations } from "./workflow.js";
 import { renderDirectory } from "./views/directory.js";
 import { renderReports } from "./views/reports.js";
 import { settings, aiEnabled } from "./views/regulations.js";
@@ -45,6 +47,7 @@ const VIEWS = {
   correspondence: { icon: "📨", label: "سجل المراسلات", render: renderCorrespondence },
   disclosures: { icon: "🗂", label: "سجل الإفصاحات", render: renderDisclosures },
   maturity: { icon: "📊", label: "تقييم نضج التجمعات", render: renderMaturity, clusterVisible: true },
+  workflow: { icon: "✅", label: "مسارات الاعتماد", render: renderWorkflow },
   meetings: { icon: "🗓", label: "الاجتماعات", render: renderMeetings },
   directory: { icon: "📇", label: "دليل التواصل", render: renderDirectory },
   // موسوعة الوثائق مدمجة داخل مكتبة الالتزام كتبويب فرعي — المسار يبقى للروابط القديمة
@@ -260,6 +263,7 @@ function init() {
       // توليد تنبيهات الاستحقاقات المتأخرة/القريبة في الخلفية (داخل النظام + بريد اختياري)
       if (canEdit(user)) {
         captureSnapshot().catch((e) => console.warn("snapshot failed", e)); // لقطة يومية لسلاسل اللوحة التنفيذية
+        scanWorkflowEscalations().then((n) => { if (n) { reload("notifications").then(updateNotifBadge); } }).catch((e) => console.warn("wf escalation failed", e));
         runReminders()
           .then(async (s) => {
             if (s.inApp) {

@@ -453,6 +453,25 @@ td select { min-width: 110px; font-size: 0.86rem; width: auto; }
 .trend-up { color: var(--st-good); }
 .trend-down { color: var(--st-critical); }
 
+/* ---------- مسارات الاعتماد (سير العمل) ---------- */
+.wf-board { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 6px; }
+.wf-col { flex: 1; min-width: 210px; background: rgba(120, 130, 125, 0.06); border-radius: var(--radius-sm); padding: 8px; }
+.wf-col-head { display: inline-flex; margin-bottom: 8px; font-size: 0.82rem; }
+.wf-card { background: var(--surface-strong); border: 1px solid var(--border-soft); border-radius: 10px; padding: 8px 10px; margin-bottom: 8px; cursor: pointer; transition: transform 0.1s, box-shadow 0.1s; }
+.wf-card:hover { transform: translateY(-1px); box-shadow: var(--shadow-soft); }
+.wf-card-title { font-weight: 600; font-size: 0.88rem; margin: 4px 0; }
+.wf-pipe { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+.wf-step { padding: 4px 12px; border-radius: 14px; font-size: 0.8rem; background: rgba(120, 130, 125, 0.14); color: var(--muted); }
+.wf-step-on { color: #fff; }
+.wf-step-on.lvl-good { background: var(--st-good); }
+.wf-step-on.lvl-warning { background: var(--st-warning); }
+.wf-step-on.lvl-serious { background: var(--st-serious); }
+.wf-step-on.lvl-neutral { background: var(--st-neutral); }
+.wf-arrow { color: var(--muted); }
+.wf-history { display: flex; flex-direction: column; gap: 8px; }
+.wf-hist { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 6px 8px; background: rgba(120, 130, 125, 0.06); border-radius: 8px; font-size: 0.84rem; }
+.wf-hist > div { flex-basis: 100%; }
+
 /* ---------- التوقيع الإلكتروني لمحاضر الاجتماعات ---------- */
 .sig-list { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 6px; }
 .sig-card { display: flex; align-items: center; gap: 10px; background: var(--surface-strong); border: 1px solid var(--border-soft); border-radius: var(--radius-sm); padding: 8px 12px; }
