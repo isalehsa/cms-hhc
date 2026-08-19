@@ -13,6 +13,7 @@ import { renderDashboard } from "./views/dashboard.js";
 import { renderExecutive } from "./views/executive.js";
 import { renderLibrary } from "./views/library.js";
 import { renderRisks } from "./views/risks.js";
+import { renderRiskMap } from "./views/riskmap.js";
 import { renderMonitoring } from "./views/monitoring.js";
 import { renderPlan } from "./views/plan.js";
 import { renderAssessments } from "./views/assessments.js";
@@ -33,6 +34,7 @@ const VIEWS = {
   executive: { icon: "📈", label: "اللوحة التنفيذية", render: renderExecutive },
   library: { icon: "📖", label: "مكتبة الالتزام", render: renderLibrary },
   risks: { icon: "⚠️", label: "سجل المخاطر", render: renderRisks },
+  riskmap: { icon: "🗺", label: "خريطة المخاطر", render: renderRiskMap },
   monitoring: { icon: "🔍", label: "برنامج المراقبة", render: renderMonitoring },
   plan: { icon: "📅", label: "الخطة السنوية", render: renderPlan },
   training: { icon: "🎓", label: "التدريب والتوعية", render: renderTraining },
