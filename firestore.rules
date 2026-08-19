@@ -132,6 +132,20 @@ service cloud.firestore {
       allow delete: if isApprover();
     }
 
+    // إعدادات النظام العامة (عتبات التنبيهات، مستهدفات المؤشرات…) — يحرّرها المحرر
+    match /appConfig/{id} {
+      allow read: if signedIn();
+      allow write: if isEditor();
+    }
+
+    // طابور البريد لإضافة Firebase «Trigger Email» — إنشاء فقط من التطبيق،
+    // والإضافة تُحدّث حقل delivery بصلاحيات المدير خارج هذه القواعد
+    match /mail/{id} {
+      allow read: if isApprover();
+      allow create: if signedIn();
+      allow update, delete: if false;
+    }
+
     // سجل التدقيق: إنشاء فقط — لا تعديل ولا حذف (Audit Trail غير قابل للعبث)
     match /auditLog/{id} {
       allow read: if signedIn();

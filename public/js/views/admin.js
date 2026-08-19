@@ -6,6 +6,7 @@ import {
 } from "../ui.js";
 import { ROLES, DEPT_TYPES, ORG_SECTORS, HEALTH_CLUSTERS } from "../meta.js";
 import { canApprove, createAuthUser } from "../auth.js";
+import { currentDigest, sendDigestNow, digestMailto, digestRecipients, DEFAULT_DUE_SOON } from "../reminders.js";
 
 export function renderAdmin(el, nav, refresh) {
   const manager = canApprove(store.user);
@@ -71,6 +72,19 @@ export function renderAdmin(el, nav, refresh) {
       </div>
     </section>
 
+    <section class="card" id="rem-card">
+      <div class="row" style="justify-content:space-between;align-items:flex-start">
+        <div><h2>🔔 التنبيهات الآلية والملخّص البريدي</h2>
+          <p class="muted">تُولَّد تنبيهات الاستحقاقات المتأخرة والقريبة تلقائياً عند دخول المحررين. يمكن تفعيل ملخّص بريدي يومي عبر إضافة Firebase «Trigger Email».</p></div>
+        <button class="secondary" id="rem-config" title="ضبط عتبات «يستحق قريباً» وتفعيل البريد">⚙ إعداد التنبيهات</button>
+      </div>
+      <div id="rem-summary" class="muted">جاري حساب الاستحقاقات…</div>
+      <div class="row" style="margin-top:10px">
+        <button class="secondary" id="rem-send" title="إرسال الملخّص البريدي فوراً إلى مديري الالتزام (يتطلب تفعيل إضافة البريد)">✉ إرسال ملخّص الآن</button>
+        <a id="rem-mailto" class="btn-link" href="#" title="فتح بريدك بالملخّص جاهزاً — بديل عند عدم تفعيل الإضافة">↗ فتح الملخّص في بريدي</a>
+      </div>
+    </section>
+
     <section class="card">
       <h2>📜 سجل التدقيق (آخر 100 حركة)</h2>
       <div style="overflow-x:auto">
@@ -91,6 +105,26 @@ export function renderAdmin(el, nav, refresh) {
   el.querySelectorAll("[data-editdept]").forEach((b) =>
     b.addEventListener("click", () => openDeptForm(store.departments.find((d) => d.id === b.dataset.editdept), rerender))
   );
+
+  // ملخّص الاستحقاقات وأزرار البريد
+  const dg = currentDigest();
+  const summ = $("#rem-summary", el);
+  if (summ) summ.innerHTML = `الاستحقاقات الحالية: <span class="lvl lvl-critical"><span class="dot"></span>${dg.overdue.length} متأخر</span> · <span class="lvl lvl-warning"><span class="dot"></span>${dg.soon.length} قريب</span>`;
+  const recips = digestRecipients();
+  const mailto = $("#rem-mailto", el);
+  if (mailto) mailto.href = digestMailto(recips.join(","));
+  $("#rem-config", el)?.addEventListener("click", () => openReminderConfig(rerender));
+  $("#rem-send", el)?.addEventListener("click", async () => {
+    if (!recips.length) return toast("لا يوجد مديرو التزام بعناوين بريد مسجّلة", true);
+    if (!(await confirmBox(`إرسال ملخّص التنبيهات إلى ${recips.length} مستلماً الآن؟ يتطلب تفعيل إضافة البريد في Firebase.`))) return;
+    try {
+      const n = await sendDigestNow();
+      await db.audit("CREATE", "Reminder", null, `إرسال ملخّص بريدي يدوي إلى ${n} مستلماً`);
+      toast(n ? `أُدرج ${n} ملخّص في طابور البريد` : "تعذّر الإدراج — تحقق من العناوين", !n);
+    } catch (err) {
+      toast(err.message, true);
+    }
+  });
 
   // سجل التدقيق يُحمَّل عند الطلب (قد يكون كبيراً)
   db.listCol("auditLog").then((logs) => {
@@ -195,6 +229,53 @@ async function seedOrgStructure(done) {
   } catch (err) {
     toast(err.message, true);
   }
+}
+
+// ---------- إعداد التنبيهات الآلية والبريد ----------
+const REM_KIND_LABELS = {
+  requirement: "مراجعة المتطلبات",
+  monitoring: "أنشطة المراقبة",
+  risk: "معالجة المخاطر",
+  finding: "خطط التصحيح",
+  assessment: "الفحص الذاتي",
+  correspondence: "الرد على المراسلات",
+  training: "أنشطة التدريب",
+  meeting: "الاجتماعات",
+};
+
+async function openReminderConfig(done) {
+  const cfg = await db.getConfig("reminders", { emailEnabled: false, dueSoonDays: {} });
+  const days = { ...DEFAULT_DUE_SOON, ...(cfg.dueSoonDays || {}) };
+  const ov = modal(`
+    <h2>⚙ إعداد التنبيهات الآلية</h2>
+    ${fld("الملخّص البريدي اليومي", sel("rem-email", { on: "مُفعّل (يتطلب إضافة Trigger Email)", off: "معطّل" }, cfg.emailEnabled ? "on" : "off"))}
+    <p class="muted">عند التفعيل يُدرَج ملخّص يومي واحد لكل مدير التزام في مجموعة <code>mail</code> لترسله الإضافة. بدون الإضافة استخدم زر «فتح الملخّص في بريدي».</p>
+    <h3 style="margin:14px 0 4px">عتبة «يستحق قريباً» بالأيام</h3>
+    <p class="muted">يُنبَّه على أي استحقاق متأخر دائماً، وعلى القريب ضمن هذه المدة قبل موعده.</p>
+    <div class="form-grid">
+      ${Object.entries(REM_KIND_LABELS).map(([k, label]) => fld(label, `<input type="number" id="rem-${k}" min="1" max="180" value="${esc(days[k])}" />`)).join("")}
+    </div>
+    <div class="row" style="margin-top:14px">
+      <button id="rem-save">حفظ</button>
+      <button class="secondary" id="rem-cancel">إلغاء</button>
+    </div>`, { wide: true });
+  $("#rem-cancel", ov).onclick = () => ov.remove();
+  $("#rem-save", ov).onclick = async () => {
+    const dueSoonDays = {};
+    for (const k of Object.keys(REM_KIND_LABELS)) {
+      const v = parseInt(val(`rem-${k}`, ov), 10);
+      if (v > 0) dueSoonDays[k] = Math.min(180, v);
+    }
+    try {
+      await db.setConfig("reminders", { emailEnabled: val("rem-email", ov) === "on", dueSoonDays });
+      await db.audit("UPDATE", "Config", "reminders", "تعديل إعدادات التنبيهات الآلية");
+      ov.remove();
+      toast("حُفظت الإعدادات");
+      done();
+    } catch (err) {
+      toast(err.message, true);
+    }
+  };
 }
 
 function openUserForm(u, done) {

@@ -209,6 +209,15 @@ button.secondary:hover { background: rgba(20, 112, 92, 0.18); box-shadow: var(--
 button.danger { background: var(--danger-grad); box-shadow: 0 4px 14px rgba(153, 48, 31, 0.28); }
 button.small { padding: 5px 12px; font-size: 0.84rem; }
 button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+/* رابط بمظهر زر ثانوي — للروابط التي تفتح تطبيقاً خارجياً (بريد، تقويم…) */
+.btn-link {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 9px 16px; border-radius: var(--radius-sm);
+  background: rgba(20, 112, 92, 0.1); color: var(--primary-dark);
+  font-size: 0.9rem; font-weight: 600; text-decoration: none;
+  border: 1px solid var(--border-soft); transition: background 0.14s;
+}
+.btn-link:hover { background: rgba(20, 112, 92, 0.18); }
 
 .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 .grow { flex: 1; min-width: 180px; }

@@ -6,6 +6,7 @@ import { canEdit, canApprove, isClusterOfficer } from "./auth.js";
 import { store, loadAll, reload } from "./state.js";
 import { $, esc, toast, modal, fld, txt, val, spinnerHtml, fmtDate, initTooltips } from "./ui.js";
 import { runAutoSync } from "./sync.js";
+import { runReminders } from "./reminders.js";
 import { ROLES } from "./meta.js";
 import { renderDashboard } from "./views/dashboard.js";
 import { renderLibrary } from "./views/library.js";
@@ -247,6 +248,23 @@ function init() {
       const home = isClusterOfficer(user) ? "maturity" : "dashboard";
       nav(VIEWS[hash] ? hash : home);
       toast(`مرحباً، ${user.name}`);
+      // توليد تنبيهات الاستحقاقات المتأخرة/القريبة في الخلفية (داخل النظام + بريد اختياري)
+      if (canEdit(user)) {
+        runReminders()
+          .then(async (s) => {
+            if (s.inApp) {
+              await reload("notifications");
+              updateNotifBadge();
+            }
+            if (s.overdue || s.soon) {
+              const parts = [];
+              if (s.overdue) parts.push(`${s.overdue} متأخر`);
+              if (s.soon) parts.push(`${s.soon} قريب`);
+              toast(`تنبيهات الاستحقاق: ${parts.join(" و")}${s.emails ? ` — أُرسل ${s.emails} ملخّص بريدي` : ""}`);
+            }
+          })
+          .catch((e) => console.warn("reminders failed", e));
+      }
       // تحديث سجل المخاطر آلياً في الخلفية وفق الإضافات الحديثة في المكتبة والتحليلات
       if (canEdit(user)) {
         runAutoSync()

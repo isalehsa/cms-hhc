@@ -104,7 +104,7 @@ export async function audit(action, entityType, entityId, details) {
   }
 }
 
-export async function notify({ title, message, type, link, roleTarget = null, userId = null }) {
+export async function notify({ title, message, type, link, roleTarget = null, userId = null, dedupeKey = null }) {
   try {
     await addRow("notifications", {
       title,
@@ -113,11 +113,46 @@ export async function notify({ title, message, type, link, roleTarget = null, us
       link: link || null,
       roleTarget,
       userId,
+      dedupeKey: dedupeKey || null,
       read: false,
       createdAt: now(),
     });
   } catch (e) {
     console.warn("notify failed", e);
+  }
+}
+
+// ---------- إعدادات النظام العامة (appConfig) ----------
+// وثيقة واحدة لكل نوع إعداد (reminders / kpiTargets …) — قراءة للجميع وكتابة للمعتمِدين
+export async function getConfig(key, fallback = {}) {
+  try {
+    const snap = await getDoc(doc(db, "appConfig", key));
+    return snap.exists() ? { ...fallback, ...snap.data() } : { ...fallback };
+  } catch {
+    return { ...fallback };
+  }
+}
+
+export async function setConfig(key, data) {
+  await setDoc(doc(db, "appConfig", key), { ...data, updatedAt: now() }, { merge: true });
+}
+
+// ---------- طابور البريد (متوافق مع إضافة Firebase «Trigger Email») ----------
+// تكتب الوثيقة إلى مجموعة mail بمعرّف ثابت لمنع التكرار؛ الإضافة تُرسلها وتُحدّث حقل delivery
+export async function queueEmail(id, to, subject, html, text = "") {
+  const recipients = (Array.isArray(to) ? to : [to]).filter(Boolean);
+  if (!recipients.length) return false;
+  try {
+    await setRow("mail", id, {
+      to: recipients,
+      message: { subject, html, text: text || html.replace(/<[^>]+>/g, " ") },
+      queuedAt: now(),
+      queuedBy: currentUser?.uid || null,
+    });
+    return true;
+  } catch (e) {
+    console.warn("queueEmail failed", e);
+    return false;
   }
 }
 
