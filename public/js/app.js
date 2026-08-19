@@ -26,6 +26,7 @@ import { renderMeetings } from "./views/meetings.js";
 import { renderRegChange } from "./views/regchange.js";
 import { renderWorkflow } from "./views/workflow.js";
 import { scanWorkflowEscalations } from "./workflow.js";
+import { registerServiceWorker, ensureNotificationPermission, notificationsState, showLocalNotification } from "./pwa.js";
 import { renderDirectory } from "./views/directory.js";
 import { renderReports } from "./views/reports.js";
 import { settings, aiEnabled } from "./views/regulations.js";
@@ -116,9 +117,12 @@ function renderShell() {
 }
 
 function renderShellNav() {
-  document.querySelectorAll("#side-nav .nav-item").forEach((b) =>
-    b.classList.toggle("active", b.dataset.view === currentView)
-  );
+  document.querySelectorAll("#side-nav .nav-item").forEach((b) => {
+    const active = b.dataset.view === currentView;
+    b.classList.toggle("active", active);
+    if (active) b.setAttribute("aria-current", "page");
+    else b.removeAttribute("aria-current");
+  });
 }
 
 // ---------- التنبيهات ----------
@@ -142,7 +146,10 @@ function openNotifications() {
   const ov = modal(`
     <div class="row" style="justify-content:space-between">
       <h2>🔔 التنبيهات</h2>
-      ${items.some((n) => !n.read) ? '<button class="secondary small" id="nf-readall">تعليم الكل كمقروء</button>' : ""}
+      <div class="row">
+        ${notificationsState() === "default" ? '<button class="secondary small" id="nf-enable" title="تفعيل إشعارات النظام على هذا الجهاز">تفعيل إشعارات النظام</button>' : ""}
+        ${items.some((n) => !n.read) ? '<button class="secondary small" id="nf-readall">تعليم الكل كمقروء</button>' : ""}
+      </div>
     </div>
     ${items
       .map(
@@ -153,6 +160,11 @@ function openNotifications() {
       .join("") || '<p class="muted">لا توجد تنبيهات</p>'}
     <div class="row" style="margin-top:12px"><button class="secondary" id="nf-close">إغلاق</button></div>`);
   $("#nf-close", ov).onclick = () => ov.remove();
+  $("#nf-enable", ov)?.addEventListener("click", async () => {
+    const state = await ensureNotificationPermission();
+    toast(state === "granted" ? "فُعّلت إشعارات النظام" : state === "denied" ? "الإشعارات محظورة — فعّلها من إعدادات المتصفح" : "لم تُفعّل الإشعارات", state !== "granted");
+    $("#nf-enable", ov)?.remove();
+  });
   $("#nf-readall", ov)?.addEventListener("click", async () => {
     const unread = items.filter((n) => !n.read);
     for (const n of unread) await db.updateRow("notifications", n.id, { read: true }).catch(() => {});
@@ -241,6 +253,7 @@ function renderLogin() {
 // ---------- تشغيل ----------
 function init() {
   initTooltips();
+  registerServiceWorker();
   if (!configReady) return renderSetup();
   authApi.onAuth(async (user) => {
     store.user = user;
@@ -275,6 +288,8 @@ function init() {
               if (s.overdue) parts.push(`${s.overdue} متأخر`);
               if (s.soon) parts.push(`${s.soon} قريب`);
               toast(`تنبيهات الاستحقاق: ${parts.join(" و")}${s.emails ? ` — أُرسل ${s.emails} ملخّص بريدي` : ""}`);
+              // إشعار نظام محلي عند تفعيل الإشعارات (PWA)
+              if (s.overdue) showLocalNotification("تنبيهات الالتزام", `لديك ${s.overdue} استحقاق متأخر و${s.soon} قريب`, "#dashboard").catch(() => {});
             }
           })
           .catch((e) => console.warn("reminders failed", e));

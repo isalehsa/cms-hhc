@@ -33,6 +33,21 @@
 
 ::selection { background: rgba(26, 138, 112, 0.25); }
 
+/* رابط تجاوز إلى المحتوى — يظهر عند التنقّل بلوحة المفاتيح (وصول WCAG) */
+.skip-link {
+  position: fixed; top: -60px; right: 12px; z-index: 2000;
+  background: var(--primary-dark); color: #fff; padding: 10px 18px;
+  border-radius: 0 0 10px 10px; text-decoration: none; font-weight: 600;
+  transition: top 0.18s;
+}
+.skip-link:focus { top: 0; outline: 3px solid rgba(26, 138, 112, 0.5); }
+
+/* احترام تفضيل تقليل الحركة (وصول WCAG) */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; scroll-behavior: auto !important; }
+  button:hover, .wf-card:hover, .rowlink:hover { transform: none !important; }
+}
+
 body {
   margin: 0;
   /* الخط: Scala أولاً إن كان مثبتاً محلياً، وإلا البديل الويب IBM Plex Sans Arabic */

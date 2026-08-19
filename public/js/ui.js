@@ -94,12 +94,29 @@ export function chip(text) {
 
 // ---------- نوافذ منبثقة ----------
 export function modal(html, { wide = false } = {}) {
+  const prevFocus = document.activeElement;
   const overlay = document.createElement("div");
   overlay.className = "modal-overlay";
-  overlay.innerHTML = `<div class="modal card ${wide ? "modal-wide" : ""}">${html}</div>`;
+  overlay.innerHTML = `<div class="modal card ${wide ? "modal-wide" : ""}" role="dialog" aria-modal="true">${html}</div>`;
   document.body.appendChild(overlay);
-  overlay.addEventListener("click", (e) => e.target === overlay && overlay.remove());
-  overlay.close = () => overlay.remove();
+  const card = overlay.firstElementChild;
+
+  const onKey = (e) => {
+    if (e.key !== "Escape") return;
+    const all = document.querySelectorAll(".modal-overlay");
+    if (all[all.length - 1] === overlay) close();
+  };
+  const close = () => {
+    document.removeEventListener("keydown", onKey);
+    Element.prototype.remove.call(overlay);
+    try { prevFocus?.focus?.(); } catch { /* العنصر السابق لم يعد موجوداً */ }
+  };
+  document.addEventListener("keydown", onKey);
+  overlay.addEventListener("click", (e) => e.target === overlay && close());
+  overlay.remove = close;
+  overlay.close = close;
+  // نقل التركيز إلى النافذة لقارئات الشاشة والتنقّل بلوحة المفاتيح
+  setTimeout(() => { (card.querySelector("input, select, textarea, button, [href]") || card).focus?.(); }, 0);
   return overlay;
 }
 
