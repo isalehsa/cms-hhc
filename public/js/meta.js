@@ -374,6 +374,24 @@ export const FND_SOURCES = {
   MANUAL: "يدوي",
 };
 
+// ---------- سجل التغيّر التنظيمي ----------
+export const REGCHANGE_TYPES = {
+  NEW: "نظام / لائحة جديدة",
+  AMENDMENT: "تعديل على نظام قائم",
+  REPEAL: "إلغاء",
+  CIRCULAR: "تعميم / قرار",
+  REQUIREMENT: "متطلب رقابي جديد",
+};
+
+export const REGCHANGE_STATUS = {
+  NEW: "جديد — بانتظار التقييم",
+  UNDER_REVIEW: "قيد تقييم الأثر",
+  IMPACTED: "حُدّد الأثر وأُنشئت المراجعة",
+  CLOSED: "مغلق",
+};
+
+export const REGCHANGE_ROLE = { NEW: "warning", UNDER_REVIEW: "serious", IMPACTED: "good", CLOSED: "neutral" };
+
 // ---------- الاجتماعات ----------
 export const MEETING_TYPES = {
   WEEKLY: "اجتماع أسبوعي",

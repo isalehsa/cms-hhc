@@ -23,6 +23,7 @@ import { renderDisclosures } from "./views/disclosures.js";
 import { renderTraining } from "./views/training.js";
 import { renderMaturity } from "./views/maturity.js";
 import { renderMeetings } from "./views/meetings.js";
+import { renderRegChange } from "./views/regchange.js";
 import { renderDirectory } from "./views/directory.js";
 import { renderReports } from "./views/reports.js";
 import { settings, aiEnabled } from "./views/regulations.js";
@@ -36,6 +37,7 @@ const VIEWS = {
   risks: { icon: "⚠️", label: "سجل المخاطر", render: renderRisks },
   riskmap: { icon: "🗺", label: "خريطة المخاطر", render: renderRiskMap },
   monitoring: { icon: "🔍", label: "برنامج المراقبة", render: renderMonitoring },
+  regchange: { icon: "🔔", label: "التغيّر التنظيمي", render: renderRegChange },
   plan: { icon: "📅", label: "الخطة السنوية", render: renderPlan },
   training: { icon: "🎓", label: "التدريب والتوعية", render: renderTraining },
   assessments: { icon: "📋", label: "الفحص الذاتي", render: renderAssessments },
