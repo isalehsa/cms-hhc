@@ -58,6 +58,23 @@ export const todayISO = () => new Date().toISOString().slice(0, 10);
 export const isoFromInput = (v) => (v ? new Date(v + "T12:00:00Z").toISOString() : null);
 export const inputFromISO = (iso) => (iso ? String(iso).slice(0, 10) : "");
 
+// ---------- التاريخ مع الوقت (للاجتماعات) ----------
+const pad2 = (n) => String(n).padStart(2, "0");
+export const inputFromISODateTime = (iso) => {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d)) return "";
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+};
+export const isoFromDateTime = (v) => (v ? new Date(v).toISOString() : null); // القيمة محلية → ISO عالمي
+export const dateTimeInp = (id, iso = "") => `<input type="datetime-local" id="${id}" value="${inputFromISODateTime(iso)}" />`;
+export function fmtDateTime(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d)) return "—";
+  return d.toLocaleString("ar-SA-u-ca-gregory-nu-latn", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
 // ---------- شارات ----------
 // شارة حالة بلون دلالي + نص دائماً (اللون لا يحمل المعنى وحده)
 export function levelBadge(levelKey, label) {

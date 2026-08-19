@@ -21,6 +21,7 @@ import { renderCorrespondence } from "./views/correspondence.js";
 import { renderDisclosures } from "./views/disclosures.js";
 import { renderTraining } from "./views/training.js";
 import { renderMaturity } from "./views/maturity.js";
+import { renderMeetings } from "./views/meetings.js";
 import { renderDirectory } from "./views/directory.js";
 import { renderReports } from "./views/reports.js";
 import { settings, aiEnabled } from "./views/regulations.js";
@@ -40,6 +41,7 @@ const VIEWS = {
   correspondence: { icon: "📨", label: "سجل المراسلات", render: renderCorrespondence },
   disclosures: { icon: "🗂", label: "سجل الإفصاحات", render: renderDisclosures },
   maturity: { icon: "📊", label: "تقييم نضج التجمعات", render: renderMaturity, clusterVisible: true },
+  meetings: { icon: "🗓", label: "الاجتماعات", render: renderMeetings },
   directory: { icon: "📇", label: "دليل التواصل", render: renderDirectory },
   // موسوعة الوثائق مدمجة داخل مكتبة الالتزام كتبويب فرعي — المسار يبقى للروابط القديمة
   regulations: {

@@ -374,6 +374,36 @@ export const FND_SOURCES = {
   MANUAL: "يدوي",
 };
 
+// ---------- الاجتماعات ----------
+export const MEETING_TYPES = {
+  WEEKLY: "اجتماع أسبوعي",
+  DEPARTMENT: "اجتماع إدارة",
+  COMMITTEE: "لجنة",
+  REVIEW: "اجتماع مراجعة",
+  OTHER: "أخرى",
+};
+
+export const MEETING_STATUS = {
+  SCHEDULED: "مجدول",
+  HELD: "انعقد",
+  CANCELLED: "ملغى",
+};
+
+// تكرار الاجتماع الدوري — يُترجَم إلى قاعدة RRULE في ملف iCalendar
+export const MEETING_RECURRENCE = {
+  NONE: "بلا تكرار",
+  WEEKLY: "أسبوعي",
+  BIWEEKLY: "كل أسبوعين",
+  MONTHLY: "شهري",
+};
+
+// حالة محضر الاجتماع (التوقيع الإلكتروني)
+export const MINUTES_STATUS = {
+  NONE: "بلا محضر",
+  DRAFT: "مسودة محضر",
+  APPROVED: "محضر معتمد وموقّع",
+};
+
 // ---------- ألوان الحالات (لوحة حالات معتمدة — تُرافق دوماً بنص، لا لون وحده) ----------
 export const STATUS_COLORS = {
   good: "#0ca30c",

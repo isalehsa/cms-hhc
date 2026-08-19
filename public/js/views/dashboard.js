@@ -25,6 +25,7 @@ function calendarEvents() {
   for (const a of store.assessments) if (["SENT", "SUBMITTED"].includes(a.status)) add(a.dueDate, "📋", "فحص", `استحقاق الفحص الذاتي: ${a.title}`, "assessments");
   for (const c of store.correspondence) if (c.status === "OPEN") add(c.dueDate, "📨", c.code, `استحقاق الرد على المراسلة: ${c.code} — ${c.subject}`, "correspondence");
   for (const t of store.trainings) if (["PLANNED", "IN_PROGRESS"].includes(t.status)) add(t.dueDate || t.date, "🎓", t.code, `نشاط تدريب/توعية: ${t.code} — ${t.title}`, "training");
+  for (const mt of store.meetings || []) if (mt.status !== "CANCELLED") add(mt.startAt, "🗓", mt.title, `اجتماع: ${mt.title}`, "meetings");
   return evs;
 }
 
@@ -200,7 +201,7 @@ export function renderDashboard(el, nav) {
           <button class="secondary small" id="cal-next" title="عرض الشهر التالي">‹</button>
         </div>
       </div>
-      <p class="muted">مراجعات المتطلبات 📖 · نهايات المراقبة 🔍 · استحقاقات المخاطر ⚠ · خطط التصحيح 🛠 · الفحص الذاتي 📋 — الأحمر متأخر</p>
+      <p class="muted">مراجعات المتطلبات 📖 · نهايات المراقبة 🔍 · استحقاقات المخاطر ⚠ · خطط التصحيح 🛠 · الفحص الذاتي 📋 · الاجتماعات 🗓 — الأحمر متأخر</p>
       ${monthCalendar(calState.y, calState.m, calendarEvents())}
     </section>
 
