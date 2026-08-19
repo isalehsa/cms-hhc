@@ -371,8 +371,47 @@ export const ACTION_STATUS = {
 export const FND_SOURCES = {
   MONITORING: "برنامج المراقبة",
   ASSESSMENT: "الفحص الذاتي",
+  AUDIT: "التدقيق الداخلي",
   MANUAL: "يدوي",
 };
+
+// ---------- التدقيق الداخلي والأدلة ----------
+export const AUDIT_TYPES = {
+  COMPLIANCE: "تدقيق التزام",
+  INTERNAL: "تدقيق داخلي",
+  PROCESS: "تدقيق إجراءات",
+  FOLLOWUP: "تدقيق متابعة",
+  SPECIAL: "مهمة خاصة",
+};
+
+export const AUDIT_STATUS = {
+  PLANNED: "مخطط",
+  FIELDWORK: "قيد التنفيذ الميداني",
+  REPORTING: "إعداد التقرير",
+  COMPLETED: "مكتمل ومعتمد",
+  CANCELLED: "ملغى",
+};
+
+export const AUDIT_STATUS_ROLE = { PLANNED: "neutral", FIELDWORK: "warning", REPORTING: "serious", COMPLETED: "good", CANCELLED: "neutral" };
+
+// رأي/تصنيف التدقيق النهائي
+export const AUDIT_OPINION = {
+  SATISFACTORY: "مُرضٍ",
+  PARTIAL: "مُرضٍ جزئياً / يحتاج تحسين",
+  UNSATISFACTORY: "غير مُرضٍ",
+};
+export const AUDIT_OPINION_ROLE = { SATISFACTORY: "good", PARTIAL: "warning", UNSATISFACTORY: "critical" };
+
+// نتيجة ورقة العمل (إجراء التدقيق)
+export const WP_RESULT = {
+  EFFECTIVE: "فعّال / ملتزم",
+  EXCEPTION: "ملاحظة / استثناء",
+  NA: "لا ينطبق",
+};
+export const WP_RESULT_ROLE = { EFFECTIVE: "good", EXCEPTION: "critical", NA: "neutral" };
+
+// حالة تقرير التدقيق
+export const AUDIT_REPORT_STATUS = { NONE: "بلا تقرير", DRAFT: "مسودة", APPROVED: "معتمد" };
 
 // ---------- محرك سير العمل والاعتماد ----------
 // المسار الثابت: مسودة → مراجعة → اعتماد → مغلق (مع مسار الإعادة/الرفض)

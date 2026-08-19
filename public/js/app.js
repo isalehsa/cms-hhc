@@ -25,6 +25,7 @@ import { renderMaturity } from "./views/maturity.js";
 import { renderMeetings } from "./views/meetings.js";
 import { renderRegChange } from "./views/regchange.js";
 import { renderWorkflow } from "./views/workflow.js";
+import { renderAudit } from "./views/audit.js";
 import { scanWorkflowEscalations } from "./workflow.js";
 import { registerServiceWorker, ensureNotificationPermission, notificationsState, showLocalNotification } from "./pwa.js";
 import { renderDirectory } from "./views/directory.js";
@@ -45,6 +46,7 @@ const VIEWS = {
   training: { icon: "🎓", label: "التدريب والتوعية", render: renderTraining },
   assessments: { icon: "📋", label: "الفحص الذاتي", render: renderAssessments },
   findings: { icon: "🛠", label: "الملاحظات والتصحيح", render: renderFindings },
+  audit: { icon: "🕵", label: "التدقيق الداخلي", render: renderAudit },
   correspondence: { icon: "📨", label: "سجل المراسلات", render: renderCorrespondence },
   disclosures: { icon: "🗂", label: "سجل الإفصاحات", render: renderDisclosures },
   maturity: { icon: "📊", label: "تقييم نضج التجمعات", render: renderMaturity, clusterVisible: true },
