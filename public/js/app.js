@@ -28,9 +28,14 @@ import { renderWorkflow } from "./views/workflow.js";
 import { renderAudit } from "./views/audit.js";
 import { scanWorkflowEscalations } from "./workflow.js";
 import { registerServiceWorker, ensureNotificationPermission, notificationsState, showLocalNotification } from "./pwa.js";
+import {
+  hasSSO, ssoLabel, loginWithSSO, isMfaError, getMfaResolver, completeTotpSignIn,
+  enrolledFactors, startTotpEnrollment, finishTotpEnrollment, unenrollFactor,
+} from "./identity.js";
 import { renderDirectory } from "./views/directory.js";
 import { renderReports } from "./views/reports.js";
 import { renderAssistant } from "./views/assistant.js";
+import { renderGovernance } from "./views/governance.js";
 import { settings, aiEnabled } from "./views/regulations.js";
 import { renderAdmin } from "./views/admin.js";
 import { DEFAULT_MODEL } from "./analyzer.js";
@@ -61,6 +66,7 @@ const VIEWS = {
   },
   reports: { icon: "📊", label: "التقارير", render: renderReports },
   assistant: { icon: "🤖", label: "المساعد الذكي", render: renderAssistant },
+  governance: { icon: "🛡", label: "حوكمة البيانات", render: renderGovernance },
   admin: { icon: "⚙️", label: "الإدارة", render: renderAdmin },
 };
 
@@ -106,6 +112,7 @@ function renderShell() {
       <div class="row">
         <button class="secondary small" id="btn-notif" title="عرض التنبيهات الواردة">🔔<span id="notif-count" class="notif-count hidden"></span></button>
         ${canEdit(u) ? '<button class="secondary small" id="btn-settings" title="إعدادات التحليل الذكي (مفتاح Claude API والنموذج)">⚙</button>' : ""}
+        <button class="secondary small" id="btn-security" title="الأمان والتحقق بخطوتين (MFA)">🔐</button>
         <button class="secondary small" id="btn-refresh" title="إعادة تحميل جميع البيانات من الخادم">↻</button>
         <button class="secondary small" id="btn-logout" title="تسجيل الخروج من النظام">خروج</button>
       </div>
@@ -114,6 +121,7 @@ function renderShell() {
   $("#btn-logout").onclick = () => authApi.logout();
   $("#btn-refresh").onclick = async () => { toast("جاري التحديث…"); await refreshAll(); toast("حُدّثت البيانات"); };
   $("#btn-settings")?.addEventListener("click", openSettings);
+  $("#btn-security").onclick = openSecurity;
   $("#btn-notif").onclick = openNotifications;
   $("#side-nav").querySelectorAll("[data-view]").forEach((b) => (b.onclick = () => nav(b.dataset.view)));
   renderShellNav();
@@ -191,6 +199,76 @@ function openNotifications() {
   });
 }
 
+// ---------- الأمان: التحقق بخطوتين (MFA / TOTP) ----------
+function openSecurity() {
+  const factors = enrolledFactors();
+  const ov = modal(`
+    <h2>🔐 الأمان — التحقق بخطوتين</h2>
+    <p class="muted">أضف طبقة حماية ثانية بربط تطبيق مصادقة (TOTP) بحسابك — متوافق مع ضوابط الأمن (NCA ECC).</p>
+    <h3>العوامل المسجّلة</h3>
+    ${factors.length ? `<ul>${factors.map((f) => `<li>${esc(f.displayName || "تطبيق مصادقة")} <button class="danger small" data-unen="${esc(f.uid)}">إزالة</button></li>`).join("")}</ul>` : '<p class="muted">لا يوجد تحقّق بخطوتين مفعّل.</p>'}
+    <div id="mfa-enroll-area"></div>
+    <div class="row" style="margin-top:14px">
+      <button id="mfa-start">＋ تسجيل تطبيق مصادقة</button>
+      <button class="secondary" id="sec-close">إغلاق</button>
+    </div>`);
+  $("#sec-close", ov).onclick = () => ov.remove();
+  ov.querySelectorAll("[data-unen]").forEach((b) => b.addEventListener("click", async () => {
+    if (!(await import("./ui.js").then((m) => m.confirmBox("إزالة هذا العامل؟")))) return;
+    try { await unenrollFactor(b.dataset.unen); toast("أُزيل العامل"); ov.remove(); openSecurity(); }
+    catch (e) { toast(e.message, true); }
+  }));
+  $("#mfa-start", ov).onclick = async () => {
+    const area = $("#mfa-enroll-area", ov);
+    area.innerHTML = spinnerHtml("جاري تجهيز السر…");
+    try {
+      const { secret, secretKey, uri } = await startTotpEnrollment(store.user.email, "CMS — إدارة الالتزام");
+      area.innerHTML = `
+        <div class="card" style="background:rgba(20,112,92,0.05);margin-top:10px">
+          <p>أضف الحساب في تطبيق المصادقة يدوياً بهذا المفتاح، أو افتح الرابط:</p>
+          <p><code style="word-break:break-all">${esc(secretKey)}</code></p>
+          <p><a href="${esc(uri)}" class="btn-link">فتح في تطبيق المصادقة</a></p>
+          ${fld("رمز التحقق من التطبيق", '<input type="text" id="mfa-enroll-otp" inputmode="numeric" placeholder="123456" />')}
+          <div class="row"><button id="mfa-finish">تأكيد وتفعيل</button></div>
+        </div>`;
+      $("#mfa-finish", area).onclick = async () => {
+        try {
+          await finishTotpEnrollment(secret, val("mfa-enroll-otp", ov), "تطبيق مصادقة");
+          toast("فُعّل التحقق بخطوتين");
+          ov.remove();
+          openSecurity();
+        } catch (e) {
+          toast(e.code === "auth/requires-recent-login" ? "يلزم تسجيل دخول حديث — سجّل الخروج ثم الدخول وأعد المحاولة" : (e.message || "رمز غير صحيح"), true);
+        }
+      };
+    } catch (e) {
+      area.innerHTML = `<p class="lvl lvl-critical"><span class="dot"></span>${esc(e.code === "auth/requires-recent-login" ? "يلزم تسجيل دخول حديث لتفعيل التحقق بخطوتين" : e.message)}</p>`;
+    }
+  };
+}
+
+// نافذة إدخال رمز TOTP عند الدخول (بعد طلب MFA)
+function promptMfaCode(err) {
+  const resolver = getMfaResolver(err);
+  const ov = modal(`
+    <h2>🔐 التحقق بخطوتين</h2>
+    <p class="muted">أدخل الرمز من تطبيق المصادقة لإتمام الدخول.</p>
+    ${fld("رمز التحقق", '<input type="text" id="mfa-otp" inputmode="numeric" autocomplete="one-time-code" placeholder="123456" />')}
+    <div class="row" style="margin-top:14px">
+      <button id="mfa-go">تأكيد</button>
+      <button class="secondary" id="mfa-cancel">إلغاء</button>
+    </div>`);
+  $("#mfa-cancel", ov).onclick = () => { ov.remove(); renderLogin(); };
+  $("#mfa-go", ov).onclick = async () => {
+    try {
+      await completeTotpSignIn(resolver, val("mfa-otp", ov));
+      ov.remove(); // onAuth يُكمل تحميل النظام
+    } catch (e) {
+      toast(e.message?.includes("INVALID") || e.code === "auth/invalid-verification-code" ? "رمز غير صحيح" : (e.message || "تعذّر التحقق"), true);
+    }
+  };
+}
+
 // ---------- إعدادات التحليل الذكي ----------
 function openSettings() {
   const ov = modal(`
@@ -239,6 +317,7 @@ function renderLogin() {
       <label>كلمة المرور</label>
       <input type="password" id="login-pass" autocomplete="current-password" />
       <div style="margin-top:14px"><button id="login-btn" style="width:100%">دخول</button></div>
+      ${hasSSO() ? `<div style="margin-top:10px"><button class="secondary" id="sso-btn" style="width:100%">🔐 ${esc(ssoLabel())}</button></div>` : ""}
     </section>`;
   const doLogin = async () => {
     const btn = $("#login-btn");
@@ -246,12 +325,21 @@ function renderLogin() {
     try {
       await authApi.login($("#login-email").value.trim(), $("#login-pass").value);
     } catch (err) {
+      if (isMfaError(err)) { promptMfaCode(err); return; }
       toast(err.message, true);
       btn.disabled = false;
     }
   };
   $("#login-btn").onclick = doLogin;
   $("#login-pass").addEventListener("keydown", (e) => e.key === "Enter" && doLogin());
+  $("#sso-btn")?.addEventListener("click", async () => {
+    try {
+      await loginWithSSO();
+    } catch (err) {
+      if (isMfaError(err)) { promptMfaCode(err); return; }
+      toast(err.message || err.code || "تعذّر الدخول الموحّد", true);
+    }
+  });
 }
 
 // ---------- تشغيل ----------
