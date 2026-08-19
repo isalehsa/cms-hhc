@@ -138,6 +138,13 @@ service cloud.firestore {
       allow write: if isEditor();
     }
 
+    // اللقطات اليومية لمؤشرات اللوحة التنفيذية — يلتقطها المحرر، ولا تُحذف
+    match /metricSnapshots/{id} {
+      allow read: if signedIn();
+      allow create, update: if isEditor();
+      allow delete: if isApprover();
+    }
+
     // طابور البريد لإضافة Firebase «Trigger Email» — إنشاء فقط من التطبيق،
     // والإضافة تُحدّث حقل delivery بصلاحيات المدير خارج هذه القواعد
     match /mail/{id} {

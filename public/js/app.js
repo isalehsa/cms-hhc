@@ -7,8 +7,10 @@ import { store, loadAll, reload } from "./state.js";
 import { $, esc, toast, modal, fld, txt, val, spinnerHtml, fmtDate, initTooltips } from "./ui.js";
 import { runAutoSync } from "./sync.js";
 import { runReminders } from "./reminders.js";
+import { captureSnapshot } from "./metrics.js";
 import { ROLES } from "./meta.js";
 import { renderDashboard } from "./views/dashboard.js";
+import { renderExecutive } from "./views/executive.js";
 import { renderLibrary } from "./views/library.js";
 import { renderRisks } from "./views/risks.js";
 import { renderMonitoring } from "./views/monitoring.js";
@@ -27,6 +29,7 @@ import { DEFAULT_MODEL } from "./analyzer.js";
 
 const VIEWS = {
   dashboard: { icon: "🏠", label: "لوحة التحكم", render: renderDashboard },
+  executive: { icon: "📈", label: "اللوحة التنفيذية", render: renderExecutive },
   library: { icon: "📖", label: "مكتبة الالتزام", render: renderLibrary },
   risks: { icon: "⚠️", label: "سجل المخاطر", render: renderRisks },
   monitoring: { icon: "🔍", label: "برنامج المراقبة", render: renderMonitoring },
@@ -250,6 +253,7 @@ function init() {
       toast(`مرحباً، ${user.name}`);
       // توليد تنبيهات الاستحقاقات المتأخرة/القريبة في الخلفية (داخل النظام + بريد اختياري)
       if (canEdit(user)) {
+        captureSnapshot().catch((e) => console.warn("snapshot failed", e)); // لقطة يومية لسلاسل اللوحة التنفيذية
         runReminders()
           .then(async (s) => {
             if (s.inApp) {
