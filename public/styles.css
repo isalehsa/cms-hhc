@@ -453,6 +453,15 @@ td select { min-width: 110px; font-size: 0.86rem; width: auto; }
 .trend-up { color: var(--st-good); }
 .trend-down { color: var(--st-critical); }
 
+/* ---------- التوقيع الإلكتروني لمحاضر الاجتماعات ---------- */
+.sig-list { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 6px; }
+.sig-card { display: flex; align-items: center; gap: 10px; background: var(--surface-strong); border: 1px solid var(--border-soft); border-radius: var(--radius-sm); padding: 8px 12px; }
+.sig-img { height: 46px; max-width: 130px; object-fit: contain; background: #fff; border-radius: 6px; }
+.sig-pad-wrap { border: 1px dashed var(--primary); border-radius: var(--radius-sm); background: #fff; overflow: hidden; }
+.sig-pad { width: 100%; height: 180px; display: block; touch-action: none; cursor: crosshair; }
+.chk-line { display: flex; align-items: center; gap: 8px; font-size: 0.9rem; }
+.chk-line input { width: auto; }
+
 /* ---------- الخريطة الحرارية 5×5 ---------- */
 .heatmap { border-collapse: separate; border-spacing: 3px; width: 100%; table-layout: fixed; }
 .heatmap td, .heatmap th { border: none; text-align: center; padding: 0; }
