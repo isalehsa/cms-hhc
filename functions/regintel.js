@@ -306,7 +306,7 @@ async function runScan({ trigger = "SCHEDULE", triggeredBy = null, triggeredByNa
   const summary = {
     id: scanId, trigger, triggeredBy, triggeredByName,
     startedAt: nowISO(), finishedAt: null, status: "RUNNING",
-    sourcesScanned: 0, itemsFound: 0, created: 0, analyzed: 0, errors: [],
+    sourcesScanned: 0, itemsFound: 0, created: 0, analyzed: 0, errors: [], sources: [],
   };
   await db().doc(`regScans/${scanId}`).set(summary);
 
@@ -331,7 +331,9 @@ async function runScan({ trigger = "SCHEDULE", triggeredBy = null, triggeredByNa
       try {
         items = await readSource(source, limit, deps);
       } catch (e) {
-        summary.errors.push({ source: source.name, url: source.url || null, error: String(e.message).slice(0, 300) });
+        const msg = String(e.message).slice(0, 300);
+        summary.errors.push({ source: source.name, url: source.url || null, error: msg });
+        summary.sources.push({ name: source.name, url: source.url || null, status: "ERROR", items: 0, created: 0, error: msg });
         await db().doc(`regSources/${source.id}`).update({
           lastScanAt: nowISO(), lastStatus: "ERROR", lastError: String(e.message).slice(0, 300), updatedAt: nowISO(),
         }).catch(() => {});
@@ -364,6 +366,11 @@ async function runScan({ trigger = "SCHEDULE", triggeredBy = null, triggeredByNa
         created.push({ ...row, id: code });
         summary.created++;
       }
+
+      summary.sources.push({
+        name: source.name, url: source.url || null,
+        status: items.length ? "OK" : "EMPTY", items: items.length, created: created.length, error: null,
+      });
 
       await db().doc(`regSources/${source.id}`).update({
         lastScanAt: nowISO(),

@@ -136,43 +136,55 @@ async function safeFetch(rawUrl, options = {}) {
     if (!shape.ok) throw new Error(shape.reason);
     await assertPublicHost(shape.host, options.lookup);
 
+    // المهلة تغطي الطلب **وقراءة الجسم معاً**: خادم يرسل الترويسات ثم يتباطأ
+    // أو لا يُنهي الاتصال كان سيُعلّق العملية إلى ما لا نهاية لو أُلغي المؤقّت مبكراً.
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
-    let res;
     try {
-      res = await (options.fetchImpl || fetch)(shape.url, {
-        method: "GET",
-        redirect: "manual",
-        signal: controller.signal,
-        headers: {
-          "user-agent": "CMS-HHC-RegulatoryIntelligence/1.0 (+compliance monitoring)",
-          accept: "application/rss+xml, application/atom+xml, application/xml, application/json, text/html;q=0.8, */*;q=0.5",
-          "accept-language": "ar,en;q=0.8",
-        },
-      });
-    } catch (e) {
-      throw new Error(
-        e.name === "AbortError"
-          ? `انتهت المهلة (${timeoutMs} م.ث) قبل استجابة المصدر ${shape.host}`
-          : `تعذّر الاتصال بالمصدر ${shape.host}: ${causeChain(e)}`,
-        { cause: e }
-      );
+      let res;
+      try {
+        res = await (options.fetchImpl || fetch)(shape.url, {
+          method: "GET",
+          redirect: "manual",
+          signal: controller.signal,
+          headers: {
+            "user-agent": "CMS-HHC-RegulatoryIntelligence/1.0 (+compliance monitoring)",
+            accept: "application/rss+xml, application/atom+xml, application/xml, application/json, text/html;q=0.8, */*;q=0.5",
+            "accept-language": "ar,en;q=0.8",
+          },
+        });
+      } catch (e) {
+        throw new Error(
+          controller.signal.aborted || e.name === "AbortError"
+            ? `انتهت المهلة (${timeoutMs} م.ث) قبل استجابة المصدر ${shape.host}`
+            : `تعذّر الاتصال بالمصدر ${shape.host}: ${causeChain(e)}`,
+          { cause: e }
+        );
+      }
+
+      if (res.status >= 300 && res.status < 400) {
+        const location = res.headers.get("location");
+        if (!location) throw new Error(`تحويل بلا وجهة من ${shape.host} (HTTP ${res.status})`);
+        if (hop === maxRedirects) throw new Error("تجاوز عدد التحويلات المسموح");
+        current = new URL(location, shape.url).toString();
+        continue;
+      }
+      if (!res.ok) throw new Error(`استجابة غير ناجحة من ${shape.host} (HTTP ${res.status})`);
+
+      const contentType = (res.headers.get("content-type") || "").toLowerCase();
+      let body;
+      try {
+        body = await readCapped(res, maxBytes);
+      } catch (e) {
+        if (controller.signal.aborted) {
+          throw new Error(`انتهت المهلة (${timeoutMs} م.ث) أثناء قراءة استجابة ${shape.host}`, { cause: e });
+        }
+        throw e;
+      }
+      return { url: shape.url, status: res.status, contentType, body };
     } finally {
       clearTimeout(timer);
     }
-
-    if (res.status >= 300 && res.status < 400) {
-      const location = res.headers.get("location");
-      if (!location) throw new Error(`تحويل بلا وجهة (HTTP ${res.status})`);
-      if (hop === maxRedirects) throw new Error("تجاوز عدد التحويلات المسموح");
-      current = new URL(location, shape.url).toString();
-      continue;
-    }
-    if (!res.ok) throw new Error(`استجابة غير ناجحة من ${shape.host} (HTTP ${res.status})`);
-
-    const contentType = (res.headers.get("content-type") || "").toLowerCase();
-    const body = await readCapped(res, maxBytes);
-    return { url: shape.url, status: res.status, contentType, body };
   }
   throw new Error("تجاوز عدد التحويلات المسموح");
 }

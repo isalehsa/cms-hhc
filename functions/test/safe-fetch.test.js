@@ -128,3 +128,23 @@ test("رسالة انتهاء المهلة تذكر المدة والمضيف", 
     (e) => /15000/.test(e.message) && /slow\.example\.gov\.sa/.test(e.message)
   );
 });
+
+test("المهلة تغطي قراءة الجسم لا فتح الاتصال وحده", async () => {
+  const lookup = async () => [{ address: "93.184.216.34", family: 4 }];
+  // خادم يرسل الترويسات ثم لا يُنهي الجسم — كان يُعلّق العملية إلى ما لا نهاية
+  const fetchImpl = async (url, opts) =>
+    new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode("<rss>"));
+          opts.signal.addEventListener("abort", () => controller.error(new Error("aborted")));
+          // ولا يُغلق أبداً
+        },
+      }),
+      { status: 200, headers: { "content-type": "application/rss+xml" } }
+    );
+  await assert.rejects(
+    () => sf.safeFetch("https://slow.example.gov.sa/feed", { lookup, fetchImpl, timeoutMs: 300 }),
+    (e) => /انتهت المهلة/.test(e.message) && /قراءة/.test(e.message)
+  );
+});

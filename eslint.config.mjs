@@ -20,7 +20,8 @@ const NODE_GLOBALS = {
   require: "readonly", module: "writable", exports: "writable", process: "readonly",
   __dirname: "readonly", __filename: "readonly", console: "readonly", Buffer: "readonly",
   fetch: "readonly", setTimeout: "readonly", clearTimeout: "readonly", URL: "readonly",
-  TextDecoder: "readonly", AbortController: "readonly", Response: "readonly",
+  TextDecoder: "readonly", TextEncoder: "readonly", AbortController: "readonly",
+  Response: "readonly", Request: "readonly", Headers: "readonly", ReadableStream: "readonly",
 };
 
 export default [

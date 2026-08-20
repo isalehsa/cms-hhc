@@ -58,7 +58,12 @@ async function main() {
         `الفحص: ${s.status} · ${s.sourcesScanned} مصدر · ${s.itemsFound} عنصر · ` +
           `${s.created} مستجد جديد · ${s.analyzed} محلَّل · ${s.errors.length} خطأ`
       );
-      for (const e of s.errors) ghWarn(`فشل المصدر «${e.source}»${e.url ? ` (${e.url})` : ""}: ${e.error}`);
+      for (const d of s.sources || []) {
+        const label = `${d.name}${d.url ? ` (${d.url})` : ""}`;
+        if (d.status === "ERROR") ghWarn(`✗ ${label}: ${d.error}`);
+        else log(`  ${d.status === "OK" ? "✓" : "○"} ${label}: ${d.items} عنصر · ${d.created} جديد`);
+      }
+      if (!(s.sources || []).length) for (const e of s.errors) ghWarn(`فشل المصدر «${e.source}»: ${e.error}`);
       if (s.status === "FAILED") {
         ghError("فشل الفحص التنظيمي: لم ينجح أي مصدر");
         failed = true;
