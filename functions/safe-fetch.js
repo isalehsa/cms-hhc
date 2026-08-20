@@ -90,6 +90,21 @@ async function assertPublicHost(host, lookup = dnsPromises.lookup) {
   return addrs.map((a) => a.address);
 }
 
+// سلسلة أسباب الخطأ: undici يغلّف السبب الحقيقي داخل cause فيظهر "fetch failed" وحده،
+// وهو لا يدل على شيء. نجمع الرموز والرسائل من السلسلة كاملة لتشخيص قابل للتصرّف.
+function causeChain(err) {
+  const parts = [];
+  const seen = new Set();
+  let cur = err;
+  while (cur && typeof cur === "object" && !seen.has(cur)) {
+    seen.add(cur);
+    const bit = cur.code || cur.message;
+    if (bit && !parts.includes(bit)) parts.push(String(bit));
+    cur = cur.cause;
+  }
+  return parts.join(" ← ") || "سبب غير معروف";
+}
+
 // قراءة الجسم بسقف حجم صارم
 async function readCapped(res, maxBytes) {
   const declared = Number(res.headers.get("content-length") || 0);
@@ -137,7 +152,9 @@ async function safeFetch(rawUrl, options = {}) {
       });
     } catch (e) {
       throw new Error(
-        e.name === "AbortError" ? "انتهت المهلة قبل استجابة المصدر" : `تعذّر الاتصال بالمصدر (${e.message})`,
+        e.name === "AbortError"
+          ? `انتهت المهلة (${timeoutMs} م.ث) قبل استجابة المصدر ${shape.host}`
+          : `تعذّر الاتصال بالمصدر ${shape.host}: ${causeChain(e)}`,
         { cause: e }
       );
     } finally {
@@ -151,7 +168,7 @@ async function safeFetch(rawUrl, options = {}) {
       current = new URL(location, shape.url).toString();
       continue;
     }
-    if (!res.ok) throw new Error(`استجابة غير ناجحة من المصدر (HTTP ${res.status})`);
+    if (!res.ok) throw new Error(`استجابة غير ناجحة من ${shape.host} (HTTP ${res.status})`);
 
     const contentType = (res.headers.get("content-type") || "").toLowerCase();
     const body = await readCapped(res, maxBytes);
@@ -162,5 +179,5 @@ async function safeFetch(rawUrl, options = {}) {
 
 module.exports = {
   DEFAULTS, isPrivateIp, isPrivateIpv4, isPrivateIpv6,
-  checkUrlShape, assertPublicHost, safeFetch,
+  checkUrlShape, assertPublicHost, safeFetch, causeChain,
 };

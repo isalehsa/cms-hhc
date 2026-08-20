@@ -331,7 +331,7 @@ async function runScan({ trigger = "SCHEDULE", triggeredBy = null, triggeredByNa
       try {
         items = await readSource(source, limit, deps);
       } catch (e) {
-        summary.errors.push({ source: source.name, error: String(e.message).slice(0, 300) });
+        summary.errors.push({ source: source.name, url: source.url || null, error: String(e.message).slice(0, 300) });
         await db().doc(`regSources/${source.id}`).update({
           lastScanAt: nowISO(), lastStatus: "ERROR", lastError: String(e.message).slice(0, 300), updatedAt: nowISO(),
         }).catch(() => {});

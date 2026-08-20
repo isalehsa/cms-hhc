@@ -58,7 +58,7 @@ async function main() {
         `الفحص: ${s.status} · ${s.sourcesScanned} مصدر · ${s.itemsFound} عنصر · ` +
           `${s.created} مستجد جديد · ${s.analyzed} محلَّل · ${s.errors.length} خطأ`
       );
-      for (const e of s.errors) ghWarn(`فشل المصدر «${e.source}»: ${e.error}`);
+      for (const e of s.errors) ghWarn(`فشل المصدر «${e.source}»${e.url ? ` (${e.url})` : ""}: ${e.error}`);
       if (s.status === "FAILED") {
         ghError("فشل الفحص التنظيمي: لم ينجح أي مصدر");
         failed = true;

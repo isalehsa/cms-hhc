@@ -91,3 +91,40 @@ test("safeFetch يتوقف عند تجاوز عدد التحويلات", async (
     /التحويلات/
   );
 });
+
+test("causeChain يكشف السبب الحقيقي المخفي داخل cause", () => {
+  const inner = Object.assign(new Error("connect ECONNREFUSED 1.2.3.4:443"), { code: "ECONNREFUSED" });
+  const outer = Object.assign(new Error("fetch failed"), { cause: inner });
+  const chain = sf.causeChain(outer);
+  assert.match(chain, /fetch failed/);
+  assert.match(chain, /ECONNREFUSED/);
+});
+
+test("causeChain لا يدور في حلقة عند تسلسل دائري", () => {
+  const a = new Error("A");
+  const b = Object.assign(new Error("B"), { cause: a });
+  a.cause = b;
+  assert.equal(sf.causeChain(a), "A ← B");
+});
+
+test("رسالة فشل الاتصال تذكر المضيف والسبب لا «fetch failed» وحدها", async () => {
+  const lookup = async () => [{ address: "93.184.216.34", family: 4 }];
+  const fetchImpl = async () => {
+    throw Object.assign(new Error("fetch failed"), {
+      cause: Object.assign(new Error("certificate has expired"), { code: "CERT_HAS_EXPIRED" }),
+    });
+  };
+  await assert.rejects(
+    () => sf.safeFetch("https://laws.example.gov.sa/feed", { lookup, fetchImpl }),
+    (e) => /laws\.example\.gov\.sa/.test(e.message) && /CERT_HAS_EXPIRED/.test(e.message)
+  );
+});
+
+test("رسالة انتهاء المهلة تذكر المدة والمضيف", async () => {
+  const lookup = async () => [{ address: "93.184.216.34", family: 4 }];
+  const fetchImpl = async () => { throw Object.assign(new Error("aborted"), { name: "AbortError" }); };
+  await assert.rejects(
+    () => sf.safeFetch("https://slow.example.gov.sa/feed", { lookup, fetchImpl, timeoutMs: 15000 }),
+    (e) => /15000/.test(e.message) && /slow\.example\.gov\.sa/.test(e.message)
+  );
+});
