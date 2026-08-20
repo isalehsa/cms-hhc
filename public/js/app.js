@@ -90,6 +90,16 @@ const VIEWS = {
 // ترتيب المجموعات في الشريط العلوي (فواصل بينها)
 const NAV_GROUP_ORDER = ["records", "control", "planning", "clusters", "meetings", "general"];
 
+// تسمية وأيقونة كل مجموعة — تُعرض كزرّ رئيسي في الشريط، وتنكشف تبويباتها بقائمة منسدلة
+const NAV_GROUPS = {
+  records: { label: "السجلات", ic: "folder" },
+  control: { label: "المراقبة والالتزام", ic: "search" },
+  planning: { label: "التخطيط والتطوير", ic: "calendar" },
+  clusters: { label: "التجمعات الصحية", ic: "bars" },
+  meetings: { label: "الاجتماعات", ic: "calcheck" },
+  general: { label: "عام", ic: "gear" },
+};
+
 let currentView = "dashboard";
 const main = $("#app");
 
@@ -134,6 +144,7 @@ function renderShell() {
   $("#btn-notif").onclick = openNotifications;
   $("#btn-theme").onclick = toggleTheme;
   renderShellNav();
+  bindNavAutoClose();
   updateNotifBadge();
 }
 
@@ -158,8 +169,26 @@ function visibleViews(u) {
   });
 }
 
+// زرّ تبويب مفرد (أيقونة فقط) — للوحة التحكم واللوحة التنفيذية بلا مجموعة
 function navBtn(k, v) {
   return `<button class="tb-item ${k === currentView ? "active" : ""}" data-view="${k}" title="${esc(v.label)}" aria-label="${esc(v.label)}">${lineIcon(v.ic, 46)}</button>`;
+}
+
+// عنصر داخل القائمة المنسدلة للمجموعة (أيقونة + تسمية)
+function navMenuItem(k, v) {
+  return `<button class="tb-menu-item ${k === currentView ? "active" : ""}" data-view="${k}" role="menuitem">${lineIcon(v.ic, 22)}<span>${esc(v.label)}</span></button>`;
+}
+
+// زرّ مجموعة رئيسي مع قائمته المنسدلة — يُبرز إن كانت الشاشة الحالية ضمنه
+function navGroup(g, items) {
+  const meta = NAV_GROUPS[g] || { label: g, ic: "grid" };
+  const active = items.some(([k]) => k === currentView);
+  return `<div class="tb-group${active ? " active" : ""}">
+      <button class="tb-group-btn${active ? " active" : ""}" data-group="${g}" aria-haspopup="true" aria-expanded="false" title="${esc(meta.label)}">
+        ${lineIcon(meta.ic, 40)}<span class="tb-group-lbl">${esc(meta.label)}</span><span class="tb-caret" aria-hidden="true">▾</span>
+      </button>
+      <div class="tb-menu" role="menu">${items.map(([k, v]) => navMenuItem(k, v)).join("")}</div>
+    </div>`;
 }
 
 function renderNavItems(u) {
@@ -167,15 +196,15 @@ function renderNavItems(u) {
   if (isClusterOfficer(u)) return entries.map(([k, v]) => navBtn(k, v)).join("");
 
   const byGroup = {};
-  let html = "";
+  let head = "";
   for (const [k, v] of entries) {
-    if (!v.group) { html += navBtn(k, v); continue; }
+    if (!v.group) { head += navBtn(k, v); continue; }
     (byGroup[v.group] ||= []).push([k, v]);
   }
+  let html = head;
   for (const g of NAV_GROUP_ORDER) {
     const items = byGroup[g];
-    if (!items || !items.length) continue;
-    html += `<span class="tb-sep"></span>` + items.map(([k, v]) => navBtn(k, v)).join("");
+    if (items && items.length) html += navGroup(g, items);
   }
   return html;
 }
@@ -184,6 +213,31 @@ function bindNav() {
   const navEl = document.getElementById("side-nav");
   if (!navEl) return;
   navEl.querySelectorAll("[data-view]").forEach((b) => (b.onclick = () => nav(b.dataset.view)));
+  // زرّ المجموعة: القائمة تنكشف بالمرور (CSS)، وبالنقر أيضاً للمس ولوحة المفاتيح
+  navEl.querySelectorAll(".tb-group-btn").forEach((b) => {
+    b.onclick = (e) => {
+      e.stopPropagation();
+      const grp = b.closest(".tb-group");
+      const willOpen = !grp.classList.contains("open");
+      navEl.querySelectorAll(".tb-group.open").forEach((x) => { x.classList.remove("open"); x.querySelector(".tb-group-btn")?.setAttribute("aria-expanded", "false"); });
+      grp.classList.toggle("open", willOpen);
+      b.setAttribute("aria-expanded", String(willOpen));
+    };
+  });
+}
+
+// إغلاق القوائم المنسدلة عند النقر خارجها (يُثبَّت مرة واحدة)
+let navCloseBound = false;
+function bindNavAutoClose() {
+  if (navCloseBound) return;
+  navCloseBound = true;
+  document.addEventListener("click", (e) => {
+    if (e.target.closest?.(".tb-group")) return;
+    document.querySelectorAll("#side-nav .tb-group.open").forEach((x) => {
+      x.classList.remove("open");
+      x.querySelector(".tb-group-btn")?.setAttribute("aria-expanded", "false");
+    });
+  });
 }
 
 function renderShellNav() {
