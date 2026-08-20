@@ -12,6 +12,15 @@ on:
   schedule:
     # الأحد 05:00 بتوقيت الرياض = 02:00 UTC (جدولة GitHub بتوقيت UTC)
     - cron: "0 2 * * 0"
+  # مُشغِّل مؤقت للتجربة قبل الدمج: الجدولة والتشغيل اليدوي لا يعملان في GitHub
+  # إلا من الفرع الافتراضي، أما حدث push فيعمل من أي فرع. يُزال بعد الدمج.
+  push:
+    branches: [claude/regulatory-intelligence-integration-g2btgh]
+    paths:
+      - ".github/workflows/regulatory-scan.yml"
+      - "functions/scan-runner.js"
+      - "functions/regintel.js"
+      - "functions/safe-fetch.js"
   workflow_dispatch:
     inputs:
       mode:
@@ -44,8 +53,8 @@ jobs:
         env:
           FIREBASE_SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          SCAN_TRIGGER: ${{ github.event_name == 'workflow_dispatch' && 'MANUAL' || 'SCHEDULE' }}
-          SCAN_ACTOR: ${{ github.event_name == 'workflow_dispatch' && format('تشغيل يدوي — {0}', github.actor) || 'الجدولة الأسبوعية (GitHub Actions)' }}
+          SCAN_TRIGGER: ${{ github.event_name == 'schedule' && 'SCHEDULE' || 'MANUAL' }}
+          SCAN_ACTOR: ${{ github.event_name == 'schedule' && 'الجدولة الأسبوعية (GitHub Actions)' || format('تشغيل يدوي — {0}', github.actor) }}
         run: |
           if [ -z "$FIREBASE_SA" ]; then
             echo "::error::السر FIREBASE_SERVICE_ACCOUNT غير مضبوط — لا يمكن الوصول إلى Firestore"
@@ -54,4 +63,11 @@ jobs:
           printf '%s' "$FIREBASE_SA" > "$RUNNER_TEMP/firebase-sa.json"
           export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-sa.json"
           export GCLOUD_PROJECT=cms-hhc
-          node functions/scan-runner.js "${{ github.event.inputs.mode || 'both' }}"
+          # الجدولة تفحص وتولّد التقرير، أما تشغيل push (التجربة) فيفحص فقط
+          # حتى لا يُرسل تقرير أسبوعي بريدياً في كل تجربة
+          MODE="${{ github.event.inputs.mode }}"
+          if [ -z "$MODE" ]; then
+            if [ "${{ github.event_name }}" = "push" ]; then MODE=scan; else MODE=both; fi
+          fi
+          echo "الوضع: $MODE (الحدث: ${{ github.event_name }})"
+          node functions/scan-runner.js "$MODE"
