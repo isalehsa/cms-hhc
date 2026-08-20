@@ -13,7 +13,7 @@ const BROWSER_GLOBALS = {
   addEventListener: "readonly", removeEventListener: "readonly", requestAnimationFrame: "readonly",
   Image: "readonly", alert: "readonly", confirm: "readonly", prompt: "readonly", print: "readonly", atob: "readonly", btoa: "readonly",
   self: "readonly", caches: "readonly", clients: "readonly", ExcelJS: "readonly", mammoth: "readonly",
-  Tesseract: "readonly", pdfjsLib: "readonly", performance: "readonly", structuredClone: "readonly",
+  Tesseract: "readonly", pdfjsLib: "readonly", PptxGenJS: "readonly", html2canvas: "readonly", jspdf: "readonly", performance: "readonly", structuredClone: "readonly",
 };
 
 const NODE_GLOBALS = {
@@ -61,7 +61,8 @@ export default [
   },
   {
     files: ["scripts/**/*.mjs"],
-    languageOptions: { ecmaVersion: 2023, sourceType: "module", globals: NODE_GLOBALS },
+    // سكربتات الاختبار تُنفَّذ في Node، لكن دوال page.evaluate تُقيَّم داخل المتصفح
+    languageOptions: { ecmaVersion: 2023, sourceType: "module", globals: { ...NODE_GLOBALS, window: "readonly" } },
     rules: { ...js.configs.recommended.rules, "no-unused-vars": ["warn", { args: "none" }] },
   },
 ];

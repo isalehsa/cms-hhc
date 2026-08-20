@@ -20,7 +20,7 @@ const isUpcoming = (m) => m.status === "SCHEDULED" && m.startAt && daysUntil(m.s
 
 export function renderMeetings(el, nav, refresh) {
   const editable = canEdit(store.user);
-  const all = store.meetings;
+  const all = store.cmeetings;
   const rows = all.filter((m) => {
     if (filters.search && !`${m.code} ${m.title} ${m.location || ""}`.includes(filters.search)) return false;
     if (filters.type && m.type !== filters.type) return false;
@@ -134,22 +134,22 @@ function openForm(m, done) {
     try {
       if (isNew) {
         const code = await db.nextCode("MTG");
-        await db.setRow("meetings", code, { ...data, code, minutes: null, createdById: store.user.uid, createdAt: db.now(), updatedAt: db.now() });
+        await db.setRow("cmeetings", code, { ...data, code, minutes: null, createdById: store.user.uid, createdAt: db.now(), updatedAt: db.now() });
         await db.audit("CREATE", "Meeting", code, `جدولة اجتماع: ${code} — ${title}`);
         if (data.status === "SCHEDULED") {
           await db.notify({
             title: "اجتماع مجدول",
             message: `${code} — ${MEETING_TYPES[data.type]}: ${title} (${fmtDateTime(data.startAt)})`,
             type: "MEETING_NEW",
-            link: "meetings",
+            link: "cmeetings",
             roleTarget: "COMPLIANCE_MANAGER",
           });
         }
       } else {
-        await db.updateRow("meetings", m.id, data);
+        await db.updateRow("cmeetings", m.id, data);
         await db.audit("UPDATE", "Meeting", m.code, `تعديل الاجتماع ${m.code}`);
       }
-      await reload("meetings", "notifications");
+      await reload("cmeetings", "notifications");
       ov.remove();
       toast("تم الحفظ");
       done();
@@ -160,7 +160,7 @@ function openForm(m, done) {
 }
 
 export function openDetail(id, nav, done) {
-  const m = store.meetings.find((x) => x.id === id);
+  const m = store.cmeetings.find((x) => x.id === id);
   if (!m) return;
   const editable = canEdit(store.user);
 
@@ -204,18 +204,18 @@ export function openDetail(id, nav, done) {
   $("#m-ics", ov).onclick = () => { downloadICS(m.code || "meeting", buildICS(m)); toast("نُزّل ملف التقويم"); };
   $("#m-edit", ov)?.addEventListener("click", () => { ov.remove(); openForm(m, done); });
   $("#m-held", ov)?.addEventListener("click", async () => {
-    await db.updateRow("meetings", m.id, { status: "HELD" });
+    await db.updateRow("cmeetings", m.id, { status: "HELD" });
     await db.audit("UPDATE", "Meeting", m.code, `تعليم الاجتماع ${m.code} كمنعقد`);
-    await reload("meetings");
+    await reload("cmeetings");
     ov.remove();
     toast("عُلّم كمنعقد");
     done();
   });
   $("#m-cancel-mtg", ov)?.addEventListener("click", async () => {
     if (!(await confirmBox(`إلغاء الاجتماع ${m.code}؟`))) return;
-    await db.updateRow("meetings", m.id, { status: "CANCELLED" });
+    await db.updateRow("cmeetings", m.id, { status: "CANCELLED" });
     await db.audit("UPDATE", "Meeting", m.code, `إلغاء الاجتماع ${m.code}`);
-    await reload("meetings");
+    await reload("cmeetings");
     ov.remove();
     toast("أُلغي الاجتماع");
     done();
@@ -223,9 +223,9 @@ export function openDetail(id, nav, done) {
   $("#m-del", ov)?.addEventListener("click", async () => {
     ov.remove();
     if (!(await confirmBox(`حذف الاجتماع ${m.code} نهائياً؟`))) return;
-    await db.removeRow("meetings", m.id);
+    await db.removeRow("cmeetings", m.id);
     await db.audit("DELETE", "Meeting", m.code, `حذف الاجتماع ${m.code} — ${m.title}`);
-    await reload("meetings");
+    await reload("cmeetings");
     toast("تم الحذف");
     done();
   });

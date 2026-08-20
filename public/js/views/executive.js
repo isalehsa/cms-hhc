@@ -2,7 +2,7 @@
 // اللقطات تُلتقط يومياً في metricSnapshots؛ المستهدفات تُهيّأ وتُحفظ في appConfig/kpiTargets.
 import { store } from "../state.js";
 import * as db from "../db.js";
-import { $, esc, toast, modal, fld, val, spinnerHtml, fmtDate, sparkline, statusBadgeFrom } from "../ui.js";
+import { $, esc, toast, modal, fld, val, spinnerHtml, fmtDate, kpiSpark, statusBadgeFrom } from "../ui.js";
 import { KPIS, currentValues, ragRole, deviation, captureSnapshot, loadSnapshots, loadTargets, saveTargets } from "../metrics.js";
 import { canEdit } from "../auth.js";
 
@@ -50,7 +50,7 @@ export async function renderExecutive(el, nav, refresh) {
       </div>
       <div class="kpi-value">${fmtVal(cur, kpi.unit)} ${trend}</div>
       <div class="muted kpi-meta">المستهدف: ${fmtVal(target, kpi.unit)}${dev === null ? "" : ` · الانحراف: <b style="color:var(--st-${role === "neutral" ? "neutral" : role})">${devSign}${dev}${kpi.unit}</b>`}</div>
-      ${sparkline(points, { role, target })}
+      ${kpiSpark(points, { role, target })}
     </section>`;
   }).join("");
 

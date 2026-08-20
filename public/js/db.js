@@ -67,6 +67,11 @@ export async function updateRow(col, id, patch) {
   await updateDoc(doc(db, col, id), { ...patch, updatedAt: now() });
 }
 
+// تحديث حقول محددة دون لمس updatedAt (لعمليات الصيانة مثل إعادة الترقيم)
+export async function setFields(col, id, patch) {
+  await updateDoc(doc(db, col, id), patch);
+}
+
 // إضافة عدة وثائق دفعة واحدة (لبذر الهيكل التنظيمي) — بمعرّفات تلقائية
 export async function bulkAdd(col, rows) {
   for (let i = 0; i < rows.length; i += 400) {

@@ -39,37 +39,42 @@ const errors = [];
 page.on("pageerror", (e) => errors.push(String(e)));
 page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
 
+// الشريط العلوي يخفي عناصر المجموعات داخل قوائم منسدلة — ننتقل عبر مسار التوجيه نفسه
+const goto = async (view) => {
+  await page.evaluate((v) => { window.location.hash = v; }, view);
+  await page.waitForTimeout(700);
+};
+
 try {
   // ---------- 1) الدخول ----------
   await page.goto(BASE, { waitUntil: "domcontentloaded" });
   await page.fill("#login-email", EMAIL);
   await page.fill("#login-pass", PASSWORD);
   await page.click("#login-btn");
-  await page.waitForSelector("#side-nav .nav-item", { timeout: 30000 });
+  await page.waitForSelector("#side-nav [data-view]", { timeout: 30000 });
   check("تسجيل الدخول وتحميل الهيكل", true);
 
   // ---------- 2) ظهور الوحدة في القائمة بلغة التصميم نفسها ----------
   const navItem = page.locator('#side-nav [data-view="regintel"]');
   check("ظهور «الرصد التنظيمي» في القائمة الجانبية", (await navItem.count()) === 1);
-  await navItem.click();
+  await goto("regintel");
   await page.waitForSelector('[data-tab="dashboard"]');
   const tabs = await page.locator("#app .subtab").count();
   check("لوحة الرصد بثمانية تبويبات", tabs === 8, `${tabs} تبويب`);
 
   // ---------- 3) الوحدات القائمة ما زالت تعمل (فحص انحدار) ----------
   for (const [view, marker] of [
-    ["dashboard", "لوحة التحكم"], ["library", "مكتبة الالتزام"], ["risks", "سجل المخاطر"],
+    ["dashboard", "الالتزام"], ["library", "مكتبة الالتزام"], ["risks", "سجل المخاطر"],
     ["monitoring", "برنامج المراقبة"], ["plan", "الخطة السنوية"], ["findings", "الملاحظات والتصحيح"],
     ["regchange", "سجل التغيّر التنظيمي"], ["reports", "التقارير"], ["assessments", "الفحص الذاتي"],
   ]) {
-    await page.click(`#side-nav [data-view="${view}"]`);
-    await page.waitForTimeout(450);
+    await goto(view);
     const html = await page.locator("#app").innerText();
     check(`الوحدة القائمة تعمل: ${marker}`, html.includes(marker.split(" ")[0]), view);
   }
 
   // ---------- 4) تسجيل مستجد تنظيمي يدوياً ----------
-  await page.click('#side-nav [data-view="regintel"]');
+  await goto("regintel");
   await page.waitForSelector("#ri-manual");
   await page.click("#ri-manual");
   await page.waitForSelector("#m-title");
@@ -114,8 +119,8 @@ try {
     "analysis.monitoringSuggestion": "فحص مستندي ربع سنوي لسجل معالجة البيانات وقرار التعيين",
   });
   await page.reload({ waitUntil: "domcontentloaded" });
-  await page.waitForSelector("#side-nav .nav-item", { timeout: 30000 });
-  await page.click('#side-nav [data-view="regintel"]');
+  await page.waitForSelector("#side-nav [data-view]", { timeout: 30000 });
+  await goto("regintel");
   await page.waitForSelector('[data-tab="pending"]');
 
   // ---------- 6) مراجعة الالتزام واعتماد المستجد ----------
@@ -174,16 +179,15 @@ try {
 
   // ---------- 9) التنقّل بين السجلات المرتبطة في الواجهة ----------
   await page.reload({ waitUntil: "domcontentloaded" });
-  await page.waitForSelector("#side-nav .nav-item", { timeout: 30000 });
-  await page.click('#side-nav [data-view="library"]');
-  await page.waitForTimeout(700);
+  await page.waitForSelector("#side-nav [data-view]", { timeout: 30000 });
+  await goto("library");
   await page.click('[data-tab="reqs"]');
   await page.waitForTimeout(500);
   const libText = await page.locator("#app").innerText();
   check("ظهور الالتزامات المولّدة في مكتبة الالتزام", libText.includes("مسؤول حماية بيانات"), "");
   check("وسم «رصد تنظيمي» على الالتزام المولّد", libText.includes("رصد تنظيمي"), "");
 
-  await page.click('#side-nav [data-view="regintel"]');
+  await goto("regintel");
   await page.waitForSelector('[data-tab="obligations"]');
   await page.click('[data-tab="obligations"]');
   await page.waitForTimeout(400);
@@ -208,22 +212,20 @@ try {
   check("التقرير يحصي السجلات المولّدة", reports[0]?.generatedRequirements === 2, String(reports[0]?.generatedRequirements));
 
   // ---------- 11) تقرير الرصد في وحدة التقارير القائمة ----------
-  await page.click('#side-nav [data-view="reports"]');
-  await page.waitForTimeout(600);
+  await goto("reports");
   const repText = await page.locator("#app").innerText();
   check("إدراج تقرير الرصد التنظيمي في وحدة التقارير", repText.includes("تقرير الرصد التنظيمي"), "");
 
   // ---------- 12) لوحة التحكم الرئيسية ----------
-  await page.click('#side-nav [data-view="dashboard"]');
-  await page.waitForTimeout(800);
+  await goto("dashboard");
   const dashText = await page.locator("#app").innerText();
   check("لوحة التحكم الرئيسية تعرض تنبيهات تنظيمية", dashText.includes("موعد تنظيمي") || dashText.includes("مستجد تنظيمي"), "");
 
   // ---------- 13) صلاحيات: المراجع لا يرى أزرار التحرير ----------
   await db.doc(`users/${(await admin.auth().getUserByEmail(EMAIL)).uid}`).update({ role: "AUDITOR" });
   await page.reload({ waitUntil: "domcontentloaded" });
-  await page.waitForSelector("#side-nav .nav-item", { timeout: 30000 });
-  await page.click('#side-nav [data-view="regintel"]');
+  await page.waitForSelector("#side-nav [data-view]", { timeout: 30000 });
+  await goto("regintel");
   await page.waitForSelector('[data-tab="dashboard"]');
   check("المراجع لا يرى زر تشغيل الفحص", (await page.locator("#ri-scan").count()) === 0);
   check("المراجع لا يرى زر التسجيل اليدوي", (await page.locator("#ri-manual").count()) === 0);

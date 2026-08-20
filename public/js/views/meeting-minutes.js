@@ -71,9 +71,9 @@ export function renderMinutes(container, m, ov, done) {
   $("#min-revoke", container)?.addEventListener("click", async () => {
     if (!(await confirmBox("إلغاء اعتماد المحضر وحذف تواقيعه وإعادته مسودة؟"))) return;
     const minutes = { ...m.minutes, status: "DRAFT", signatures: [], approvedHash: null, approvedAt: null, approvedById: null };
-    await db.updateRow("meetings", m.id, { minutes });
+    await db.updateRow("cmeetings", m.id, { minutes });
     await db.audit("UPDATE", "Meeting", m.code, `إلغاء اعتماد محضر الاجتماع ${m.code}`);
-    await reload("meetings");
+    await reload("cmeetings");
     m.minutes = minutes;
     toast("أُعيد المحضر مسودة");
     redo();
@@ -97,9 +97,9 @@ function openMinutesEditor(m, parentOv, done) {
     if (!text) return toast("نص المحضر فارغ", true);
     const minutes = { ...min, text, status: "DRAFT", authorId: store.user.uid, updatedAt: db.now() };
     try {
-      await db.updateRow("meetings", m.id, { minutes });
+      await db.updateRow("cmeetings", m.id, { minutes });
       await db.audit("UPDATE", "Meeting", m.code, `تحديث مسودة محضر الاجتماع ${m.code}`);
-      await reload("meetings");
+      await reload("cmeetings");
       m.minutes = minutes;
       ed.remove();
       toast("حُفظت المسودة");
@@ -189,9 +189,9 @@ function openSignModal(m, parentOv, done, mode) {
         minutes.approvedById = u.uid;
         minutes.approvedHash = await sha256Hex(canonical(m, base.text));
       }
-      await db.updateRow("meetings", m.id, { minutes });
+      await db.updateRow("cmeetings", m.id, { minutes });
       await db.audit("APPROVE", "Meeting", m.code, `${mode === "approve" ? "اعتماد وتوقيع" : "توقيع"} محضر الاجتماع ${m.code} — الموقّع: ${name}`);
-      await reload("meetings");
+      await reload("cmeetings");
       m.minutes = minutes;
       ed.remove();
       toast(mode === "approve" ? "اعتُمد المحضر ووُقّع" : "أُضيف التوقيع");

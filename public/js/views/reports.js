@@ -1,15 +1,17 @@
 // التقارير — ملخص تنفيذي ومؤشرات وجداول، تصدير Excel / PDF (طباعة) / Word
-import { store, deptName, authName, userName, reqLabel } from "../state.js";
+import { store, deptName, authName, userName, reqLabel, clusterWave } from "../state.js";
 import * as db from "../db.js";
-import { esc, toast, fmtDate } from "../ui.js";
+import { esc, toast, fmtDate, donutChart, groupedBarChart } from "../ui.js";
 import {
   riskLevel, CRITICALITY, REQ_TYPES, REQ_CATEGORIES, REQ_STATUS,
   RISK_STATUS, MON_TYPES, MON_FREQ, MON_STATUS, MON_RESULT, NC_LEVELS,
   PLAN_STATUS, PLAN_SOURCES, PLAN_TYPES, SA_STATUS, SA_ANSWERS, FND_SEVERITY, FND_STATUS, FND_SOURCES,
   COR_DIRECTION, COR_PRIORITY, COR_STATUS, DISCLOSURE_TYPES, DISCLOSURE_STATUS, TRAINING_TYPES, TRAINING_STATUS,
-  MATURITY_MODEL, MATURITY_STATUS, maturityLevel,
+  MATURITY_MODEL, MATURITY_STATUS, maturityLevel, CLUSTER_WAVES, CLUSTER_WAVE_ORDER,
   REG_UPDATE_STATUS, REG_APPLICABILITY, REG_IMPACT, REG_ANALYSIS_METHOD,
 } from "../meta.js";
+
+const waveShort = (clusterId) => clusterWave(clusterId)?.short || "غير مصنّف";
 
 // ---------- تعريف التقارير ----------
 const REPORTS = [
@@ -28,23 +30,52 @@ const REPORTS = [
 ];
 
 export function renderReports(el) {
+  const k = kpis();
+  const monPct = store.monitoring.length ? Math.round((k.monDone / store.monitoring.length) * 100) : 0;
+  const strip = [
+    { v: k.activeReqs.length, l: "متطلب نشط", c: C.primary },
+    { v: store.risks.length, l: "خطر مسجل", c: "#2a78d6" },
+    { v: k.riskCounts.CRITICAL + k.riskCounts.HIGH, l: "مخاطر عالية فأكثر", c: (k.riskCounts.CRITICAL + k.riskCounts.HIGH) ? C.critical : C.good },
+    { v: monPct + "%", l: "إنجاز المراقبة", c: monPct >= 70 ? C.good : monPct >= 40 ? C.warning : C.critical },
+    { v: k.openFnd.length, l: "ملاحظة مفتوحة", c: k.openFnd.length ? C.warning : C.good },
+    { v: k.planAvg + "%", l: "إنجاز الخطة", c: k.planAvg >= 70 ? C.good : k.planAvg >= 40 ? C.warning : C.critical },
+  ];
   el.innerHTML = `
-    <div class="page-head"><h1>📊 التقارير</h1><p class="muted">اختر التقرير ثم صيغة التصدير — التقارير تُبنى لحظياً من بيانات جميع الوحدات</p></div>
+    <div class="page-head"><h1>📊 التقارير</h1><p class="muted">لوحات ومؤشرات لحظية — اعرض التقرير أو صدّره PDF أو عرضاً تقديمياً أو Excel أو Word</p></div>
+    <section class="card">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px">
+        ${strip.map((s) => `<div style="text-align:center;padding:8px 6px;border-left:1px solid rgba(120,130,125,.12)">
+          <div style="font-size:1.8rem;font-weight:800;color:${s.c};line-height:1.1">${esc(String(s.v))}</div>
+          <div class="muted" style="font-size:.74rem;margin-top:2px">${esc(s.l)}</div></div>`).join("")}
+      </div>
+    </section>
     <div class="report-grid">
-      ${REPORTS.map(
-        (r) => `<div class="card report-card">
-          <h2>${r.icon} ${esc(r.title)}</h2>
-          <p class="muted">${esc(r.desc)}</p>
-          <div class="row">
+      ${REPORTS.map((r) => {
+        const st = cardStat(r.key);
+        const tc = TONE_CARD[st.tone] || C.primary;
+        return `<div class="card report-card" style="border-top:4px solid ${tc}">
+          <div class="row" style="justify-content:space-between;align-items:flex-start;gap:8px">
+            <h2 style="margin:0;font-size:1.05rem">${r.icon} ${esc(r.title)}</h2>
+            <div style="text-align:center;min-width:60px;flex-shrink:0">
+              <div style="font-size:1.5rem;font-weight:800;color:${tc};line-height:1">${esc(String(st.value))}</div>
+              <div class="muted" style="font-size:.64rem">${esc(st.label)}</div>
+            </div>
+          </div>
+          <p class="muted" style="min-height:2.4em">${esc(r.desc)}</p>
+          <div class="row" style="flex-wrap:wrap;gap:6px">
             <button class="small" data-view="${r.key}">👁 عرض / PDF</button>
+            <button class="secondary small" data-present="${r.key}">🎬 عرض ويب</button>
+            <button class="secondary small" data-pptx="${r.key}">📊 عرض تقديمي</button>
             <button class="secondary small" data-xlsx="${r.key}">⬇ Excel</button>
             <button class="secondary small" data-doc="${r.key}">⬇ Word</button>
           </div>
-        </div>`
-      ).join("")}
+        </div>`;
+      }).join("")}
     </div>`;
 
   el.querySelectorAll("[data-view]").forEach((b) => (b.onclick = () => viewReport(b.dataset.view)));
+  el.querySelectorAll("[data-present]").forEach((b) => (b.onclick = () => presentReport(b.dataset.present)));
+  el.querySelectorAll("[data-pptx]").forEach((b) => (b.onclick = () => exportPptx(b.dataset.pptx).catch((e) => toast(e.message, true))));
   el.querySelectorAll("[data-xlsx]").forEach((b) => (b.onclick = () => exportExcel(b.dataset.xlsx).catch((e) => toast(e.message, true))));
   el.querySelectorAll("[data-doc]").forEach((b) => (b.onclick = () => exportWord(b.dataset.doc).catch((e) => toast(e.message, true))));
 }
@@ -149,13 +180,13 @@ function tableFor(key) {
       };
     case "maturity": {
       const critScore = (c, useReview) => (useReview && c.reviewScore != null ? c.reviewScore : (c.selfScore || 0));
-      const pctOf = (m) => {
+      const overall = (m, useReview) => {
         const crits = (m.domains || []).flatMap((d) => d.criteria);
         const max = crits.length * 3;
-        return max ? Math.round((crits.reduce((s, c) => s + critScore(c, m.status === "REVIEWED"), 0) / max) * 100) : 0;
+        return max ? Math.round((crits.reduce((s, c) => s + critScore(c, useReview), 0) / max) * 100) : 0;
       };
       return {
-        head: ["الرقم", "التجمع", "الفترة", ...MATURITY_MODEL.map((d) => d.name), "الإجمالي %", "المستوى", "الحالة"],
+        head: ["الرقم", "التجمع", "الموجة", "الفترة", ...MATURITY_MODEL.map((d) => d.name), "تقييم التجمع %", "بعد المراجعة %", "المستوى", "الحالة"],
         rows: store.maturity.map((m) => {
           const useReview = m.status === "REVIEWED";
           const domCells = MATURITY_MODEL.map((dm) => {
@@ -164,8 +195,14 @@ function tableFor(key) {
             const max = dom.criteria.length * 3;
             return max ? Math.round((dom.criteria.reduce((s, c) => s + critScore(c, useReview), 0) / max) * 100) + "%" : "—";
           });
-          const tot = pctOf(m);
-          return [m.code, deptName(m.clusterId), `ر${m.quarter}/${m.year}`, ...domCells, tot, maturityLevel(tot).label, MATURITY_STATUS[m.status] || m.status];
+          const self = overall(m, false);
+          const reviewed = useReview ? overall(m, true) : null;
+          const tot = useReview ? reviewed : self;
+          return [
+            m.code, deptName(m.clusterId), waveShort(m.clusterId), `ر${m.quarter}/${m.year}`, ...domCells,
+            self + "%", reviewed == null ? "— بانتظار المراجعة" : reviewed + "%",
+            maturityLevel(tot).label, MATURITY_STATUS[m.status] || m.status,
+          ];
         }),
       };
     }
@@ -272,6 +309,167 @@ function cell(v) {
   return c ? `<span class="pill" style="background:${c}22;color:${c};border:1px solid ${c}55">${esc(s)}</span>` : esc(s);
 }
 
+// ---------- لوحات بصرية لكل تقرير (داش بورد) — تُشارك بين العرض والعرض التقديمي ----------
+const tally = (arr, fn) => { const t = {}; for (const x of arr) { const k = fn(x); if (k != null && k !== "") t[k] = (t[k] || 0) + 1; } return t; };
+const mapItems = (map, dict, colorOf) =>
+  Object.entries(map).map(([k, count]) => ({ label: (dict && dict[k]) || k, count, color: colorOf ? colorOf(k) : C.primary }));
+const chartBox = (title, inner) => `<div class="rep-chart"><h3>${esc(title)}</h3>${inner}</div>`;
+const chartsWrap = (...c) => (c.filter(Boolean).length ? `<div class="rep-charts">${c.join("")}</div>` : "");
+
+const TONE_STATUS = { ACTIVE: C.good, UPDATED: "#2a78d6", UNDER_REVIEW: C.warning, CANCELLED: C.neutral };
+const TONE_CRIT = { CRITICAL: C.critical, HIGH: C.serious, MEDIUM: C.warning, LOW: C.good };
+const TONE_MON_RES = { COMPLIANT: C.good, PARTIAL: C.warning, NON_COMPLIANT: C.critical };
+const TONE_MON_ST = { PLANNED: C.neutral, IN_PROGRESS: C.warning, COMPLETED: C.good, CLOSED: "#2a78d6" };
+const TONE_SA = { COMPLIANT: C.good, PARTIAL: C.warning, NON_COMPLIANT: C.critical, NA: C.neutral };
+const TONE_PLAN = { NOT_STARTED: C.neutral, IN_PROGRESS: C.warning, COMPLETED: C.good, DELAYED: C.critical };
+const TONE_FND_ST = { OPEN: C.critical, IN_PROGRESS: C.warning, CLOSED: C.good };
+const TONE_COR_ST = { OPEN: C.warning, REPLIED: C.good, CLOSED: "#2a78d6" };
+const TONE_DIS_ST = { PENDING: C.warning, UNDER_REVIEW: C.warning, APPROVED: C.good, MITIGATED: C.good, REJECTED: C.critical };
+const TONE_TRN_ST = { PLANNED: C.neutral, IN_PROGRESS: C.warning, COMPLETED: C.good, CANCELLED: C.neutral };
+const TONE_CARD = { primary: C.primary, danger: C.critical, warn: C.warning, good: C.good };
+// لون مستوى النضج (هيكس ليعمل في PDF وExcel والعرض التقديمي)
+const matLevelHex = (pct) => ({ good: C.good, warning: C.warning, serious: C.serious, critical: C.critical }[maturityLevel(pct).key]);
+const maturityOverall = (m, useRev) => {
+  const cs = (m.domains || []).flatMap((d) => d.criteria); const max = cs.length * 3;
+  return max ? Math.round((cs.reduce((s, c) => s + ((useRev && c.reviewScore != null) ? c.reviewScore : (c.selfScore || 0)), 0) / max) * 100) : 0;
+};
+
+// المواصفات الموحّدة للرسوم: [{ title, items:[{label,count,color}] }]
+function distSpecs(key) {
+  switch (key) {
+    case "executive": {
+      const k = kpis();
+      const mr = { COMPLIANT: 0, PARTIAL: 0, NON_COMPLIANT: 0 };
+      for (const m of store.monitoring) if (m.result && mr[m.result] !== undefined) mr[m.result]++;
+      return [
+        { title: "توزيع المخاطر (بعد الضوابط)", items: [
+          { label: "حرج", count: k.riskCounts.CRITICAL, color: C.critical }, { label: "عالٍ", count: k.riskCounts.HIGH, color: C.serious },
+          { label: "متوسط", count: k.riskCounts.MEDIUM, color: C.warning }, { label: "منخفض", count: k.riskCounts.LOW, color: C.good } ] },
+        { title: "نتائج أنشطة المراقبة", items: [
+          { label: "ملتزم", count: mr.COMPLIANT, color: C.good }, { label: "ملتزم جزئياً", count: mr.PARTIAL, color: C.warning },
+          { label: "غير ملتزم", count: mr.NON_COMPLIANT, color: C.critical } ] },
+      ];
+    }
+    case "requirements": {
+      const active = store.requirements.filter((r) => r.status !== "CANCELLED");
+      return [
+        { title: "حسب الحالة", items: mapItems(tally(store.requirements, (r) => r.status), REQ_STATUS, (k) => TONE_STATUS[k] || C.primary) },
+        { title: "حسب الأهمية (النشطة)", items: mapItems(tally(active, (r) => r.criticality), CRITICALITY, (k) => TONE_CRIT[k] || C.primary) },
+      ];
+    }
+    case "risks": {
+      const rc = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 };
+      for (const r of store.risks) rc[riskLevel(r.residualLikelihood ?? r.likelihood, r.residualImpact ?? r.impact).key]++;
+      return [
+        { title: "مستوى الخطر (بعد الضوابط)", items: [
+          { label: "حرج", count: rc.CRITICAL, color: C.critical }, { label: "عالٍ", count: rc.HIGH, color: C.serious },
+          { label: "متوسط", count: rc.MEDIUM, color: C.warning }, { label: "منخفض", count: rc.LOW, color: C.good } ] },
+        { title: "حسب الحالة", items: mapItems(tally(store.risks, (r) => r.status), RISK_STATUS, () => "#2a78d6") },
+      ];
+    }
+    case "monitoring":
+      return [
+        { title: "نتائج الأنشطة المنفذة", items: mapItems(tally(store.monitoring.filter((m) => m.result), (m) => m.result), MON_RESULT, (k) => TONE_MON_RES[k]) },
+        { title: "حسب الحالة", items: mapItems(tally(store.monitoring, (m) => m.status), MON_STATUS, (k) => TONE_MON_ST[k] || C.primary) },
+      ];
+    case "assessments":
+      return [{ title: "توزيع إجابات الفحص الذاتي", items: mapItems(tally(store.assessments.flatMap((a) => a.questions || []), (q) => q.response?.answer), SA_ANSWERS, (k) => TONE_SA[k] || C.neutral) }];
+    case "plan":
+      return [{ title: "مبادرات الخطة حسب الحالة", items: mapItems(tally(store.planItems, (p) => p.status), PLAN_STATUS, (k) => TONE_PLAN[k] || C.primary) }];
+    case "findings":
+      return [
+        { title: "حسب الخطورة", items: mapItems(tally(store.findings, (f) => f.severity), FND_SEVERITY, (k) => TONE_CRIT[k] || C.primary) },
+        { title: "حسب الحالة", items: mapItems(tally(store.findings, (f) => f.status), FND_STATUS, (k) => TONE_FND_ST[k] || C.primary) },
+      ];
+    case "correspondence":
+      return [
+        { title: "حسب الاتجاه", items: mapItems(tally(store.correspondence, (c) => c.direction), COR_DIRECTION, () => C.primary) },
+        { title: "حسب الحالة", items: mapItems(tally(store.correspondence, (c) => c.status), COR_STATUS, (k) => TONE_COR_ST[k] || C.primary) },
+      ];
+    case "disclosures":
+      return [
+        { title: "حسب النوع", items: mapItems(tally(store.disclosures, (d) => d.type), DISCLOSURE_TYPES, () => C.primary) },
+        { title: "حسب الحالة", items: mapItems(tally(store.disclosures, (d) => d.status), DISCLOSURE_STATUS, (k) => TONE_DIS_ST[k] || C.primary) },
+      ];
+    case "training":
+      return [{ title: "برامج التدريب حسب الحالة", items: mapItems(tally(store.trainings, (t) => t.status), TRAINING_STATUS, (k) => TONE_TRN_ST[k] || C.primary) }];
+    case "maturity": {
+      const lc = { good: 0, warning: 0, serious: 0, critical: 0 };
+      for (const m of store.maturity) lc[maturityLevel(maturityOverall(m, m.status === "REVIEWED")).key]++;
+      const rev = store.maturity.filter((m) => m.status === "REVIEWED");
+      const avg = (a) => (a.length ? Math.round(a.reduce((s, x) => s + x, 0) / a.length) : 0);
+      const avgSelf = avg(store.maturity.map((m) => maturityOverall(m, false)));
+      const avgRev = avg(rev.map((m) => maturityOverall(m, true)));
+      return [
+        { title: "توزيع التجمعات حسب المستوى", items: [
+          { label: "رائد", count: lc.good, color: C.good }, { label: "متقدم", count: lc.warning, color: C.warning },
+          { label: "نامٍ", count: lc.serious, color: C.serious }, { label: "مبتدئ", count: lc.critical, color: C.critical } ] },
+        { title: "متوسط النسب (٪)", bars: true, items: [
+          { label: "تقييم التجمعات (ذاتي)", count: avgSelf, color: matLevelHex(avgSelf) },
+          { label: "بعد المراجعة", count: avgRev, color: matLevelHex(avgRev) } ] },
+      ];
+    }
+    default:
+      return [];
+  }
+}
+
+function reportCharts(key) {
+  const specs = distSpecs(key);
+  let html = specs.length ? chartsWrap(...specs.map((s) => chartBox(s.title, s.bars ? repBars(s.items) : donutChart(s.items, { size: 140, unit: "الإجمالي" })))) : "";
+  // مقارنة تقييم التجمع (ذاتي) مقابل ما بعد المراجعة لكل تجمع (أحدث تقييم) + متوسط حسب الموجة
+  if (key === "maturity") {
+    const latest = {};
+    for (const m of store.maturity) { const c = m.clusterId; if (!latest[c] || (m.year * 4 + m.quarter) > (latest[c].year * 4 + latest[c].quarter)) latest[c] = m; }
+    const items = Object.values(latest).sort((a, b) => maturityOverall(b, b.status === "REVIEWED") - maturityOverall(a, a.status === "REVIEWED"));
+    const boxes = [];
+    // متوسط النضج حسب الموجة (مقارنة الموجتين)
+    const avgOf = (a) => (a.length ? Math.round(a.reduce((s, x) => s + x, 0) / a.length) : 0);
+    const grp = {}; CLUSTER_WAVE_ORDER.forEach((k) => (grp[k] = []));
+    for (const m of items) grp[clusterWave(m.clusterId)?.key || "PREP"].push(m);
+    const wk = CLUSTER_WAVE_ORDER.filter((k) => grp[k].length);
+    if (wk.length) {
+      boxes.push(chartBox("متوسط النضج حسب الموجة", groupedBarChart(
+        wk.map((k) => CLUSTER_WAVES[k].short),
+        { name: "تقييم التجمع (ذاتي)", color: "#2a78d6", values: wk.map((k) => avgOf(grp[k].map((m) => maturityOverall(m, false)))) },
+        { name: "بعد المراجعة", color: C.good, values: wk.map((k) => avgOf(grp[k].filter((m) => m.status === "REVIEWED").map((m) => maturityOverall(m, true)))) },
+      )));
+    }
+    // مقارنة لكل تجمع
+    if (items.length) {
+      const top = items.slice(0, 12);
+      boxes.push(chartBox("مقارنة التجمعات: ذاتي مقابل ما بعد المراجعة", groupedBarChart(
+        top.map((m) => `${deptName(m.clusterId)} (${waveShort(m.clusterId)})`),
+        { name: "تقييم التجمع (ذاتي)", color: "#2a78d6", values: top.map((m) => maturityOverall(m, false)) },
+        { name: "بعد المراجعة", color: C.good, values: top.map((m) => (m.status === "REVIEWED" ? maturityOverall(m, true) : 0)) },
+      )));
+    }
+    if (boxes.length) html += chartsWrap(...boxes);
+  }
+  return html;
+}
+
+// مؤشر مصغّر بارز على بطاقة كل تقرير (يجعل تبويب التقارير لوحة حية)
+function cardStat(key) {
+  const k = kpis();
+  const hi = k.riskCounts.CRITICAL + k.riskCounts.HIGH;
+  const monPct = store.monitoring.length ? Math.round((k.monDone / store.monitoring.length) * 100) : 0;
+  switch (key) {
+    case "executive": return { value: hi, label: "مخاطر عالية فأكثر", tone: hi ? "danger" : "good" };
+    case "requirements": return { value: k.activeReqs.length, label: "متطلب نشط", tone: "primary" };
+    case "risks": return { value: hi, label: "مخاطر عالية فأكثر", tone: hi ? "danger" : "good" };
+    case "monitoring": return { value: monPct + "%", label: "إنجاز المراقبة", tone: monPct >= 70 ? "good" : monPct >= 40 ? "warn" : "danger" };
+    case "assessments": return { value: store.assessments.length, label: "فحص ذاتي", tone: "primary" };
+    case "plan": return { value: k.planAvg + "%", label: "إنجاز الخطة", tone: k.planAvg >= 70 ? "good" : k.planAvg >= 40 ? "warn" : "danger" };
+    case "findings": return { value: k.openFnd.length, label: "ملاحظة مفتوحة", tone: k.openFnd.length ? "warn" : "good" };
+    case "correspondence": { const o = store.correspondence.filter((c) => c.status === "OPEN").length; return { value: o, label: "قيد المعالجة", tone: o ? "warn" : "good" }; }
+    case "disclosures": { const p = store.disclosures.filter((d) => ["PENDING", "UNDER_REVIEW"].includes(d.status)).length; return { value: p, label: "بانتظار المراجعة", tone: p ? "warn" : "good" }; }
+    case "training": { const d = store.trainings.filter((t) => t.status === "COMPLETED").length; return { value: `${d}/${store.trainings.length}`, label: "برامج منفذة", tone: "primary" }; }
+    case "maturity": { const a = store.maturity.length ? Math.round(store.maturity.reduce((s, m) => s + maturityOverall(m, m.status === "REVIEWED"), 0) / store.maturity.length) : 0; return { value: a + "%", label: "متوسط النضج", tone: a >= 70 ? "good" : a >= 40 ? "warn" : "danger" }; }
+    default: return { value: "", label: "", tone: "primary" };
+  }
+}
+
 // ---------- عرض التقرير (وللطباعة PDF) ----------
 function reportHtml(key) {
   const k = kpis();
@@ -304,20 +502,20 @@ function reportHtml(key) {
       <div class="rep-charts">
         <div class="rep-chart">
           <h3>توزيع المخاطر حسب المستوى (بعد الضوابط)</h3>
-          ${repBars([
+          ${donutChart([
             { label: "حرج", count: k.riskCounts.CRITICAL, color: C.critical },
             { label: "عالٍ", count: k.riskCounts.HIGH, color: C.serious },
             { label: "متوسط", count: k.riskCounts.MEDIUM, color: C.warning },
             { label: "منخفض", count: k.riskCounts.LOW, color: C.good },
-          ])}
+          ], { size: 140, unit: "خطر" })}
         </div>
         <div class="rep-chart">
           <h3>نتائج أنشطة المراقبة المنفذة</h3>
-          ${repBars([
+          ${donutChart([
             { label: "ملتزم", count: monResults.COMPLIANT, color: C.good },
             { label: "ملتزم جزئياً", count: monResults.PARTIAL, color: C.warning },
             { label: "غير ملتزم", count: monResults.NON_COMPLIANT, color: C.critical },
-          ])}
+          ], { size: 140, unit: "نشاط" })}
         </div>
       </div>
       <h2>أبرز المخاطر (بعد الضوابط)</h2>
@@ -332,8 +530,11 @@ function reportHtml(key) {
       <ul>${recs.map((r) => `<li>${esc(r)}</li>`).join("") || "<li>لا توجد توصيات مسجلة</li>"}</ul>`;
   } else {
     const t = tableFor(key);
+    const charts = reportCharts(key);
     body = `
       ${kpiBlock}
+      ${charts ? `<h2>مؤشرات ${esc(meta.title.replace("تقرير ", ""))}</h2>${charts}` : ""}
+      <h2>التفاصيل</h2>
       <table><thead><tr>${t.head.map((h) => `<th>${esc(h)}</th>`).join("")}</tr></thead>
       <tbody>${t.rows.map((row) => `<tr>${row.map((c) => `<td>${cell(c)}</td>`).join("")}</tr>`).join("") || `<tr><td colspan="${t.head.length}">لا توجد بيانات</td></tr>`}</tbody></table>`;
   }
@@ -356,7 +557,8 @@ function viewReport(key) {
     <title>${esc(REPORTS.find((r) => r.key === key).title)}</title>
     <style>
       *{box-sizing:border-box}
-      body{font-family:"IBM Plex Sans Arabic","Segoe UI",Tahoma,sans-serif;margin:0;padding:28px 32px;color:#1a2c27;background:#f6f9f8;line-height:1.6}
+      @font-face{font-family:"SF Mada";src:url("${location.origin}/fonts/sf-mada-bold.ttf") format("truetype");font-weight:100 900;font-display:swap}
+      body{font-family:"SF Mada","IBM Plex Sans Arabic","Segoe UI",Tahoma,sans-serif;margin:0;padding:28px 32px;color:#1a2c27;background:#f6f9f8;line-height:1.6}
       h1{font-size:1.5rem;margin:0}
       h2{font-size:1.1rem;margin:24px 0 10px;color:#0d5243;border-right:4px solid #14705c;padding-right:10px}
       h3{font-size:.95rem;margin:0 0 8px;color:#0d5243}
@@ -391,6 +593,351 @@ function viewReport(key) {
     </style></head><body>
     <button class="print-btn" onclick="window.print()">🖨 طباعة / حفظ PDF</button>
     ${reportHtml(key)}
+    </body></html>`);
+  win.document.close();
+  logReport(key);
+}
+
+// ---------- عرض ويب تفاعلي (Motion) بملء الشاشة يُتحكَّم به بالأسهم ----------
+// لبِنات بصرية للشرائح (تتحرك عند ظهور الشريحة عبر أصناف CSS + JS)
+const pCount = (v) => { const n = String(v).replace(/[^\d.]/g, ""); const suffix = String(v).replace(/[\d.,\s]/g, ""); return n ? `<span class="p-count" data-to="${n}">0</span>${suffix ? `<span class="p-suf">${esc(suffix)}</span>` : ""}` : esc(String(v)); };
+
+function pGauge(pct, label, color) {
+  const r = 54, circ = 2 * Math.PI * r, off = circ * (1 - Math.max(0, Math.min(100, pct)) / 100);
+  return `<div class="p-gauge">
+    <svg viewBox="0 0 140 140">
+      <circle cx="70" cy="70" r="${r}" class="pg-track"/>
+      <circle cx="70" cy="70" r="${r}" class="pg-fill" stroke="${color}" stroke-dasharray="${circ.toFixed(1)}" stroke-dashoffset="${circ.toFixed(1)}" data-off="${off.toFixed(1)}"/>
+    </svg>
+    <div class="pg-center"><div class="pg-num" style="color:${color}">${pCount(pct + "%")}</div></div>
+    <div class="pg-lbl">${esc(label)}</div>
+  </div>`;
+}
+
+function pDonut(items, centerTop, centerSub) {
+  const total = items.reduce((s, i) => s + i.count, 0) || 1;
+  let acc = 0;
+  const stops = items.map((i) => { const from = (acc / total) * 360; acc += i.count; const to = (acc / total) * 360; return `${i.color} ${from.toFixed(1)}deg ${to.toFixed(1)}deg`; }).join(",");
+  return `<div class="p-donutbox">
+    <div class="p-donutwrap">
+      <div class="p-donut" style="--stops:${stops}"></div>
+      <div class="p-donut-hole"><div class="pd-top">${pCount(centerTop)}</div><div class="pd-sub">${esc(centerSub || "")}</div></div>
+    </div>
+    <div class="p-legend">${items.map((i) => `<div class="pl-row"><span class="pl-dot" style="background:${i.color}"></span><span class="pl-lbl">${esc(i.label)}</span><span class="pl-val">${i.count}</span></div>`).join("")}</div>
+  </div>`;
+}
+
+function pKpi(value, label, color, sub) {
+  return `<div class="p-kpi" style="--kc:${color}">
+    <div class="pk-num">${pCount(value)}</div>
+    <div class="pk-lbl">${esc(label)}</div>
+    ${sub ? `<div class="pk-sub">${esc(sub)}</div>` : ""}
+  </div>`;
+}
+
+const P_SHIELD = `<svg class="p-shield" viewBox="0 0 520 520">
+  <circle cx="260" cy="250" r="215" fill="none" stroke="#7fe9cd" stroke-opacity="0.18" stroke-width="1.5" stroke-dasharray="5 12"><animateTransform attributeName="transform" type="rotate" from="0 260 250" to="360 260 250" dur="60s" repeatCount="indefinite"/></circle>
+  <circle cx="260" cy="250" r="168" fill="none" stroke="#34e7b8" stroke-opacity="0.22" stroke-width="1.5" stroke-dasharray="2 14"><animateTransform attributeName="transform" type="rotate" from="360 260 250" to="0 260 250" dur="80s" repeatCount="indefinite"/></circle>
+  <g transform="translate(260 250)">
+    <path d="M0 -120 L100 -76 V10 C100 78 52 126 0 146 C-52 126 -100 78 -100 10 V-76 Z" fill="rgba(52,231,184,.10)" stroke="#7fe9cd" stroke-opacity="0.5" stroke-width="2.5"/>
+    <path d="M-40 6 L-10 36 L46 -34" fill="none" stroke="#7fe9cd" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+  </g></svg>`;
+
+function slideCover(meta, today) {
+  return { label: "الغلاف", html: `<div class="s-cover">
+    ${P_SHIELD}
+    <div class="sc-tag">نظام إدارة الالتزام · Compliance Management System</div>
+    <h1 class="sc-title">${esc(meta.title)}</h1>
+    <p class="sc-desc">${esc(meta.desc)}</p>
+    <div class="sc-date">تاريخ الإصدار: ${today}</div>
+    <div class="sc-hint">استخدم مفاتيح الأسهم ← → للتنقل · F لملء الشاشة</div>
+  </div>` };
+}
+
+function presentSlides(key, today) {
+  const meta = REPORTS.find((r) => r.key === key);
+  const slides = [slideCover(meta, today)];
+  const k = kpis();
+  const monPct = store.monitoring.length ? Math.round((k.monDone / store.monitoring.length) * 100) : 0;
+
+  if (key === "executive") {
+    const { top, recs } = execHighlights();
+    const monResults = { COMPLIANT: 0, PARTIAL: 0, NON_COMPLIANT: 0 };
+    for (const m of store.monitoring) if (m.result && monResults[m.result] !== undefined) monResults[m.result]++;
+    const monTot = monResults.COMPLIANT + monResults.PARTIAL + monResults.NON_COMPLIANT;
+    const compScore = monTot ? Math.round((monResults.COMPLIANT / monTot) * 100) : 0;
+    const highRisk = k.riskCounts.CRITICAL + k.riskCounts.HIGH;
+    // مؤشر التزام عام مركّب
+    const overall = Math.round((monPct * 0.3 + k.planAvg * 0.25 + compScore * 0.25 + Math.max(0, 100 - highRisk * 8) * 0.2));
+
+    slides.push({ label: "المؤشرات", html: `<div class="s-pad">
+      <h2 class="s-h">المؤشرات الرئيسية للالتزام</h2>
+      <div class="p-kgrid">
+        ${pKpi(k.activeReqs.length, "متطلب نظامي نشط", "#34e7b8")}
+        ${pKpi(store.risks.length, "خطر مسجّل", "#5aa9ff")}
+        ${pKpi(highRisk, "مخاطر عالية فأكثر", highRisk ? "#ff6f61" : "#34e7b8")}
+        ${pKpi(monPct + "%", "إنجاز برنامج المراقبة", "#ffcf5a")}
+        ${pKpi(k.openFnd.length, "ملاحظة مفتوحة", k.openFnd.length ? "#ffcf5a" : "#34e7b8")}
+        ${pKpi(k.planAvg + "%", "إنجاز الخطة السنوية", "#a78bfa")}
+      </div>
+    </div>` });
+
+    slides.push({ label: "مؤشر الالتزام", html: `<div class="s-pad s-center">
+      <h2 class="s-h">مؤشر الالتزام المؤسسي العام</h2>
+      <div class="p-gaugerow">
+        ${pGauge(overall, "المؤشر العام المركّب", "#34e7b8")}
+        ${pGauge(monPct, "إنجاز المراقبة", "#ffcf5a")}
+        ${pGauge(k.planAvg, "إنجاز الخطة", "#a78bfa")}
+        ${pGauge(compScore, "التزام الأنشطة الرقابية", "#5aa9ff")}
+      </div>
+      <p class="s-note">مؤشر مركّب يوازن بين إنجاز المراقبة والخطة والتزام الأنشطة الرقابية وحِدّة المخاطر عالية المستوى.</p>
+    </div>` });
+
+    slides.push({ label: "المخاطر", html: `<div class="s-pad">
+      <h2 class="s-h">خريطة المخاطر بعد الضوابط</h2>
+      <div class="s-split">
+        ${pDonut([
+          { label: "حرج", count: k.riskCounts.CRITICAL, color: "#ff6f61" },
+          { label: "عالٍ", count: k.riskCounts.HIGH, color: "#ff9f5a" },
+          { label: "متوسط", count: k.riskCounts.MEDIUM, color: "#ffcf5a" },
+          { label: "منخفض", count: k.riskCounts.LOW, color: "#34e7b8" },
+        ], store.risks.length, "إجمالي المخاطر")}
+        <div class="s-side">
+          <div class="s-bigstat" style="color:${highRisk ? "#ff6f61" : "#34e7b8"}">${pCount(highRisk)}</div>
+          <div class="s-bigstat-lbl">مخاطر عالية فأكثر تتطلب متابعة تنفيذية</div>
+          <ul class="s-ul">
+            <li>${k.riskCounts.CRITICAL} خطر حرج يحتاج معالجة عاجلة</li>
+            <li>${k.riskCounts.HIGH} خطر عالٍ ضمن خطط المعالجة</li>
+            <li>${k.riskCounts.MEDIUM + k.riskCounts.LOW} خطر ضمن المستويات المقبولة</li>
+          </ul>
+        </div>
+      </div>
+    </div>` });
+
+    slides.push({ label: "أداء المراقبة", html: `<div class="s-pad">
+      <h2 class="s-h">أداء أنشطة المراقبة</h2>
+      <div class="s-split">
+        ${pDonut([
+          { label: "ملتزم", count: monResults.COMPLIANT, color: "#34e7b8" },
+          { label: "ملتزم جزئياً", count: monResults.PARTIAL, color: "#ffcf5a" },
+          { label: "غير ملتزم", count: monResults.NON_COMPLIANT, color: "#ff6f61" },
+        ], monTot, "نشاط منفّذ")}
+        <div class="s-side">
+          ${pGauge(monPct, "نسبة إنجاز البرنامج", "#5aa9ff")}
+        </div>
+      </div>
+    </div>` });
+
+    if (top.length) slides.push({ label: "أبرز المخاطر", html: `<div class="s-pad">
+      <h2 class="s-h">أبرز المخاطر عالية المستوى</h2>
+      <table class="s-table"><thead><tr><th>الرقم</th><th>الخطر</th><th>المستوى</th><th>الإدارة</th></tr></thead>
+      <tbody>${top.map((x, i) => `<tr style="--d:${i}"><td>${esc(x.r.code)}</td><td>${esc(x.r.title)}</td><td><span class="s-pill" style="--pc:${LVL_COLOR[x.lvl.key] || C.neutral}">${esc(x.lvl.label)} (${x.lvl.score})</span></td><td>${esc(deptName(x.r.ownerDeptId))}</td></tr>`).join("")}</tbody></table>
+    </div>` });
+
+    slides.push({ label: "التوصيات", html: `<div class="s-pad">
+      <h2 class="s-h">أبرز التوصيات</h2>
+      <ul class="s-reclist">${recs.map((r, i) => `<li style="--d:${i}">${esc(r)}</li>`).join("") || "<li>لا توجد توصيات مسجلة حالياً</li>"}</ul>
+    </div>` });
+  } else {
+    // تقارير عامة: مؤشرات التوزيع + جدول مختصر
+    const specs = distSpecs(key);
+    const st = cardStat(key);
+    slides.push({ label: "المؤشر", html: `<div class="s-pad s-center">
+      <h2 class="s-h">مؤشر ${esc(meta.title.replace("تقرير ", ""))}</h2>
+      <div class="s-bigstat" style="color:#34e7b8">${pCount(st.value)}</div>
+      <div class="s-bigstat-lbl">${esc(st.label)}</div>
+    </div>` });
+    for (const s of specs) {
+      const total = s.items.reduce((a, b) => a + b.count, 0);
+      slides.push({ label: s.title, html: `<div class="s-pad">
+        <h2 class="s-h">${esc(s.title)}</h2>
+        <div class="s-split">
+          ${s.bars
+            ? `<div class="s-side" style="width:100%">${s.items.map((i) => `<div class="p-bar"><span class="pb-lbl">${esc(i.label)}</span><span class="pb-track"><span class="pb-fill" style="--w:${Math.max(3, Math.min(100, i.count))}%;background:${i.color}"></span></span><span class="pb-val">${i.count}%</span></div>`).join("")}</div>`
+            : pDonut(s.items, total, "الإجمالي")}
+        </div>
+      </div>` });
+    }
+    const t = tableFor(key);
+    const rows = t.rows.slice(0, 12);
+    if (rows.length) slides.push({ label: "التفاصيل", html: `<div class="s-pad">
+      <h2 class="s-h">أبرز السجلات (${rows.length} من ${t.rows.length})</h2>
+      <div class="s-tablewrap"><table class="s-table"><thead><tr>${t.head.slice(0, 6).map((h) => `<th>${esc(h)}</th>`).join("")}</tr></thead>
+      <tbody>${rows.map((row, i) => `<tr style="--d:${i}">${row.slice(0, 6).map((c) => `<td>${esc(String(c ?? ""))}</td>`).join("")}</tr>`).join("")}</tbody></table></div>
+    </div>` });
+  }
+
+  slides.push({ label: "خاتمة", html: `<div class="s-cover s-end">
+    ${P_SHIELD}
+    <h1 class="sc-title">شكراً لكم</h1>
+    <p class="sc-desc">نظام إدارة الالتزام — رؤية موحّدة لحوكمة الالتزام المؤسسي</p>
+    <div class="sc-date">${today}</div>
+  </div>` });
+  return slides;
+}
+
+function presentReport(key) {
+  const meta = REPORTS.find((r) => r.key === key);
+  const today = new Date().toLocaleDateString("ar-SA-u-ca-gregory-nu-latn", { dateStyle: "long" });
+  const win = window.open("", "_blank");
+  if (!win) return toast("اسمح بالنوافذ المنبثقة لعرض التقرير", true);
+  const slides = presentSlides(key, today);
+  const slidesHtml = slides.map((s, i) => `<section class="slide${i === 0 ? " active" : ""}" data-i="${i}">${s.html}</section>`).join("");
+  const dots = slides.map((s, i) => `<button class="p-dot${i === 0 ? " on" : ""}" data-go="${i}" title="${esc(s.label)}"></button>`).join("");
+
+  win.document.write(`<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"/>
+    <title>${esc(meta.title)} — عرض ويب</title>
+    <style>
+      *{box-sizing:border-box;margin:0;padding:0}
+      @font-face{font-family:"SF Mada";src:url("${location.origin}/fonts/sf-mada-bold.ttf") format("truetype");font-weight:100 900;font-display:swap}
+      :root{--emerald:#34e7b8;--ink:#eafff7}
+      html,body{height:100%}
+      body{font-family:"SF Mada","IBM Plex Sans Arabic","Segoe UI",Tahoma,sans-serif;background:radial-gradient(1200px 800px at 78% -10%,#0f5c48 0%,transparent 55%),radial-gradient(1000px 700px at 12% 110%,#0a3d5c 0%,transparent 55%),linear-gradient(160deg,#04120d,#071b16 60%,#04120d);color:var(--ink);overflow:hidden;height:100vh}
+      .stage{position:relative;height:100vh;width:100vw}
+      .slide{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;padding:3.4vh 4vw;opacity:0;transform:translateX(-40px) scale(.98);pointer-events:none;transition:opacity .55s ease,transform .55s cubic-bezier(.2,.8,.2,1)}
+      .slide.active{opacity:1;transform:none;pointer-events:auto}
+      .slide.prev{transform:translateX(40px) scale(.98)}
+      .s-pad{width:min(1180px,94vw);margin:0 auto}
+      .s-center{text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%}
+      .s-h{font-size:clamp(1.5rem,3.4vw,2.6rem);color:#fff;margin-bottom:3vh;position:relative;padding-inline-start:18px}
+      .s-h::before{content:"";position:absolute;inset-inline-start:0;top:8%;height:84%;width:6px;border-radius:4px;background:linear-gradient(var(--emerald),#0e9c78)}
+      /* الغلاف */
+      .s-cover{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;position:relative}
+      .p-shield{position:absolute;width:min(78vh,620px);opacity:.5;filter:drop-shadow(0 0 40px rgba(52,231,184,.25));z-index:0}
+      .s-cover>*:not(.p-shield){position:relative;z-index:1}
+      .sc-tag{letter-spacing:.5px;color:var(--emerald);font-size:clamp(.8rem,1.5vw,1rem);margin-bottom:2.2vh;opacity:.9}
+      .sc-title{font-size:clamp(2rem,6vw,4.4rem);color:#fff;line-height:1.1;text-shadow:0 4px 30px rgba(0,0,0,.4)}
+      .sc-desc{font-size:clamp(1rem,2.2vw,1.5rem);color:#bfeede;margin-top:2.4vh;max-width:900px}
+      .sc-date{margin-top:3.4vh;color:#8fd8c3;font-size:1rem}
+      .sc-hint{margin-top:5vh;color:#6fb3a3;font-size:.85rem;border:1px solid rgba(52,231,184,.25);padding:8px 16px;border-radius:30px;animation:pulse 2.6s infinite}
+      @keyframes pulse{0%,100%{opacity:.5}50%{opacity:1}}
+      /* KPI */
+      .p-kgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:2.2vh 2vw}
+      .p-kpi{background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.08);border-top:4px solid var(--kc);border-radius:18px;padding:3vh 1.4vw;text-align:center;backdrop-filter:blur(8px);box-shadow:0 10px 40px rgba(0,0,0,.25)}
+      .pk-num{font-size:clamp(2rem,4.6vw,3.4rem);font-weight:800;color:var(--kc);line-height:1}
+      .pk-lbl{margin-top:1vh;color:#cfeee3;font-size:clamp(.85rem,1.5vw,1.05rem)}
+      .pk-sub{color:#8fd8c3;font-size:.8rem;margin-top:.5vh}
+      .p-suf{font-size:.6em}
+      /* Gauges */
+      .p-gaugerow{display:flex;gap:3vw;justify-content:center;flex-wrap:wrap;margin-top:1vh}
+      .p-gauge{position:relative;width:min(30vh,220px);text-align:center}
+      .p-gauge svg{width:100%;transform:rotate(-90deg)}
+      .pg-track{fill:none;stroke:rgba(255,255,255,.09);stroke-width:11}
+      .pg-fill{fill:none;stroke-width:11;stroke-linecap:round;transition:stroke-dashoffset 1.3s cubic-bezier(.2,.8,.2,1)}
+      .pg-center{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;top:-14%}
+      .pg-num{font-size:clamp(1.4rem,3vw,2.2rem);font-weight:800}
+      .pg-lbl{margin-top:1vh;color:#cfeee3;font-size:.95rem}
+      /* Donut */
+      .s-split{display:flex;gap:4vw;align-items:center;justify-content:center;flex-wrap:wrap}
+      .p-donutbox{display:flex;gap:2vw;align-items:center;flex-wrap:wrap;justify-content:center}
+      .p-donutwrap{position:relative;width:min(42vh,320px);aspect-ratio:1}
+      .p-donut{width:100%;height:100%;border-radius:50%;background:conic-gradient(var(--stops));-webkit-mask:radial-gradient(transparent 55%,#000 56%);mask:radial-gradient(transparent 55%,#000 56%);animation:spin-in 1.1s ease both}
+      @keyframes spin-in{from{transform:rotate(-90deg) scale(.7);opacity:0}to{transform:none;opacity:1}}
+      .p-donut-hole{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+      .pd-top{font-size:clamp(1.6rem,3.4vw,2.6rem);font-weight:800;color:#fff}
+      .pd-sub{color:#9fe0cf;font-size:.9rem}
+      .p-legend{display:flex;flex-direction:column;gap:1.2vh;min-width:230px}
+      .pl-row{display:flex;align-items:center;gap:12px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:12px;padding:10px 14px}
+      .pl-dot{width:14px;height:14px;border-radius:4px;flex-shrink:0}
+      .pl-lbl{flex:1;color:#dbf3ea}.pl-val{font-weight:800;font-size:1.15rem}
+      .s-side{text-align:center}
+      .s-bigstat{font-size:clamp(3rem,9vw,6rem);font-weight:900;line-height:1}
+      .s-bigstat-lbl{color:#bfeede;font-size:1.1rem;margin-top:1vh;max-width:360px}
+      .s-ul{list-style:none;margin-top:2.4vh;text-align:right}
+      .s-ul li{color:#cfeee3;padding:8px 0 8px 0;border-bottom:1px dashed rgba(255,255,255,.1)}
+      .s-ul li::before{content:"▸";color:var(--emerald);margin-inline-end:8px}
+      .s-note{color:#8fd8c3;margin-top:2.6vh;text-align:center;font-size:.95rem}
+      /* bars */
+      .p-bar{display:flex;align-items:center;gap:16px;margin:1.4vh 0}
+      .pb-lbl{min-width:190px;color:#dbf3ea;font-size:1rem}
+      .pb-track{flex:1;height:20px;border-radius:11px;background:rgba(255,255,255,.08);overflow:hidden}
+      .pb-fill{display:block;height:100%;width:0;border-radius:11px;transition:width 1.2s cubic-bezier(.2,.8,.2,1)}
+      .slide.active .pb-fill{width:var(--w)}
+      .pb-val{font-weight:800;min-width:56px}
+      /* tables */
+      .s-tablewrap{max-height:70vh;overflow:auto}
+      .s-table{width:100%;border-collapse:collapse;font-size:clamp(.8rem,1.5vw,1.05rem)}
+      .s-table th{background:linear-gradient(135deg,#1a8a70,#0d5243);color:#fff;padding:14px 16px;text-align:right;position:sticky;top:0}
+      .s-table td{padding:12px 16px;text-align:right;border-bottom:1px solid rgba(255,255,255,.08);color:#e6fff5}
+      .s-table tbody tr{opacity:0;transform:translateY(14px);animation:rowin .5s ease forwards;animation-delay:calc(var(--d,0) * .09s + .2s)}
+      .slide:not(.active) .s-table tbody tr{animation:none;opacity:1;transform:none}
+      @keyframes rowin{to{opacity:1;transform:none}}
+      .s-pill{display:inline-block;padding:3px 12px;border-radius:20px;font-size:.85rem;font-weight:700;color:var(--pc);background:color-mix(in srgb,var(--pc) 18%,transparent);border:1px solid color-mix(in srgb,var(--pc) 45%,transparent)}
+      .s-reclist{list-style:none;display:flex;flex-direction:column;gap:1.6vh}
+      .s-reclist li{background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.08);border-inline-start:4px solid var(--emerald);border-radius:14px;padding:16px 20px;color:#e6fff5;font-size:1.05rem;opacity:0;transform:translateX(-18px);animation:rowin .5s ease forwards;animation-delay:calc(var(--d,0) * .12s + .2s)}
+      .s-end .p-shield{opacity:.4}
+      /* chrome */
+      .p-top{position:fixed;top:16px;left:16px;right:16px;display:flex;justify-content:space-between;align-items:center;z-index:20;pointer-events:none}
+      .p-clock{color:#8fd8c3;font-size:.85rem;background:rgba(0,0,0,.25);padding:6px 12px;border-radius:20px;pointer-events:auto}
+      .p-ctrls{display:flex;gap:8px;pointer-events:auto}
+      .p-btn{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);color:#eafff7;width:40px;height:40px;border-radius:12px;cursor:pointer;font-size:1.1rem;transition:.2s}
+      .p-btn:hover{background:var(--emerald);color:#04120d}
+      .p-bottom{position:fixed;bottom:18px;left:0;right:0;display:flex;flex-direction:column;align-items:center;gap:10px;z-index:20}
+      .p-dots{display:flex;gap:8px}
+      .p-dot{width:11px;height:11px;border-radius:50%;background:rgba(255,255,255,.22);border:none;cursor:pointer;transition:.25s;padding:0}
+      .p-dot.on{background:var(--emerald);transform:scale(1.35);box-shadow:0 0 12px rgba(52,231,184,.7)}
+      .p-prog{position:fixed;top:0;left:0;height:3px;background:linear-gradient(90deg,var(--emerald),#5aa9ff);z-index:30;transition:width .4s ease}
+      @media(max-width:760px){.p-kgrid{grid-template-columns:repeat(2,1fr)}.pb-lbl{min-width:120px}}
+    </style></head><body>
+    <div class="p-prog" id="prog"></div>
+    <div class="p-top">
+      <div class="p-clock" id="clock"></div>
+      <div class="p-ctrls">
+        <button class="p-btn" id="fs" title="ملء الشاشة (F)">⛶</button>
+        <button class="p-btn" id="prev" title="السابق">›</button>
+        <button class="p-btn" id="next" title="التالي">‹</button>
+      </div>
+    </div>
+    <div class="stage" id="stage">${slidesHtml}</div>
+    <div class="p-bottom"><div class="p-dots">${dots}</div></div>
+    <script>
+      var slides=[].slice.call(document.querySelectorAll('.slide'));
+      var dots=[].slice.call(document.querySelectorAll('.p-dot'));
+      var cur=0;
+      function animate(sl){
+        sl.querySelectorAll('.p-count').forEach(function(el){
+          var to=parseFloat(el.dataset.to)||0,dur=1100,t0=performance.now(),dec=(to%1!==0);
+          function step(t){var p=Math.min(1,(t-t0)/dur);var e=1-Math.pow(1-p,3);var v=to*e;el.textContent=dec?v.toFixed(1):Math.round(v);if(p<1)requestAnimationFrame(step);}
+          requestAnimationFrame(step);
+        });
+        sl.querySelectorAll('.pg-fill').forEach(function(el){el.style.strokeDashoffset=el.dataset.off;});
+      }
+      function reset(sl){
+        sl.querySelectorAll('.p-count').forEach(function(el){el.textContent='0';});
+        sl.querySelectorAll('.pg-fill').forEach(function(el){el.style.strokeDashoffset=el.getAttribute('stroke-dasharray');});
+      }
+      function go(i){
+        if(i<0||i>=slides.length)return;
+        var old=slides[cur];old.classList.remove('active');old.classList.add('prev');reset(old);
+        cur=i;
+        var sl=slides[cur];sl.classList.remove('prev');sl.classList.add('active');
+        dots.forEach(function(d,j){d.classList.toggle('on',j===cur);});
+        document.getElementById('prog').style.width=((cur+1)/slides.length*100)+'%';
+        requestAnimationFrame(function(){requestAnimationFrame(function(){animate(sl);});});
+      }
+      dots.forEach(function(d){d.onclick=function(){go(+d.dataset.go);};});
+      document.getElementById('next').onclick=function(){go(cur+1);};
+      document.getElementById('prev').onclick=function(){go(cur-1);};
+      function fs(){if(!document.fullscreenElement){(document.documentElement.requestFullscreen||function(){})();}else{document.exitFullscreen();}}
+      document.getElementById('fs').onclick=fs;
+      document.addEventListener('keydown',function(e){
+        if(e.key==='ArrowLeft'||e.key==='PageDown'||e.key===' ')go(cur+1);
+        else if(e.key==='ArrowRight'||e.key==='PageUp')go(cur-1);
+        else if(e.key==='ArrowDown')go(cur+1);
+        else if(e.key==='ArrowUp')go(cur-1);
+        else if(e.key==='Home')go(0);
+        else if(e.key==='End')go(slides.length-1);
+        else if(e.key==='f'||e.key==='F')fs();
+        else if(e.key==='Escape'&&document.fullscreenElement)document.exitFullscreen();
+      });
+      // لمس/سحب للأجهزة اللمسية
+      var tx=0;document.addEventListener('touchstart',function(e){tx=e.touches[0].clientX;},{passive:true});
+      document.addEventListener('touchend',function(e){var dx=e.changedTouches[0].clientX-tx;if(Math.abs(dx)>50){go(cur+(dx>0?-1:1));}},{passive:true});
+      function tick(){var d=new Date();document.getElementById('clock').textContent=d.toLocaleTimeString('ar-SA',{hour:'2-digit',minute:'2-digit'});}
+      tick();setInterval(tick,10000);
+      document.getElementById('prog').style.width=(1/slides.length*100)+'%';
+      requestAnimationFrame(function(){animate(slides[0]);});
+    <\/script>
     </body></html>`);
   win.document.close();
   logReport(key);
@@ -443,9 +990,308 @@ async function exportExcel(key) {
 async function exportWord(key) {
   const meta = REPORTS.find((r) => r.key === key);
   const html = `<html xmlns:w="urn:schemas-microsoft-com:office:word" lang="ar" dir="rtl"><head><meta charset="utf-8"/>
-    <style>body{font-family:Arial;direction:rtl}table{border-collapse:collapse;width:100%}th,td{border:1px solid #999;padding:5px;text-align:right}th{background:#eef3f0}h2{color:#1d5c4d}</style>
+    <style>@font-face{font-family:"SF Mada";src:url("${location.origin}/fonts/sf-mada-bold.ttf") format("truetype")}body{font-family:"SF Mada",Arial;direction:rtl}table{border-collapse:collapse;width:100%}th,td{border:1px solid #999;padding:5px;text-align:right}th{background:#eef3f0}h2{color:#1d5c4d}</style>
     </head><body>${reportHtml(key)}</body></html>`;
   downloadBlob(new Blob(["﻿" + html], { type: "application/msword" }), `${meta.title}.doc`);
+  logReport(key);
+}
+
+// ---------- تصدير عرض تقديمي (PowerPoint .pptx) ----------
+async function exportPptx(key) {
+  if (typeof PptxGenJS === "undefined") throw new Error("مكتبة العروض التقديمية لم تُحمَّل — تحقق من اتصالك وأعد تحميل الصفحة");
+  toast("جاري تجهيز العرض التقديمي…");
+  const meta = REPORTS.find((r) => r.key === key);
+  const today = new Date().toLocaleDateString("ar-SA-u-ca-gregory-nu-latn", { dateStyle: "long" });
+  const pptx = new PptxGenJS();
+  pptx.layout = "LAYOUT_WIDE"; // 13.333 × 7.5
+  pptx.rtlMode = true;
+  pptx.author = "نظام إدارة الالتزام";
+  const W = 13.333, GREEN = "0D5243", TEAL = "14705C", INK = "1A2C27", MUTED = "5D6C66", BG = "F6F9F8";
+  const AR = { fontFace: "SF Mada", rtlMode: true }; // خط النظام — يتوفّر بديل تلقائي إن لم يكن مثبتاً
+
+  // شريحة العنوان
+  const s1 = pptx.addSlide();
+  s1.background = { color: GREEN };
+  s1.addShape(pptx.ShapeType.rect, { x: 0, y: 3.15, w: W, h: 0.06, fill: { color: "3FA98C" } });
+  s1.addText(meta.title, { x: 0.6, y: 2.2, w: W - 1.2, h: 1.0, fontSize: 40, bold: true, color: "FFFFFF", align: "center", ...AR });
+  s1.addText("نظام إدارة الالتزام — Compliance Management System", { x: 0.6, y: 3.35, w: W - 1.2, h: 0.5, fontSize: 16, color: "CFE6DE", align: "center", ...AR });
+  s1.addText(`تاريخ الإصدار: ${today}`, { x: 0.6, y: 4.1, w: W - 1.2, h: 0.4, fontSize: 13, color: "9FC4B8", align: "center", ...AR });
+
+  const header = (slide, title) => {
+    slide.background = { color: BG };
+    slide.addText(title, { x: 0.4, y: 0.28, w: W - 0.8, h: 0.55, fontSize: 22, bold: true, color: GREEN, align: "right", ...AR });
+    slide.addShape(pptx.ShapeType.line, { x: 0.4, y: 0.92, w: W - 0.8, h: 0, line: { color: TEAL, width: 2 } });
+    slide.addText(`${meta.title} · ${today}`, { x: 0.4, y: 7.0, w: W - 0.8, h: 0.35, fontSize: 9, color: MUTED, align: "right", ...AR });
+  };
+
+  // بطاقات مؤشرات موحّدة
+  const kpiCards = (slide, cards) => {
+    const cw = (W - 0.8) / cards.length;
+    cards.forEach((kp, i) => {
+      const x = 0.4 + i * cw, w = cw - 0.18;
+      slide.addShape(pptx.ShapeType.roundRect, { x, y: 2.4, w, h: 2.15, rectRadius: 0.09, fill: { color: "FFFFFF" }, line: { color: "E6ECEA", width: 1 }, shadow: { type: "outer", color: "AEBEB8", blur: 6, offset: 2, angle: 90, opacity: 0.45 } });
+      slide.addText(String(kp.v), { x, y: 2.72, w, h: 0.9, fontSize: 30, bold: true, color: kp.c, align: "center", fontFace: "Arial" });
+      slide.addText(kp.l, { x, y: 3.62, w, h: 0.55, fontSize: 12, color: INK, align: "center", ...AR });
+      if (kp.s) slide.addText(kp.s, { x, y: 4.12, w, h: 0.4, fontSize: 9.5, color: MUTED, align: "center", ...AR });
+    });
+  };
+
+  // ---- عناصر أصلية قابلة للتحرير في PowerPoint (تطابق مؤشرات الشاشة، ليست صوراً) ----
+  const CARD_SHADOW = { type: "outer", color: "AEBEB8", blur: 5, offset: 2, angle: 90, opacity: 0.4 };
+  // حلقة نسبية = مخطط دونات (شريحتان) + نسبة نصية في المركز
+  const ringGauge = (slide, x, y, size, pct, colorHex, label, sub, card = true) => {
+    if (card) slide.addShape(pptx.ShapeType.roundRect, { x, y, w: size, h: size + 0.5, rectRadius: 0.08, fill: { color: "FFFFFF" }, line: { color: "E6ECEA", width: 1 }, shadow: CARD_SHADOW });
+    const p = (pct == null || isNaN(pct)) ? null : Math.max(0, Math.min(100, Math.round(pct)));
+    const d = size * 0.66, rx = x + (size - d) / 2, ry = y + 0.12;
+    slide.addChart(pptx.ChartType.doughnut, [{ name: "g", labels: ["v", "r"], values: p == null ? [0, 100] : [p, 100 - p] }], {
+      x: rx, y: ry, w: d, h: d, holeSize: 74, chartColors: [p == null ? "D8DAD6" : colorHex, "EEF2F0"],
+      showLegend: false, showValue: false, showTitle: false, showPercent: false, dataBorder: { pt: 1, color: "FFFFFF" },
+    });
+    slide.addText(p == null ? "—" : p + "%", { x: rx, y: ry, w: d, h: d, fontSize: Math.max(11, Math.round(size * 13)), bold: true, color: p == null ? "8A8578" : colorHex, align: "center", valign: "middle", fontFace: "Arial" });
+    slide.addText(label, { x, y: y + d + 0.16, w: size, h: 0.3, fontSize: size < 1.6 ? 9.5 : 11.5, bold: true, color: INK, align: "center", ...AR });
+    if (sub) slide.addText(sub, { x, y: y + d + 0.44, w: size, h: 0.26, fontSize: size < 1.6 ? 8 : 9, color: MUTED, align: "center", ...AR });
+  };
+  // بطاقة رقم = مستطيل + رقم كبير + عنوان
+  const numTile = (slide, x, y, size, value, colorHex, label, sub) => {
+    slide.addShape(pptx.ShapeType.roundRect, { x, y, w: size, h: size + 0.5, rectRadius: 0.08, fill: { color: "FFFFFF" }, line: { color: "E6ECEA", width: 1 }, shadow: CARD_SHADOW });
+    slide.addText(String(value), { x, y: y + 0.16, w: size, h: size * 0.62, fontSize: Math.round(size * 18), bold: true, color: colorHex, align: "center", valign: "middle", fontFace: "Arial" });
+    slide.addText(label, { x, y: y + size * 0.66, w: size, h: 0.32, fontSize: 11.5, bold: true, color: INK, align: "center", ...AR });
+    if (sub) slide.addText(sub, { x, y: y + size * 0.66 + 0.3, w: size, h: 0.26, fontSize: 9, color: MUTED, align: "center", ...AR });
+  };
+  // شريحة المؤشرات التنفيذية (لغير تقرير النضج — النضج له مؤشراته الربعية)
+  if (key !== "maturity") {
+    const k = kpis();
+    const monPct = store.monitoring.length ? Math.round((k.monDone / store.monitoring.length) * 100) : 0;
+    const sK = pptx.addSlide();
+    header(sK, "أبرز المؤشرات");
+    kpiCards(sK, [
+      { v: k.activeReqs.length, l: "متطلب نشط", c: TEAL },
+      { v: store.risks.length, l: "خطر مسجل", c: "2A78D6" },
+      { v: k.riskCounts.CRITICAL + k.riskCounts.HIGH, l: "مخاطر عالية فأكثر", c: "D03B3B" },
+      { v: monPct + "%", l: "إنجاز المراقبة", c: "0CA30C" },
+      { v: k.openFnd.length, l: "ملاحظة مفتوحة", c: "E6A100" },
+      { v: k.planAvg + "%", l: "إنجاز الخطة", c: "0CA30C" },
+    ]);
+  }
+
+  // شرائح الرسوم — دائرية (دونات) للتوزيعات لتطابق الشاشة، وأعمدة للنسب (لغير النضج)
+  if (key !== "maturity")
+  for (const spec of distSpecs(key)) {
+    const s = pptx.addSlide();
+    header(s, spec.title);
+    const colors = spec.items.map((i) => String(i.color).replace("#", ""));
+    const total = spec.items.reduce((sum, i) => sum + (Number(i.count) || 0), 0);
+    if (spec.bars) {
+      const data = [{ name: spec.title, labels: spec.items.map((i) => i.label), values: spec.items.map((i) => Number(i.count) || 0) }];
+      s.addChart(pptx.ChartType.bar, data, {
+        x: 0.6, y: 1.35, w: W - 1.2, h: 5.1, barDir: "bar", chartColors: colors,
+        showValue: true, dataLabelColor: "FFFFFF", dataLabelFontSize: 13, dataLabelFontBold: true, dataLabelPosition: "inEnd",
+        showLegend: false, showTitle: false, valAxisHidden: true, catAxisLineShow: false,
+        valGridLine: { style: "none" }, catAxisLabelColor: INK, catAxisLabelFontSize: 13, catAxisLabelFontFace: "Arial", barGapWidthPct: 45,
+      });
+    } else if (total > 0) {
+      const data = [{ name: spec.title, labels: spec.items.map((i) => i.label), values: spec.items.map((i) => Number(i.count) || 0) }];
+      s.addChart(pptx.ChartType.doughnut, data, {
+        x: 1.0, y: 1.35, w: W - 2.0, h: 5.1, chartColors: colors, holeSize: 55,
+        showLegend: true, legendPos: "r", legendFontSize: 13, legendFontFace: "Arial",
+        showValue: true, dataLabelColor: "FFFFFF", dataLabelFontSize: 13, dataLabelFontBold: true, showTitle: false, showPercent: false,
+      });
+    } else {
+      s.addText("لا توجد بيانات لهذا المؤشر", { x: 0.6, y: 3, w: W - 1.2, h: 1, fontSize: 15, color: MUTED, align: "center", ...AR });
+    }
+  }
+
+  // ---------- تقرير النضج: يطابق لوحة النتائج الربعية (نفس المؤشرات والتصميم) ----------
+  if (key === "maturity") {
+    // أحدث تقييم لكل تجمع (مُرسل أو معتمد) — كما في صفحة النتائج
+    const considered = store.maturity.filter((m) => ["REVIEWED", "SUBMITTED"].includes(m.status));
+    const latest = {};
+    for (const m of considered) { const c = m.clusterId; if (!latest[c] || (m.year * 4 + m.quarter) > (latest[c].year * 4 + latest[c].quarter)) latest[c] = m; }
+    const items = Object.values(latest);
+    const avg = (a) => (a.length ? Math.round(a.reduce((s, x) => s + x, 0) / a.length) : 0);
+    const reviewed = items.filter((m) => m.status === "REVIEWED");
+    const finalOf = (m) => maturityOverall(m, m.status === "REVIEWED");
+    const avgSelf = avg(items.map((m) => maturityOverall(m, false)));
+    const avgRev = avg(reviewed.map((m) => maturityOverall(m, true)));
+    const domPct = (dom, useRev) => { const mx = dom.criteria.length * 3; return mx ? Math.round(dom.criteria.reduce((s, c) => s + ((useRev && c.reviewScore != null) ? c.reviewScore : (c.selfScore || 0)), 0) / mx * 100) : 0; };
+    // تدرّج ألوان النضج (HSL→HEX) لتطابق تصميم الشاشة
+    const hslHex = (h, s, l) => { s /= 100; l /= 100; const kk = (n) => (n + h / 30) % 12; const a = s * Math.min(l, 1 - l); const f = (n) => l - a * Math.max(-1, Math.min(kk(n) - 3, Math.min(9 - kk(n), 1))); const to = (x) => Math.round(255 * x).toString(16).padStart(2, "0").toUpperCase(); return to(f(0)) + to(f(8)) + to(f(4)); };
+    const matHex = (p) => hslHex(Math.round(Math.max(0, Math.min(100, p)) * 1.2), 58, 44);
+    const lighten = (hex, amt) => { const n = (i) => parseInt(hex.substr(i, 2), 16); const mm = (x) => Math.round(x + (255 - x) * amt).toString(16).padStart(2, "0").toUpperCase(); return mm(n(0)) + mm(n(2)) + mm(n(4)); };
+
+    if (!items.length) {
+      const s = pptx.addSlide(); header(s, "المؤشرات الربعية للنضج");
+      s.addText("لا توجد نتائج بعد — تظهر التقييمات المُرسلة أو المعتمدة", { x: 0.6, y: 3, w: W - 1.2, h: 1, fontSize: 16, color: MUTED, align: "center", ...AR });
+    } else {
+      const lc = { good: 0, warning: 0, serious: 0, critical: 0 };
+      for (const m of items) lc[maturityLevel(finalOf(m)).key]++;
+      const grp = {}; CLUSTER_WAVE_ORDER.forEach((kk) => (grp[kk] = []));
+      for (const m of items) grp[clusterWave(m.clusterId)?.key || "PREP"].push(m);
+      const wk = CLUSTER_WAVE_ORDER.filter((kk) => grp[kk].length);
+      const waveAvg = (kk, rev) => avg((rev ? grp[kk].filter((m) => m.status === "REVIEWED") : grp[kk]).map((m) => maturityOverall(m, rev)));
+
+      // 1) بطاقات المؤشرات الربعية — حلقتان نسبيتان + بطاقتا أرقام (كلها عناصر أصلية قابلة للتحرير)
+      const sK = pptx.addSlide(); header(sK, "المؤشرات الربعية للنضج");
+      const iw = 2.55, cgap = (W - 0.8 - 4 * iw) / 3, cy = 2.15;
+      const cardX = (i) => 0.4 + i * (iw + cgap);
+      ringGauge(sK, cardX(0), cy, iw, avgSelf, matHex(avgSelf), "متوسط تقييم التجمعات", "التقييم الذاتي");
+      ringGauge(sK, cardX(1), cy, iw, reviewed.length ? avgRev : null, matHex(avgRev), "متوسط بعد المراجعة", reviewed.length ? `${reviewed.length} معتمد` : "لا يوجد معتمد");
+      numTile(sK, cardX(2), cy, iw, items.length, TEAL, "تجمعات في النتائج", "");
+      numTile(sK, cardX(3), cy, iw, reviewed.length, "0CA30C", "تقييمات معتمدة", `${items.length - reviewed.length} بانتظار المراجعة`);
+
+      // 2) توزيع التجمعات حسب مستوى النضج — مخطط دائري (دونات) أصلي قابل للتعديل
+      const sd = pptx.addSlide(); header(sd, "توزيع التجمعات حسب مستوى النضج");
+      const distSegs = [
+        { label: "مبتدئ", count: lc.critical, color: matHex(12) }, { label: "نامٍ", count: lc.serious, color: matHex(38) },
+        { label: "متقدم", count: lc.warning, color: matHex(63) }, { label: "رائد", count: lc.good, color: matHex(90) },
+      ];
+      if (distSegs.some((x) => x.count > 0))
+        sd.addChart(pptx.ChartType.doughnut, [{ name: "المستوى", labels: distSegs.map((x) => x.label), values: distSegs.map((x) => x.count) }], {
+          x: 1.0, y: 1.5, w: W - 2.0, h: 5.0, chartColors: distSegs.map((x) => x.color), holeSize: 58,
+          showLegend: true, legendPos: "r", legendFontSize: 13, legendFontFace: "Arial",
+          showValue: true, dataLabelColor: "FFFFFF", dataLabelFontSize: 13, dataLabelFontBold: true, showTitle: false, showPercent: false,
+        });
+      else sd.addText("لا توجد بيانات", { x: 0.6, y: 3, w: W - 1.2, h: 1, fontSize: 15, color: MUTED, align: "center", ...AR });
+
+      // 3) مقارنة الموجات — بطاقة لكل موجة بحلقتين نسبيتين (ذاتي / بعد المراجعة)
+      if (wk.length) {
+        const s = pptx.addSlide(); header(s, "مقارنة الموجات");
+        const cardW = (W - 0.8) / wk.length;
+        for (let i = 0; i < wk.length; i++) {
+          const kk = wk[i], g = grp[kk], rev = g.filter((m) => m.status === "REVIEWED");
+          const x0 = 0.4 + i * cardW, cw = cardW - 0.2;
+          s.addShape(pptx.ShapeType.roundRect, { x: x0, y: 1.35, w: cw, h: 4.7, rectRadius: 0.1, fill: { color: "FFFFFF" }, line: { color: "E6ECEA", width: 1 }, shadow: CARD_SHADOW });
+          s.addShape(pptx.ShapeType.roundRect, { x: x0, y: 1.35, w: cw, h: 0.6, rectRadius: 0.1, fill: { color: CLUSTER_WAVES[kk].color.replace("#", "") } });
+          s.addText(CLUSTER_WAVES[kk].label, { x: x0 + 0.08, y: 1.35, w: cw - 0.16, h: 0.6, fontSize: 12, bold: true, color: "FFFFFF", align: "center", valign: "middle", ...AR });
+          const rw = Math.min(1.7, (cw - 0.4) / 2), gx = x0 + (cw - (2 * rw + 0.15)) / 2;
+          ringGauge(s, gx, 2.25, rw, waveAvg(kk, false), matHex(waveAvg(kk, false)), "متوسط الذاتي", "", false);
+          ringGauge(s, gx + rw + 0.15, 2.25, rw, rev.length ? waveAvg(kk, true) : null, matHex(waveAvg(kk, true)), "بعد المراجعة", rev.length ? "" : "لا يوجد", false);
+          s.addText(`${g.length} تجمع`, { x: x0 + 0.08, y: 2.35 + rw + 0.5, w: cw - 0.16, h: 0.4, fontSize: 12, color: MUTED, align: "center", ...AR });
+        }
+      }
+
+      // 3.5) قائمة نضج التجمعات — أشرطة تقدّم أصلية (تطابق شاشة «التقييمات» بنفس التصميم)
+      const listRows = store.maturity.slice().sort((a, b) => (b.year - a.year) || (b.quarter - a.quarter) || (b.createdAt || "").localeCompare(a.createdAt || ""));
+      if (listRows.length) {
+        const RX = 13.03; // الحافة اليمنى للمحتوى
+        const cols = { code: 1.0, name: 3.1, wave: 1.55, quarter: 1.2, bar: 3.0, level: 1.15, status: 1.45 };
+        const cx = {}; let acc = RX;
+        for (const kk of ["code", "name", "wave", "quarter", "bar", "level", "status"]) { cx[kk] = acc - cols[kk]; acc = cx[kk]; }
+        const stColor = { DRAFT: "8A8578", SUBMITTED: "FAB219", REVIEWED: "0CA30C" };
+        const rh = 0.46, yTop = 1.12, PER_L = 11;
+        // شارة حبّة (pill): خلفية مستديرة + نص — عنصر أصلي قابل للتحرير
+        const pill = (slide, x, y, w, h, fillHex, txtHex, text, fs, borderHex) => {
+          slide.addShape(pptx.ShapeType.roundRect, { x, y: y + (rh - h) / 2, w, h, rectRadius: h / 2, fill: { color: fillHex }, ...(borderHex ? { line: { color: borderHex, width: 0.75 } } : {}) });
+          slide.addText(text, { x: x + 0.03, y, w: w - 0.06, h: rh, fontSize: fs, color: txtHex, bold: true, align: "center", valign: "middle", ...AR });
+        };
+        const drawHeader = (slide) => {
+          slide.addShape(pptx.ShapeType.roundRect, { x: cx.status, y: yTop, w: RX - cx.status, h: 0.42, rectRadius: 0.06, fill: { color: GREEN } });
+          const htxt = (x, w, t, al) => slide.addText(t, { x: x + 0.05, y: yTop, w: w - 0.1, h: 0.42, fontSize: 9, bold: true, color: "FFFFFF", align: al || "center", valign: "middle", ...AR });
+          htxt(cx.code, cols.code, "الرقم"); htxt(cx.name, cols.name, "التجمع", "right"); htxt(cx.wave, cols.wave, "الموجة");
+          htxt(cx.quarter, cols.quarter, "الفترة"); htxt(cx.bar, cols.bar, "النضج المعتمد"); htxt(cx.level, cols.level, "المستوى"); htxt(cx.status, cols.status, "الحالة");
+        };
+        for (let i = 0; i < listRows.length; i += PER_L) {
+          const slide = pptx.addSlide(); header(slide, i === 0 ? "قائمة نضج التجمعات" : "قائمة نضج التجمعات (تابع)");
+          drawHeader(slide);
+          listRows.slice(i, i + PER_L).forEach((m, j) => {
+            const y = yTop + 0.5 + j * rh;
+            const pct = maturityOverall(m, m.status === "REVIEWED");
+            const wv = clusterWave(m.clusterId), lvl = maturityLevel(pct);
+            if (j % 2 === 1) slide.addShape(pptx.ShapeType.rect, { x: cx.status, y, w: RX - cx.status, h: rh, fill: { color: "EEF3F1" } });
+            slide.addText(m.code || "—", { x: cx.code, y, w: cols.code, h: rh, fontSize: 8.5, bold: true, color: INK, align: "center", valign: "middle", fontFace: "Arial" });
+            slide.addText(deptName(m.clusterId), { x: cx.name + 0.05, y, w: cols.name - 0.1, h: rh, fontSize: 9, color: INK, align: "right", valign: "middle", ...AR });
+            if (wv) { const wc = (wv.color || "#8a8578").replace("#", ""); pill(slide, cx.wave + 0.1, y, cols.wave - 0.2, 0.28, lighten(wc, 0.82), wc, wv.short, 8, lighten(wc, 0.45)); }
+            else slide.addText("قيد التجهيز", { x: cx.wave, y, w: cols.wave, h: rh, fontSize: 8, color: MUTED, align: "center", valign: "middle", ...AR });
+            slide.addText(`الربع ${m.quarter} / ${m.year}`, { x: cx.quarter, y, w: cols.quarter, h: rh, fontSize: 8, color: MUTED, align: "center", valign: "middle", ...AR });
+            // شريط النضج: مسار + تعبئة ملوّنة تنمو من اليمين (RTL) + النسبة نصاً
+            const bx = cx.bar, pctW = 0.5, trackX = bx + pctW + 0.08, trackW = cols.bar - pctW - 0.16, trackH = 0.17, trackY = y + (rh - trackH) / 2;
+            slide.addShape(pptx.ShapeType.roundRect, { x: trackX, y: trackY, w: trackW, h: trackH, rectRadius: trackH / 2, fill: { color: "E9EEEC" } });
+            if (pct > 0) { const fw = Math.max(trackH, trackW * pct / 100); slide.addShape(pptx.ShapeType.roundRect, { x: trackX + trackW - fw, y: trackY, w: fw, h: trackH, rectRadius: trackH / 2, fill: { color: matHex(pct) } }); }
+            slide.addText(pct + "%", { x: bx, y, w: pctW, h: rh, fontSize: 9, bold: true, color: matHex(pct), align: "center", valign: "middle", fontFace: "Arial" });
+            pill(slide, cx.level + 0.08, y, cols.level - 0.16, 0.28, matHex(pct), "FFFFFF", lvl.label, 8.5);
+            const scol = stColor[m.status] || "8A8578";
+            pill(slide, cx.status + 0.05, y, cols.status - 0.1, 0.28, lighten(scol, 0.82), scol, MATURITY_STATUS[m.status] || m.status, 7, lighten(scol, 0.5));
+          });
+        }
+      }
+
+      // 3.6) فجوات النضج حسب المحاور — أشرطة أفقية أصلية (الأضعف أولاً)
+      const gDomNames = MATURITY_MODEL.map((d) => d.name);
+      const domGaps = gDomNames.map((dn) => {
+        const scores = items.map((m) => { const dom = (m.domains || []).find((d) => d.name === dn); return dom ? domPct(dom, m.status === "REVIEWED") : null; }).filter((x) => x != null);
+        const av = scores.length ? Math.round(scores.reduce((s, x) => s + x, 0) / scores.length) : 0;
+        return { name: dn, avg: av, n: scores.length };
+      }).sort((a, b) => a.avg - b.avg);
+      if (domGaps.length) {
+        const s = pptx.addSlide(); header(s, "فجوات النضج حسب المحاور");
+        const weak = domGaps.filter((d) => d.n).slice(0, 3);
+        s.addText(weak.length ? `أبرز فجوات النضج في: ${weak.map((d) => `«${d.name}» (${d.avg}%)`).join("  ·  ")} — أولوية التطوير` : "لا توجد بيانات كافية",
+          { x: 0.4, y: 1.05, w: W - 0.8, h: 0.5, fontSize: 12, color: MUTED, align: "right", ...AR });
+        // أشرطة أفقية مستديرة الحواف بإطار (تصميم أنيق) — عناصر أصلية قابلة للتعديل، كل شريط بلون مستواه
+        const darken = (hex, amt) => { const n = (i) => parseInt(hex.substr(i, 2), 16); const mm = (x) => Math.round(x * (1 - amt)).toString(16).padStart(2, "0").toUpperCase(); return mm(n(0)) + mm(n(2)) + mm(n(4)); };
+        const bx = 0.4, labW = 3.2, numW = 0.8, trackX = bx + numW + 0.1, trackW = W - 0.8 - labW - numW - 0.3;
+        const rowH = Math.min(0.62, 5.4 / domGaps.length), y0 = 1.7;
+        domGaps.forEach((d, i) => {
+          const y = y0 + i * rowH, barH = 0.26, byy = y + (rowH - barH) / 2, col = matHex(d.avg);
+          s.addText(d.name, { x: W - 0.4 - labW, y, w: labW, h: rowH, fontSize: 11, color: INK, align: "right", valign: "middle", ...AR });
+          s.addShape(pptx.ShapeType.roundRect, { x: trackX, y: byy, w: trackW, h: barH, rectRadius: barH / 2, fill: { color: "EEF2F0" }, line: { color: "DCE3E0", width: 0.75 } });
+          if (d.avg > 0) { const fw = Math.max(barH, trackW * d.avg / 100); s.addShape(pptx.ShapeType.roundRect, { x: trackX + trackW - fw, y: byy, w: fw, h: barH, rectRadius: barH / 2, fill: { color: col }, line: { color: darken(col, 0.3), width: 1.25 } }); }
+          s.addText(d.avg + "%", { x: bx, y, w: numW, h: rowH, fontSize: 11, bold: true, color: darken(col, 0.15), align: "center", valign: "middle", fontFace: "Arial" });
+        });
+      }
+
+      // 4) مصفوفة النضج حسب المحاور (جدول ملوّن يطابق الشاشة)
+      const domNames = MATURITY_MODEL.map((d) => d.name);
+      const domShort = domNames.map((n) => (n.length > 15 ? n.slice(0, 14) + "…" : n));
+      const sorted = items.slice().sort((a, b) => finalOf(b) - finalOf(a));
+      const nameW = 1.7, waveW = 1.0, selfW = 1.05, revW = 1.15, domW = (W - 0.6 - nameW - waveW - selfW - revW) / domNames.length;
+      const colW = [nameW, waveW, ...domNames.map(() => domW), selfW, revW];
+      const hdrOpt = { bold: true, color: "FFFFFF", fill: { color: GREEN }, align: "center", fontSize: 8, valign: "middle", ...AR };
+      const headRow = [
+        { text: "التجمع", options: { ...hdrOpt, align: "right" } }, { text: "الموجة", options: hdrOpt },
+        ...domShort.map((n) => ({ text: n, options: hdrOpt })),
+        { text: "تقييم التجمع", options: hdrOpt }, { text: "بعد المراجعة", options: hdrOpt },
+      ];
+      const pctCell = (p) => ({ text: p + "%", options: { fill: { color: lighten(matHex(p), 0.84) }, color: matHex(p), bold: true, align: "center", fontSize: 9, valign: "middle" } });
+      const bodyRows = sorted.map((m) => {
+        const rev = m.status === "REVIEWED";
+        return [
+          { text: deptName(m.clusterId), options: { align: "right", fontSize: 8.5, color: INK, valign: "middle", ...AR } },
+          { text: waveShort(m.clusterId), options: { align: "center", fontSize: 8, color: INK, valign: "middle", ...AR } },
+          ...domNames.map((dn) => { const dom = (m.domains || []).find((d) => d.name === dn); return dom ? pctCell(domPct(dom, rev)) : { text: "—", options: { align: "center", fontSize: 8, color: MUTED } }; }),
+          pctCell(maturityOverall(m, false)),
+          rev ? pctCell(maturityOverall(m, true)) : { text: "بانتظار", options: { align: "center", fontSize: 8, color: MUTED, ...AR } },
+        ];
+      });
+      const PER = 15;
+      for (let i = 0; i < bodyRows.length; i += PER) {
+        const s = pptx.addSlide(); header(s, i === 0 ? "مصفوفة النضج حسب المحاور" : "مصفوفة النضج حسب المحاور (تابع)");
+        s.addTable([headRow, ...bodyRows.slice(i, i + PER)], { x: 0.3, y: 1.1, w: W - 0.6, colW, border: { type: "solid", color: "E6ECEA", pt: 0.5 }, valign: "middle", autoPage: false, rowH: 0.28 });
+      }
+    }
+  }
+
+  // شرائح الجدول التفصيلي (مقسّمة) — النضج له مصفوفته الخاصة أعلاه
+  const t = key === "maturity" ? { head: [], rows: [] } : tableFor(key);
+  if (t.head.length) {
+    const MAX = 60, PER = 12;
+    const rows = t.rows.slice(0, MAX);
+    for (let i = 0; i < rows.length; i += PER) {
+      const chunk = rows.slice(i, i + PER);
+      const s = pptx.addSlide();
+      header(s, i === 0 ? "التفاصيل" : "التفاصيل (تابع)");
+      const table = [
+        t.head.map((h) => ({ text: String(h), options: { bold: true, color: "FFFFFF", fill: { color: GREEN }, align: "right", fontSize: 9, ...AR } })),
+        ...chunk.map((r) => r.map((c) => ({ text: String(c ?? ""), options: { align: "right", fontSize: 8, color: INK, ...AR } }))),
+      ];
+      s.addTable(table, { x: 0.3, y: 1.1, w: W - 0.6, border: { type: "solid", color: "E6ECEA", pt: 0.5 }, valign: "middle", autoPage: false });
+    }
+    if (!rows.length) { const s = pptx.addSlide(); header(s, "التفاصيل"); s.addText("لا توجد بيانات", { x: 0.5, y: 3, w: W - 1, h: 1, fontSize: 16, color: MUTED, align: "center", ...AR }); }
+    if (t.rows.length > MAX) { const s = pptx.addSlide(); header(s, "ملاحظة"); s.addText(`عُرضت أول ${MAX} سجل في العرض التقديمي — للسجل الكامل استخدم تصدير Excel.`, { x: 0.6, y: 3, w: W - 1.2, h: 1, fontSize: 15, color: MUTED, align: "center", ...AR }); }
+  }
+
+  await pptx.writeFile({ fileName: `${meta.title}.pptx` });
+  toast("تم إنشاء العرض التقديمي");
   logReport(key);
 }
 

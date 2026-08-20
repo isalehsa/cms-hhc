@@ -22,6 +22,7 @@ const MODULES = [
   { file: "firebase-app.js", pkg: "@firebase/app", external: [] },
   { file: "firebase-firestore.js", pkg: "firebase/firestore", external: ["@firebase/app"] },
   { file: "firebase-auth.js", pkg: "firebase/auth", external: ["@firebase/app"] },
+  { file: "firebase-storage.js", pkg: "firebase/storage", external: ["@firebase/app"] },
 ];
 for (const { file, pkg, external } of MODULES) {
   const entry = join(TMP_ENTRY, `entry-${file}`);

@@ -78,6 +78,47 @@ export const HEALTH_CLUSTERS = [
   "تجمع الحدود الشمالية الصحي", "تجمع بيشة الصحي",
 ];
 
+// ---------- موجات التجمعات (تصنيف موجة الانتقال للشركة) ----------
+// الموجات تابعة للشركة (منتقلة) ويُميَّز بينها باللون؛ وما لم يُصنَّف يُعدّ «قيد التجهيز»
+export const CLUSTER_WAVES = {
+  ONE: { label: "الموجة الأولى — تابعة للشركة", short: "الموجة الأولى", color: "#0ca30c", desc: "تجمعات الموجة الأولى المنتقلة للشركة" },
+  TWO: { label: "الموجة الثانية — تابعة للشركة", short: "الموجة الثانية", color: "#2a78d6", desc: "تجمعات الموجة الثانية المنتقلة للشركة" },
+  THREE: { label: "الموجة الثالثة — تابعة للشركة", short: "الموجة الثالثة", color: "#7a5cff", desc: "تجمعات الموجة الثالثة المنتقلة للشركة" },
+  PREP: { label: "قيد التجهيز", short: "قيد التجهيز", color: "#e6a100", desc: "تجمعات لم تنتقل للشركة بعد" },
+};
+// ترتيب عرض الموجات
+export const CLUSTER_WAVE_ORDER = ["ONE", "TWO", "THREE", "PREP"];
+// خيارات اختيار الموجة في شاشة الإدارات (فارغ = تلقائي حسب الاسم)
+export const CLUSTER_WAVE_SELECT = {
+  "": "تلقائي (حسب اسم التجمع)",
+  ONE: "الموجة الأولى", TWO: "الموجة الثانية", THREE: "الموجة الثالثة", PREP: "قيد التجهيز",
+};
+
+// مطابقات إسناد الموجة حسب اسم التجمع (تعمل حتى لو اختلفت صياغة الاسم)
+const WAVE_ONE_MATCH = [
+  (n) => n.includes("الرياض") && n.includes("الثاني"),
+  (n) => n.includes("الشرقية"),
+  (n) => n.includes("القصيم"),
+];
+const WAVE_TWO_MATCH = [
+  (n) => n.includes("حائل"),
+  (n) => n.includes("تبوك"),
+  (n) => n.includes("الحدود"),
+  (n) => n.includes("حفر") && n.includes("الباطن"),
+  (n) => n.includes("الأحساء") || n.includes("الاحساء"),
+  (n) => n.includes("نجران"),
+  (n) => n.includes("الطائف"),
+];
+
+// مفتاح موجة التجمع: الحقل الصريح wave له الأولوية، وإلا يُشتق من الاسم، وإلا «قيد التجهيز»
+export function clusterWaveKey(name, explicit) {
+  if (CLUSTER_WAVES[explicit]) return explicit; // ONE | TWO | THREE | PREP
+  const n = String(name || "");
+  if (WAVE_ONE_MATCH.some((f) => f(n))) return "ONE";
+  if (WAVE_TWO_MATCH.some((f) => f(n))) return "TWO";
+  return "PREP";
+}
+
 // ---------- الأدوار ----------
 export const ROLES = {
   ADMIN: "مدير النظام",
