@@ -11,6 +11,14 @@ export const firebaseConfig = {
   measurementId: "G-CSTYFPFYFT",
 };
 
+// معرّف مزوّد الدخول الموحّد (SSO) إن وُجد — يُنشأ في Firebase Identity Platform:
+//   OIDC: "oidc.<name>"   ·   SAML: "saml.<name>"
+// اترك القيمة فارغة لإخفاء زر «الدخول عبر SSO». والاسم يظهر على الزر.
+export const ssoConfig = {
+  providerId: "", // مثال: "oidc.azure-ad" أو "saml.company"
+  label: "الدخول الموحّد (SSO)",
+};
+
 // هل ما زالت الإعدادات على القيم المبدئية؟ (تعرض الواجهة شاشة إرشاد بدل الانهيار)
 export const configReady = !Object.values(firebaseConfig).some((v) =>
   String(v).startsWith("YOUR_")

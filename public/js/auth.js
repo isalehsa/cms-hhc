@@ -57,6 +57,8 @@ export async function login(email, password) {
     const cred = await signInWithEmailAndPassword(auth, email, password);
     return await buildProfile(cred.user);
   } catch (err) {
+    // التحقق بخطوتين مطلوب: نُمرّر الخطأ الأصلي بمعرّفه ليعالجه محلِّل MFA
+    if (err.code === "auth/multi-factor-auth-required") throw err;
     throw new Error(AUTH_ERRORS[err.code] || `تعذّر تسجيل الدخول (${err.code || err.message})`);
   }
 }

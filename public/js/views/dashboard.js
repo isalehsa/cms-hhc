@@ -146,11 +146,12 @@ function calendarEvents() {
   for (const a of store.assessments) if (["SENT", "SUBMITTED"].includes(a.status)) add(a.dueDate, "chat", "فحص", `استحقاق الفحص الذاتي: ${a.title}`, "assessments");
   for (const c of store.correspondence) if (c.status === "OPEN") add(c.dueDate, "doc", c.code, `استحقاق الرد على المراسلة: ${c.code} — ${c.subject}`, "correspondence");
   for (const t of store.trainings) if (["PLANNED", "IN_PROGRESS"].includes(t.status)) add(t.dueDate || t.date, "cap", t.code, `نشاط تدريب/توعية: ${t.code} — ${t.title}`, "training");
+  for (const mt of store.cmeetings || []) if (mt.status !== "CANCELLED") add(mt.startAt, "calendar", mt.title, `اجتماع: ${mt.title}`, "cmeetings");
   return evs;
 }
 // نسخة برموز تعبيرية للتقويم الشهري (يتوقّعها monthCalendar)
 function calendarEventsEmoji() {
-  const map = { book: "📖", search: "🔍", alert: "⚠", target: "🛠", chat: "📋", doc: "📨", cap: "🎓" };
+  const map = { book: "📖", search: "🔍", alert: "⚠", target: "🛠", chat: "📋", doc: "📨", cap: "🎓", calendar: "🗓" };
   return calendarEvents().map((e) => ({ ...e, icon: map[e.ic] || "•" }));
 }
 
@@ -405,7 +406,7 @@ export function renderDashboard(el, nav) {
           <button class="secondary small" id="cal-next" title="عرض الشهر التالي">‹</button>
         </div>
       </div>
-      <p class="muted">مراجعات المتطلبات 📖 · نهايات المراقبة 🔍 · استحقاقات المخاطر ⚠ · خطط التصحيح 🛠 · الفحص الذاتي 📋 — الأحمر متأخر</p>
+      <p class="muted">مراجعات المتطلبات 📖 · نهايات المراقبة 🔍 · استحقاقات المخاطر ⚠ · خطط التصحيح 🛠 · الفحص الذاتي 📋 · الاجتماعات 🗓 — الأحمر متأخر</p>
       ${monthCalendar(calState.y, calState.m, calendarEventsEmoji())}
     </section>
 
