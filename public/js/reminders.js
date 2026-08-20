@@ -33,7 +33,8 @@ function collectDeadlines() {
   for (const a of store.assessments) if (["SENT", "SUBMITTED"].includes(a.status)) add("assessment", "📋", a.code || "", `استحقاق الفحص الذاتي: ${a.title}`, a.dueDate, "assessments", a.departmentId);
   for (const c of store.correspondence) if (c.status === "OPEN") add("correspondence", "📨", c.code, `استحقاق الرد على المراسلة: ${c.subject}`, c.dueDate, "correspondence", c.departmentId);
   for (const t of store.trainings) if (["PLANNED", "IN_PROGRESS"].includes(t.status)) add("training", "🎓", t.code, `نشاط تدريب/توعية: ${t.title}`, t.dueDate || t.date, "training", t.departmentId);
-  for (const mt of store.cmeetings || []) if (mt.status !== "CANCELLED" && mt.status !== "APPROVED") add("meeting", "🗓", mt.code || "", `اجتماع: ${mt.title}`, mt.startAt, "cmeetings", mt.departmentId);
+  // اجتماعات الالتزام القادمة فقط (محاضر مؤرّخة مستقبلاً) — تذكيرات قبل الموعد لا تأخّر بعده
+  for (const mt of store.meetings || []) if ((mt.type || "") === "DEPT" && mt.date && String(mt.date).slice(0, 10) >= todayISO()) add("meeting", "🗓", mt.code || "", `اجتماع الالتزام: ${mt.party || mt.title || ""}`, mt.date, "deptmeetings", null);
   return out;
 }
 

@@ -42,7 +42,7 @@ async function collectDeadlines(thresholds = DUE_SOON) {
   for (const a of assess) if (["SENT", "SUBMITTED"].includes(a.status)) add("assessment", a.code, `فحص ذاتي: ${a.title}`, a.dueDate);
   for (const c of corr) if (c.status === "OPEN") add("correspondence", c.code, `رد مراسلة: ${c.subject}`, c.dueDate);
   for (const t of trains) if (["PLANNED", "IN_PROGRESS"].includes(t.status)) add("training", t.code, `تدريب: ${t.title}`, t.dueDate || t.date);
-  for (const mt of meets) if (mt.status === "SCHEDULED") add("meeting", mt.code, `اجتماع: ${mt.title}`, mt.startAt);
+  for (const mt of meets) if ((mt.type || "") === "DEPT" && mt.date && String(mt.date).slice(0, 10) >= todayISO()) add("meeting", mt.code, `اجتماع الالتزام: ${mt.party || mt.title || ""}`, mt.date);
 
   const overdue = [], soon = [];
   for (const it of items) {

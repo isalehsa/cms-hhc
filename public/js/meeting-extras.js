@@ -67,7 +67,15 @@ function wirePad(canvas) {
   const end = () => { drawing = false; };
   canvas.addEventListener("mousedown", start); canvas.addEventListener("mousemove", move); window.addEventListener("mouseup", end);
   canvas.addEventListener("touchstart", start, { passive: false }); canvas.addEventListener("touchmove", move, { passive: false }); canvas.addEventListener("touchend", end);
-  return { clear: () => { ctx.clearRect(0, 0, canvas.width, canvas.height); dirty = false; }, isEmpty: () => !dirty, dataUrl: () => canvas.toDataURL("image/png") };
+  // رسم صورة موقّع مرفوعة على اللوحة (احتواء داخل أبعادها) — يوحّد الحفظ ويحدّ الحجم
+  const drawImage = (img) => {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const r = Math.min(canvas.width / img.width, canvas.height / img.height);
+    const w = img.width * r, h = img.height * r;
+    ctx.drawImage(img, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h);
+    dirty = true;
+  };
+  return { clear: () => { ctx.clearRect(0, 0, canvas.width, canvas.height); dirty = false; }, isEmpty: () => !dirty, dataUrl: () => canvas.toDataURL("image/png"), drawImage };
 }
 
 // يفتح لوحة توقيع ويحفظ التوقيع على وثيقة المحضر — done() لإعادة رسم النافذة
@@ -79,8 +87,11 @@ export function openSignPad(m, done) {
       ${fld("اسم الموقّع *", txt("mx-name", u.name || ""))}
       ${fld("الصفة", txt("mx-title", "", "مثال: رئيس الاجتماع / مدير الالتزام"))}
     </div>
-    ${fld("التوقيع (ارسم بالفأرة أو باللمس) *", `<div class="sig-pad-wrap"><canvas id="mx-pad" width="600" height="180" class="sig-pad"></canvas></div>
-      <button type="button" class="secondary small" id="mx-clear" style="margin-top:6px">مسح التوقيع</button>`)}
+    ${fld("التوقيع (ارسم بالفأرة/باللمس أو ارفع صورة) *", `<div class="sig-pad-wrap"><canvas id="mx-pad" width="600" height="180" class="sig-pad"></canvas></div>
+      <div class="row" style="margin-top:6px;gap:8px">
+        <button type="button" class="secondary small" id="mx-clear">مسح</button>
+        <label class="btn-link" style="cursor:pointer;font-size:.85rem">📤 رفع صورة توقيع<input type="file" id="mx-file" accept="image/*" hidden /></label>
+      </div>`)}
     <label class="chk-line" style="margin-top:8px"><input type="checkbox" id="mx-affirm" /> أقرّ بصحة ما ورد في المحضر وأعتمده بتوقيعي الإلكتروني.</label>
     <p class="muted">الاعتماد يسجّل بصمة سلامة (SHA-256) وتاريخ التوقيع في سجل التدقيق.</p>
     <div class="row" style="margin-top:14px">
@@ -89,6 +100,14 @@ export function openSignPad(m, done) {
     </div>`, { wide: true });
   const pad = wirePad($("#mx-pad", ed));
   $("#mx-clear", ed).onclick = () => pad.clear();
+  $("#mx-file", ed).onchange = (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (!f.type.startsWith("image/")) return toast("الرجاء اختيار ملف صورة", true);
+    const rd = new FileReader();
+    rd.onload = () => { const img = new Image(); img.onload = () => pad.drawImage(img); img.onerror = () => toast("تعذّرت قراءة الصورة", true); img.src = rd.result; };
+    rd.readAsDataURL(f);
+  };
   $("#mx-cancel", ed).onclick = () => ed.remove();
   $("#mx-save", ed).onclick = async () => {
     const name = val("mx-name", ed);

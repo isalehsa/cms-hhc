@@ -146,7 +146,8 @@ function calendarEvents() {
   for (const a of store.assessments) if (["SENT", "SUBMITTED"].includes(a.status)) add(a.dueDate, "chat", "فحص", `استحقاق الفحص الذاتي: ${a.title}`, "assessments");
   for (const c of store.correspondence) if (c.status === "OPEN") add(c.dueDate, "doc", c.code, `استحقاق الرد على المراسلة: ${c.code} — ${c.subject}`, "correspondence");
   for (const t of store.trainings) if (["PLANNED", "IN_PROGRESS"].includes(t.status)) add(t.dueDate || t.date, "cap", t.code, `نشاط تدريب/توعية: ${t.code} — ${t.title}`, "training");
-  for (const mt of store.cmeetings || []) if (mt.status !== "CANCELLED") add(mt.startAt, "calendar", mt.title, `اجتماع: ${mt.title}`, "cmeetings");
+  // اجتماعات الالتزام (محاضر الأقسام واللجان) — تظهر بتاريخها في تقويم الالتزام
+  for (const mt of store.meetings || []) if ((mt.type || "") === "DEPT") add(mt.date, "calendar", mt.code || "اجتماع", `اجتماع الالتزام: ${mt.party || mt.title || mt.code || ""}`, "deptmeetings");
   return evs;
 }
 // نسخة برموز تعبيرية للتقويم الشهري (يتوقّعها monthCalendar)
