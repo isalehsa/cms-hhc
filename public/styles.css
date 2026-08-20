@@ -134,6 +134,45 @@ body {
 .tb-item.active { background: var(--primary-grad); color: #06231b; border-color: transparent; box-shadow: 0 8px 20px rgba(23, 194, 153, 0.45); }
 .tb-sep { width: 1px; height: 26px; background: var(--border); margin: 0 6px; flex-shrink: 0; }
 
+/* مجموعات التبويبات: زرّ رئيسي + قائمة منسدلة تنكشف بالمرور */
+.tb-group { position: relative; flex-shrink: 0; }
+.tb-group-btn {
+  display: inline-flex; align-items: center; gap: 7px; height: 54px; padding: 0 14px;
+  background: var(--panel); border: 1px solid transparent; border-radius: 15px; color: var(--text);
+  cursor: pointer; font: inherit; font-size: 0.92rem; font-weight: 600; white-space: nowrap;
+  transition: background 0.16s, color 0.16s, transform 0.16s, box-shadow 0.16s, border-color 0.16s;
+}
+.tb-group-btn svg { stroke-width: 1.85; flex-shrink: 0; }
+.tb-caret { font-size: 0.68rem; opacity: 0.7; }
+.tb-group:hover .tb-group-btn,
+.tb-group.open .tb-group-btn {
+  background: rgba(33, 214, 166, 0.16); border-color: rgba(33, 214, 166, 0.3); color: var(--primary-dark); transform: translateY(-2px);
+}
+.tb-group-btn.active { background: var(--primary-grad); color: #06231b; border-color: transparent; box-shadow: 0 8px 20px rgba(23, 194, 153, 0.45); }
+.tb-menu {
+  position: absolute; top: calc(100% + 8px); inset-inline-end: 0; min-width: 230px;
+  background: var(--surface-solid); border: 1px solid var(--border); border-radius: 14px;
+  box-shadow: var(--shadow); padding: 7px; z-index: 60;
+  display: flex; flex-direction: column; gap: 3px;
+  opacity: 0; visibility: hidden; transform: translateY(-6px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+/* جسر شفّاف يمنع انغلاق القائمة في الفراغ بين الزرّ والقائمة */
+.tb-menu::before { content: ""; position: absolute; top: -10px; inset-inline: 0; height: 10px; }
+.tb-group:hover .tb-menu,
+.tb-group:focus-within .tb-menu,
+.tb-group.open .tb-menu { opacity: 1; visibility: visible; transform: translateY(0); }
+.tb-menu-item {
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 12px;
+  background: transparent; border: none; border-radius: 10px; color: var(--text);
+  cursor: pointer; font: inherit; font-size: 0.9rem; text-align: start; white-space: nowrap;
+  transition: background 0.13s, color 0.13s;
+}
+.tb-menu-item svg { width: 20px; height: 20px; flex-shrink: 0; stroke-width: 1.85; opacity: 0.85; }
+.tb-menu-item:hover { background: rgba(33, 214, 166, 0.14); color: var(--primary-dark); }
+.tb-menu-item.active { background: var(--primary-grad); color: #06231b; }
+.tb-menu-item.active svg { opacity: 1; }
+
 .tb-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .tb-action {
   width: 44px; height: 44px; padding: 0;
