@@ -136,7 +136,10 @@ async function safeFetch(rawUrl, options = {}) {
         },
       });
     } catch (e) {
-      throw new Error(e.name === "AbortError" ? "انتهت المهلة قبل استجابة المصدر" : `تعذّر الاتصال بالمصدر (${e.message})`);
+      throw new Error(
+        e.name === "AbortError" ? "انتهت المهلة قبل استجابة المصدر" : `تعذّر الاتصال بالمصدر (${e.message})`,
+        { cause: e }
+      );
     } finally {
       clearTimeout(timer);
     }

@@ -4,11 +4,27 @@
   "description": "نظام إدارة الالتزام (CMS) — فحوص الجودة والاختبارات الآلية",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "sync:core": "node scripts/sync-core.mjs",
+    "lint": "eslint .",
     "check:syntax": "node scripts/check-syntax.mjs",
     "test:functions": "npm --prefix functions test",
-    "test": "npm run check:syntax && npm run test:functions"
+    "test": "npm run lint && npm run check:syntax && npm run test:functions",
+    "e2e:build": "node scripts/e2e/build-harness.mjs",
+    "e2e:seed": "node scripts/e2e/seed.mjs",
+    "e2e:rules": "node scripts/e2e/rules-check.mjs",
+    "e2e:scan": "node scripts/e2e/scan-flow.mjs",
+    "e2e:ui": "node scripts/e2e/regintel-flow.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@firebase/rules-unit-testing": "^4.0.1",
+    "esbuild": "^0.28.2",
+    "eslint": "^10.8.1",
+    "firebase": "^11.6.1",
+    "playwright": "^1.56.1"
   }
 }

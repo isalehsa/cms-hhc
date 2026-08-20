@@ -292,7 +292,7 @@ async function analyzeAndStore(update, ctx) {
 }
 
 // ---------- الفحص الكامل ----------
-async function runScan({ trigger = "SCHEDULE", triggeredBy = null, triggeredByName = null, sourceId = null, apiKey = null } = {}) {
+async function runScan({ trigger = "SCHEDULE", triggeredBy = null, triggeredByName = null, sourceId = null, apiKey = null, deps = {} } = {}) {
   const c = await core();
   const scanId = `SCAN-${new Date().toISOString().replace(/[:.]/g, "-")}`;
   const lock = await acquireLock(scanId, c.SCAN_LOCK_TTL_MS);
@@ -329,7 +329,7 @@ async function runScan({ trigger = "SCHEDULE", triggeredBy = null, triggeredByNa
       summary.sourcesScanned++;
       let items = [];
       try {
-        items = await readSource(source, limit);
+        items = await readSource(source, limit, deps);
       } catch (e) {
         summary.errors.push({ source: source.name, error: String(e.message).slice(0, 300) });
         await db().doc(`regSources/${source.id}`).update({

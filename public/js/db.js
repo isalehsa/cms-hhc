@@ -16,11 +16,23 @@ import {
   orderBy,
   writeBatch,
   runTransaction,
+  connectFirestoreEmulator,
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { firebaseConfig, configReady } from "./firebase-config.js";
 
 export const app = configReady ? initializeApp(firebaseConfig) : null;
 const db = app ? getFirestore(app) : null;
+
+// وضع التطوير: عند التشغيل على localhost بمنفذ محلي تُوصل الحزمة بمحاكيات Firebase
+// (firebase emulators:start) بدل المشروع الحقيقي — لا أثر له في الإنتاج
+export const useEmulators =
+  typeof location !== "undefined" &&
+  ["localhost", "127.0.0.1"].includes(location.hostname) &&
+  location.port !== "";
+if (db && useEmulators) {
+  connectFirestoreEmulator(db, "127.0.0.1", 8080);
+  console.info("Firestore emulator connected (dev mode)");
+}
 
 export function newId(prefix) {
   return `${prefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;

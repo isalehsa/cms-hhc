@@ -71,6 +71,10 @@ test("scoreApplicability يقدّر الانطباق والأثر", () => {
   assert.equal(hit.impact, "HIGH");
   const miss = core.scoreApplicability("إعلان عن مسابقة رياضية محلية");
   assert.equal(miss.applicability, "NOT_APPLICABLE");
+  // كلمة مفتاحية واحدة تبقى «تنطبق جزئياً» لتصل إلى المراجع دون تضخيم
+  assert.equal(core.scoreApplicability("تحديث بيانات الترخيص التجاري").applicability, "PARTIAL");
+  // كلمتان فأكثر = منطبق (عتبة متساهلة تمنع تفويت المستجدات)
+  assert.equal(core.scoreApplicability("اشتراطات ترخيص المنشآت الصحية").applicability, "APPLICABLE");
   assert.equal(core.scoreApplicability("").applicability, "UNKNOWN");
 });
 

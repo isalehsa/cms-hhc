@@ -114,7 +114,9 @@ export function scoreApplicability(text, keywords = DEFAULT_KEYWORDS) {
   for (const k of keywords) if (k && t.includes(k)) matched.push(k);
   const score = Math.min(1, matched.length / 6);
   const impact = HIGH_IMPACT_RE.test(t) ? "HIGH" : MED_IMPACT_RE.test(t) ? "MEDIUM" : "LOW";
-  const applicability = matched.length >= 3 ? "APPLICABLE" : matched.length >= 1 ? "PARTIAL" : "NOT_APPLICABLE";
+  // عتبة متساهلة عمداً: في الرصد التنظيمي تفويت مستجد منطبق أخطر من عرض مستجد
+  // غير منطبق على المراجع — وكل نتيجة تمرّ على مراجعة بشرية قبل الاعتماد
+  const applicability = matched.length >= 2 ? "APPLICABLE" : matched.length >= 1 ? "PARTIAL" : "NOT_APPLICABLE";
   return { applicability, impact, score: Math.round(score * 100) / 100, matched };
 }
 

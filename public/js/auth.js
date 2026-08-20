@@ -7,17 +7,19 @@ import {
   createUserWithEmailAndPassword,
   signOut,
   onAuthStateChanged,
+  connectAuthEmulator,
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 import {
   getFirestore,
   doc,
   getDoc,
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-import { app } from "./db.js";
+import { app, useEmulators } from "./db.js";
 import { firebaseConfig } from "./firebase-config.js";
 import { EDITOR_ROLES, APPROVER_ROLES } from "./meta.js";
 
 const auth = app ? getAuth(app) : null;
+if (auth && useEmulators) connectAuthEmulator(auth, "http://127.0.0.1:9099", { disableWarnings: true });
 
 const AUTH_ERRORS = {
   "auth/invalid-credential": "البريد الإلكتروني أو كلمة المرور غير صحيحة",
