@@ -44,6 +44,23 @@ function cosine(a, b) {
   return dot / (norm(a) * norm(b));
 }
 
+// درجة تشابه مباشرة بين نصّين (0..1) — يعيد استخدام نفس محرك جيب التمام
+export function similarityScore(a, b) {
+  return cosine(vectorize(a), vectorize(b));
+}
+
+// ترتيب عناصر عامة حسب تشابهها مع نص استعلام — يُستخدم لسجل التغيّر التنظيمي
+// getText: دالة تعيد النص القابل للمقارنة من كل عنصر
+export function rankBySimilarity(queryText, items, getText, { limit = 10, threshold = 0.12 } = {}) {
+  const qv = vectorize(queryText);
+  const scored = [];
+  for (const it of items) {
+    const s = cosine(qv, vectorize(getText(it) || ""));
+    if (s >= threshold) scored.push({ item: it, score: Math.round(s * 100) / 100 });
+  }
+  return scored.sort((a, b) => b.score - a.score).slice(0, limit);
+}
+
 // يعيد أفضل المواد المشابهة لمادة معينة من بقية الأنظمة
 export function findRelated(sourceArticle, regulations, sourceRegId, limit = 8) {
   const srcVec = vectorize(`${sourceArticle.title} ${sourceArticle.text}`);

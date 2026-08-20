@@ -124,6 +124,29 @@ service cloud.firestore {
       allow delete: if isEditor();
     }
 
+    // اجتماعات الالتزام (مزامنة التقويم والمحاضر الموقّعة) — منفصلة عن اجتماعات الأقسام
+    match /cmeetings/{id} {
+      allow read: if signedIn();
+      allow write: if isEditor();
+    }
+
+    match /regChanges/{id} {
+      allow read: if signedIn();
+      allow write: if isEditor();
+    }
+
+    // مسارات الاعتماد وسير العمل — الأدوار مفروضة في الواجهة، والكتابة للمحرر
+    match /workflows/{id} {
+      allow read: if signedIn();
+      allow write: if isEditor();
+    }
+
+    // التدقيق الداخلي وأوراق العمل والتقارير المعتمدة
+    match /audits/{id} {
+      allow read: if signedIn();
+      allow write: if isEditor();
+    }
+
     match /findings/{id} {
       allow read: if signedIn();
       allow create, delete: if isEditor();
@@ -148,6 +171,27 @@ service cloud.firestore {
       // تعليم كمقروء فقط لغير المحررين
       allow update: if isEditor() || (signedIn() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']));
       allow delete: if isApprover();
+    }
+
+    // إعدادات النظام العامة (عتبات التنبيهات، مستهدفات المؤشرات…) — يحرّرها المحرر
+    match /appConfig/{id} {
+      allow read: if signedIn();
+      allow write: if isEditor();
+    }
+
+    // اللقطات اليومية لمؤشرات اللوحة التنفيذية — يلتقطها المحرر، ولا تُحذف
+    match /metricSnapshots/{id} {
+      allow read: if signedIn();
+      allow create, update: if isEditor();
+      allow delete: if isApprover();
+    }
+
+    // طابور البريد لإضافة Firebase «Trigger Email» — إنشاء فقط من التطبيق،
+    // والإضافة تُحدّث حقل delivery بصلاحيات المدير خارج هذه القواعد
+    match /mail/{id} {
+      allow read: if isApprover();
+      allow create: if signedIn();
+      allow update, delete: if false;
     }
 
     // سجل التدقيق: إنشاء فقط — لا تعديل ولا حذف (Audit Trail غير قابل للعبث)
