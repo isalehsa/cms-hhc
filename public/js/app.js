@@ -169,9 +169,9 @@ function visibleViews(u) {
   });
 }
 
-// زرّ تبويب مفرد (أيقونة فقط) — للوحة التحكم واللوحة التنفيذية بلا مجموعة
+// زرّ تبويب مفرد نصّي مدمج — للوحة التحكم واللوحة التنفيذية بلا مجموعة
 function navBtn(k, v) {
-  return `<button class="tb-item ${k === currentView ? "active" : ""}" data-view="${k}" title="${esc(v.label)}" aria-label="${esc(v.label)}">${lineIcon(v.ic, 46)}</button>`;
+  return `<button class="tb-item ${k === currentView ? "active" : ""}" data-view="${k}" title="${esc(v.label)}">${esc(v.label)}</button>`;
 }
 
 // عنصر داخل القائمة المنسدلة للمجموعة (أيقونة + تسمية)
@@ -184,8 +184,8 @@ function navGroup(g, items) {
   const meta = NAV_GROUPS[g] || { label: g, ic: "grid" };
   const active = items.some(([k]) => k === currentView);
   return `<div class="tb-group${active ? " active" : ""}">
-      <button class="tb-group-btn${active ? " active" : ""}" data-group="${g}" aria-haspopup="true" aria-expanded="false" title="${esc(meta.label)}">
-        ${lineIcon(meta.ic, 40)}<span class="tb-group-lbl">${esc(meta.label)}</span><span class="tb-caret" aria-hidden="true">▾</span>
+      <button class="tb-group-btn" data-group="${g}" aria-haspopup="true" aria-expanded="false" title="${esc(meta.label)}">
+        <span>${esc(meta.label)}</span><span class="tb-caret" aria-hidden="true">▾</span>
       </button>
       <div class="tb-menu" role="menu">${items.map(([k, v]) => navMenuItem(k, v)).join("")}</div>
     </div>`;
