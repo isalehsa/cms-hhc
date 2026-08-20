@@ -8,6 +8,7 @@ import {
   PLAN_STATUS, PLAN_SOURCES, PLAN_TYPES, SA_STATUS, SA_ANSWERS, FND_SEVERITY, FND_STATUS, FND_SOURCES,
   COR_DIRECTION, COR_PRIORITY, COR_STATUS, DISCLOSURE_TYPES, DISCLOSURE_STATUS, TRAINING_TYPES, TRAINING_STATUS,
   MATURITY_MODEL, MATURITY_STATUS, maturityLevel,
+  REG_UPDATE_STATUS, REG_APPLICABILITY, REG_IMPACT, REG_ANALYSIS_METHOD,
 } from "../meta.js";
 
 // ---------- تعريف التقارير ----------
@@ -23,6 +24,7 @@ const REPORTS = [
   { key: "disclosures", icon: "🗂", title: "تقرير سجل الإفصاحات", desc: "إفصاحات تعارض المصالح والهدايا والإفصاحات المالية وقرارات معالجتها" },
   { key: "training", icon: "🎓", title: "تقرير التدريب والتوعية", desc: "برامج التدريب وحملات التوعية وأعداد المتدربين ونسب الإنجاز" },
   { key: "maturity", icon: "📊", title: "تقرير نضج التجمعات الصحية", desc: "نتائج تقييم نضج الالتزام بالتجمعات حسب المحاور والمستوى" },
+  { key: "regintel", icon: "🛰", title: "تقرير الرصد التنظيمي", desc: "المستجدات التنظيمية المرصودة وانطباقها وأثرها والسجلات المولّدة منها في وحدات الالتزام" },
 ];
 
 export function renderReports(el) {
@@ -167,6 +169,31 @@ function tableFor(key) {
         }),
       };
     }
+    case "regintel":
+      return {
+        head: [
+          "الرقم", "المستجد", "المصدر", "تاريخ النشر", "تاريخ الرصد", "الانطباق", "الأثر",
+          "طريقة التحليل", "الملخّص", "أقرب موعد", "التزامات مولّدة", "مخاطر", "مراقبة", "فجوات", "المراجع", "الحالة",
+        ],
+        rows: store.regUpdates.map((u) => [
+          u.code,
+          u.title,
+          u.sourceName || "—",
+          fmtDate(u.publishedAt),
+          fmtDate(u.detectedAt),
+          REG_APPLICABILITY[u.applicability] || u.applicability || "—",
+          REG_IMPACT[u.impact] || u.impact || "—",
+          REG_ANALYSIS_METHOD[u.analysisMethod] || "—",
+          (u.analysis?.summary || "").slice(0, 600),
+          (u.deadlines || [])[0]?.date || "—",
+          u.generated?.requirementIds?.length || 0,
+          u.generated?.riskIds?.length || 0,
+          u.generated?.monitoringIds?.length || 0,
+          u.generated?.findingIds?.length || 0,
+          u.reviewedByName || "—",
+          REG_UPDATE_STATUS[u.status] || u.status,
+        ]),
+      };
     case "directory":
       return {
         head: ["التجمع", "الاسم", "المسمى", "الجوال", "البريد الإلكتروني", "البريد الرسمي للإدارة", "ملاحظات"],

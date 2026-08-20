@@ -159,6 +159,27 @@ export function renderDashboard(el, nav) {
       });
     }
   }
+  // مستجدات تنظيمية مرصودة تنتظر قرار الالتزام + مواعيد تنظيمية متأخرة/قريبة
+  for (const u of s.regUpdates.filter((x) => ["DETECTED", "ANALYZED"].includes(x.status))) {
+    alerts.push({
+      icon: "🛰",
+      text: `${u.code} — ${u.title}: مستجد تنظيمي ${u.status === "DETECTED" ? "بانتظار التحليل" : "بانتظار مراجعة الالتزام"}`,
+      view: "regintel",
+      overdue: u.impact === "HIGH",
+    });
+  }
+  for (const u of s.regUpdates) {
+    for (const dl of u.deadlines || []) {
+      const d = daysUntil(dl.date);
+      if (d === null || d > 30 || u.status === "REJECTED" || u.status === "ARCHIVED") continue;
+      alerts.push({
+        icon: "⏰",
+        text: `${u.code} — ${dl.label || "موعد تنظيمي"}: ${d < 0 ? `تجاوز الاستحقاق ${-d} يوماً` : `يستحق خلال ${d} يوماً`}`,
+        view: "regintel",
+        overdue: d < 0,
+      });
+    }
+  }
   alerts.sort((a, b) => (b.overdue ? 1 : 0) - (a.overdue ? 1 : 0));
 
   el.innerHTML = `

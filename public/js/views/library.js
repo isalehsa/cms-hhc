@@ -91,6 +91,7 @@ export function renderLibrary(el, nav, refresh, params = {}) {
                   <td><strong>${esc(r.code)}</strong></td>
                   <td><strong>${esc(r.title)}</strong>
                     ${r.regulationId && docName(r.regulationId) ? ` <span class="chip" data-tip="بند منعكس من الوثيقة: ${esc(docName(r.regulationId))}">📚 ${esc(docName(r.regulationId).slice(0, 30))}</span>` : ""}
+                    ${r.regUpdateId ? ` <span class="chip chip-auto" data-tip="التزام مولّد من مستجد تنظيمي مرصود — افتح المتطلب للانتقال إلى مصدره">🛰 رصد تنظيمي</span>` : ""}
                     ${r.penalty ? ` <span class="chip chip-penalty" data-tip="${esc(r.penalty)}">⚖ غرامة</span>` : ""}
                     <div class="muted clamp">${esc(r.summary || "")}</div></td>
                   <td>${esc(authName(r.authorityId))}</td>
@@ -260,6 +261,8 @@ export function openDetail(id, nav, done) {
       <div><span class="muted">المراجعة القادمة</span><br/>${fmtDate(r.nextReviewDate)}</div>
     </div>
     ${r.regulationId ? `<p class="muted">📚 بند منعكس من الوثيقة: <strong>${esc(store.regulations.find((x) => x.id === r.regulationId)?.name || "وثيقة محذوفة")}</strong>${r.sourceKey ? ` — ${esc(r.sourceKey.split("::")[1] || "")}` : ""}</p>` : ""}
+    ${r.regUpdateId ? `<p class="muted">🛰 التزام مولّد من مستجد تنظيمي: <span class="link-item" data-nav="regintel" style="display:inline-block;padding:2px 8px;cursor:pointer"><strong>${esc(store.regUpdates.find((x) => x.id === r.regUpdateId)?.code || r.regUpdateId)}</strong> — ${esc(String(store.regUpdates.find((x) => x.id === r.regUpdateId)?.title || "").slice(0, 80))}</span></p>` : ""}
+    ${r.evidenceRequired ? `<p class="muted">📎 الدليل المطلوب لإثبات التنفيذ: ${esc(r.evidenceRequired)}</p>` : ""}
     ${r.summary ? `<p class="pre-line">${esc(r.summary)}</p>` : ""}
     ${r.penalty ? `<p><span class="penalty-chip">⚖ ${esc(r.penalty)}</span></p>` : ""}
     ${r.attachmentUrl ? `<p>📎 <a href="${esc(r.attachmentUrl)}" target="_blank" rel="noopener">المرفق</a></p>` : ""}

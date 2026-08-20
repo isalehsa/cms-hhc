@@ -24,6 +24,7 @@ import { renderTraining } from "./views/training.js";
 import { renderMaturity } from "./views/maturity.js";
 import { renderMeetings } from "./views/meetings.js";
 import { renderRegChange } from "./views/regchange.js";
+import { renderRegIntel } from "./views/regintel.js";
 import { renderWorkflow } from "./views/workflow.js";
 import { renderAudit } from "./views/audit.js";
 import { scanWorkflowEscalations } from "./workflow.js";
@@ -47,6 +48,7 @@ const VIEWS = {
   risks: { icon: "⚠️", label: "سجل المخاطر", render: renderRisks },
   riskmap: { icon: "🗺", label: "خريطة المخاطر", render: renderRiskMap },
   monitoring: { icon: "🔍", label: "برنامج المراقبة", render: renderMonitoring },
+  regintel: { icon: "🛰", label: "الرصد التنظيمي", render: renderRegIntel },
   regchange: { icon: "🔔", label: "التغيّر التنظيمي", render: renderRegChange },
   plan: { icon: "📅", label: "الخطة السنوية", render: renderPlan },
   training: { icon: "🎓", label: "التدريب والتوعية", render: renderTraining },

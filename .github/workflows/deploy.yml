@@ -1,15 +1,32 @@
-# نشر تلقائي إلى Firebase (الاستضافة + قواعد Firestore) عند كل تحديث
+# نشر تلقائي إلى Firebase (الاستضافة + قواعد Firestore + الدوال) عند كل تحديث
 # يتطلب سراً واحداً في إعدادات المستودع باسم FIREBASE_SERVICE_ACCOUNT
 # (مفتاح حساب الخدمة من: Firebase Console → Project settings → Service accounts → Generate new private key)
+# وسراً اختيارياً ANTHROPIC_API_KEY لتفعيل التحليل التنظيمي بالذكاء الاصطناعي في الخادم
 name: Deploy to Firebase
 
 on:
   push:
-    branches: [main, claude/merge-490frd]
+    branches: [main, claude/merge-490frd, claude/regulatory-intelligence-integration-g2btgh]
   workflow_dispatch:
 
 jobs:
+  # فحوص الجودة قبل أي نشر: صياغة وحدات الواجهة + اختبارات الدوال والمنطق المشترك
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install functions dependencies
+        run: npm install --prefix functions --no-audit --no-fund
+      - name: Syntax check (frontend ES modules)
+        run: npm run check:syntax
+      - name: Unit and integration tests
+        run: npm run test:functions
+
   deploy:
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,9 +35,10 @@ jobs:
         with:
           node-version: 20
 
-      - name: Deploy hosting and Firestore rules
+      - name: Deploy hosting, Firestore rules and functions
         env:
           FIREBASE_SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           if [ -z "$FIREBASE_SA" ]; then
             echo "::warning::السر FIREBASE_SERVICE_ACCOUNT غير مضبوط — تم تخطي النشر التلقائي (أضفه من Settings → Secrets and variables → Actions لتفعيله)"
@@ -28,12 +46,20 @@ jobs:
           fi
           printf '%s' "$FIREBASE_SA" > "$RUNNER_TEMP/firebase-sa.json"
           export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-sa.json"
-          if npx firebase-tools@latest deploy --project cms-hhc --non-interactive --force; then
-            exit 0
+          FB="npx --yes firebase-tools@latest"
+
+          # 1) سر مفتاح Claude الخادمي: يُخزَّن في Secret Manager ولا يظهر في المتصفح أبداً.
+          #    عند غيابه تُضبط قيمة نائبة حتى ينجح نشر الدوال، ويعمل التحليل النصي المبدئي بدلاً منه.
+          printf '%s' "${ANTHROPIC_API_KEY:-unset}" \
+            | $FB functions:secrets:set ANTHROPIC_API_KEY --project cms-hhc --data-file - --force \
+            || echo "::warning::تعذّر ضبط سر ANTHROPIC_API_KEY (يلزم دور Secret Manager Admin لحساب الخدمة) — قد يفشل نشر الدوال"
+
+          # 2) الاستضافة وقواعد Firestore والفهارس — لا يجوز أن تفشل
+          $FB deploy --only hosting,firestore --project cms-hhc --non-interactive --force
+
+          # 3) الدوال (الفحص الأسبوعي والتقرير وواجهة الفحص اليدوي) — تتطلب خطة Blaze
+          if $FB deploy --only functions --project cms-hhc --non-interactive --force; then
+            echo "✓ نُشرت الدوال بنجاح (الفحص التنظيمي الأسبوعي والتقرير الأسبوعي مجدولان)"
+          else
+            echo "::warning::نُشرت الاستضافة والقواعد، لكن تعذّر نشر الدوال. الأسباب الشائعة: المشروع على خطة Spark (الدوال تتطلب Blaze)، أو نقص صلاحيات حساب الخدمة (يلزم Editor + Secret Manager Admin)، أو أن سر ANTHROPIC_API_KEY غير مضبوط. الوحدة تظل تعمل بالكامل من المتصفح (تسجيل يدوي + تحليل + اعتماد ودمج)، لكن الفحص الأسبوعي المجدول لن يعمل حتى ينجح نشر الدوال."
           fi
-          # النشر الكامل يتطلب إذن Service Usage على حساب الخدمة — عند غيابه
-          # ننشر الاستضافة وقواعد Firestore كلاً على حدة لتجاوز فحص تفعيل الواجهات
-          echo "::warning::فشل النشر الكامل (غالباً نقص صلاحيات حساب الخدمة) — محاولة نشر الاستضافة فقط"
-          npx firebase-tools@latest deploy --only hosting --project cms-hhc --non-interactive --force
-          npx firebase-tools@latest deploy --only firestore:rules --project cms-hhc --non-interactive --force \
-            || echo "::warning::نُشرت الاستضافة لكن تعذّر نشر قواعد Firestore — امنح حساب الخدمة دور Editor من IAM في Google Cloud"

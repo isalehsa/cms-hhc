@@ -1,0 +1,14 @@
+{
+  "name": "cms-hhc",
+  "version": "3.3.0",
+  "description": "نظام إدارة الالتزام (CMS) — فحوص الجودة والاختبارات الآلية",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "sync:core": "node scripts/sync-core.mjs",
+    "check:syntax": "node scripts/check-syntax.mjs",
+    "test:functions": "npm --prefix functions test",
+    "test": "npm run check:syntax && npm run test:functions"
+  }
+}

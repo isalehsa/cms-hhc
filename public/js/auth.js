@@ -95,3 +95,11 @@ export function onAuth(cb) {
     cb(fbUser ? await buildProfile(fbUser) : null);
   });
 }
+
+// رمز هوية Firebase للمستخدم الحالي — تستخدمه الواجهة لمناداة خدمات الخادم
+// (Cloud Functions) بنفس هوية المستخدم ودوره، دون أي مفتاح إضافي في المتصفح
+export async function idToken(forceRefresh = false) {
+  const u = auth?.currentUser;
+  if (!u) throw new Error("يلزم تسجيل الدخول");
+  return u.getIdToken(forceRefresh);
+}

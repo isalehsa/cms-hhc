@@ -360,3 +360,29 @@ async function removeLinksWhere(match, skipRegId = null) {
   }
   if (ops.length) await commitInChunks(ops);
 }
+
+// ---------- قفل تنفيذ المهام الطويلة (يمنع تشغيل عمليتين متزامنتين) ----------
+// يُخزَّن القفل في وثيقة appConfig مخصّصة، ويُلتقط بمعاملة ذرّية تمنع السباق.
+// القفل المعلّق (تجاوز مدة الصلاحية) يُكسر تلقائياً حتى لا يتعطّل النظام بعد انقطاع.
+export async function acquireLock(lockKey, holder, ttlMs = 30 * 60 * 1000) {
+  const ref = doc(db, "appConfig", lockKey);
+  return runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    const cur = snap.exists() ? snap.data() : null;
+    if (cur?.holder && cur.startedAt) {
+      const age = Date.now() - new Date(cur.startedAt).getTime();
+      if (!isNaN(age) && age < ttlMs) return { acquired: false, holder: cur.holder, startedAt: cur.startedAt };
+    }
+    tx.set(ref, { holder, startedAt: now(), updatedAt: now() });
+    return { acquired: true, holder, startedAt: now() };
+  });
+}
+
+export async function releaseLock(lockKey, holder) {
+  const ref = doc(db, "appConfig", lockKey);
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    if (snap.exists() && snap.data().holder && snap.data().holder !== holder) return; // قفل غيرنا — لا نلمسه
+    tx.set(ref, { holder: null, startedAt: null, releasedAt: now(), updatedAt: now() });
+  });
+}
