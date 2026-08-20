@@ -3,10 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="app-version" content="3.2" />
+  <meta name="app-version" content="20260820f" />
   <meta name="theme-color" content="#14705c" />
   <meta name="description" content="نظام إدارة الالتزام (ISO 37301) — المكتبة والمخاطر والمراقبة والخطة والاجتماعات والتقارير" />
   <title>نظام إدارة الالتزام — CMS</title>
+  <!-- ضبط السمة (داكن/فاتح) قبل الرسم لتفادي الوميض -->
+  <script>try{document.documentElement.setAttribute('data-theme',localStorage.getItem('cms-theme')||'dark');}catch(e){document.documentElement.setAttribute('data-theme','dark');}</script>
   <!-- تطبيق ويب تقدمي (PWA) -->
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
@@ -14,25 +16,59 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="الالتزام" />
-  <!-- الخط: Scala إن كان مثبتاً محلياً، وإلا البديل الويب IBM Plex Sans Arabic -->
+  <!-- الخط الأساسي SF Mada محلي، وبديل الويب IBM Plex Sans Arabic -->
+  <link rel="preload" href="fonts/sf-mada-bold.ttf" as="font" type="font/ttf" crossorigin />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=3.2" />
+  <link rel="stylesheet" href="styles.css?v=20260820f" />
   <!-- مكتبات المعالجة داخل المتصفح: قراءة Word، OCR، تصدير Excel -->
   <script defer src="https://cdn.jsdelivr.net/npm/mammoth@1.9.0/mammoth.browser.min.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
 </head>
 <body>
   <a href="#app" class="skip-link">تجاوز إلى المحتوى الرئيسي</a>
+  <!-- علامة مائية متحركة عامة (درع + حلقات دوّارة) خلف كل الصفحات — تُموَّه عبر زجاجية البطاقات -->
+  <div class="app-bg" aria-hidden="true">
+    <svg class="app-bg-svg" viewBox="0 0 520 520" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <radialGradient id="wmGlow" cx="50%" cy="46%" r="55%">
+          <stop offset="0" stop-color="#2fe3b4" stop-opacity="0.05"/>
+          <stop offset="1" stop-color="#2fe3b4" stop-opacity="0"/>
+        </radialGradient>
+        <linearGradient id="wmShield" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#34e7b8" stop-opacity="0.07"/>
+          <stop offset="1" stop-color="#0e9c78" stop-opacity="0.025"/>
+        </linearGradient>
+      </defs>
+      <circle cx="260" cy="250" r="250" fill="url(#wmGlow)">
+        <animate attributeName="opacity" values="0.7;1;0.7" dur="9s" repeatCount="indefinite"/>
+      </circle>
+      <circle cx="260" cy="250" r="215" fill="none" stroke="#7fe9cd" stroke-opacity="0.07" stroke-width="1.5" stroke-dasharray="5 12">
+        <animateTransform attributeName="transform" type="rotate" from="0 260 250" to="360 260 250" dur="70s" repeatCount="indefinite"/>
+      </circle>
+      <circle cx="260" cy="250" r="170" fill="none" stroke="#7fe9cd" stroke-opacity="0.08" stroke-width="1.5" stroke-dasharray="2 14">
+        <animateTransform attributeName="transform" type="rotate" from="360 260 250" to="0 260 250" dur="95s" repeatCount="indefinite"/>
+      </circle>
+      <circle cx="260" cy="250" r="120" fill="none" stroke="#34e7b8" stroke-opacity="0.09" stroke-width="1.5">
+        <animateTransform attributeName="transform" type="rotate" from="0 260 250" to="360 260 250" dur="120s" repeatCount="indefinite"/>
+      </circle>
+      <g transform="translate(260 250)">
+        <path d="M0 -120 L100 -76 V10 C100 78 52 126 0 146 C-52 126 -100 78 -100 10 V-76 Z" fill="url(#wmShield)" stroke="#7fe9cd" stroke-opacity="0.12" stroke-width="2.5"/>
+        <path d="M-40 6 L-10 36 L46 -34" fill="none" stroke="#7fe9cd" stroke-opacity="0.28" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
+    </svg>
+  </div>
   <div class="layout">
     <aside id="sidebar" class="sidebar" aria-label="التنقّل الرئيسي"></aside>
     <main id="app" tabindex="-1">
       <!-- تُبنى الواجهة عبر js/app.js -->
     </main>
+    <footer class="app-foot">جميع الحقوق محفوظة لصالح الميموني</footer>
   </div>
   <div id="toast" class="toast hidden" role="status" aria-live="polite" aria-atomic="true"></div>
-  <script type="module" src="js/app.js?v=3.2"></script>
+  <script type="module" src="js/app.js?v=20260820f"></script>
 </body>
 </html>

@@ -92,6 +92,13 @@ export function chip(text) {
   return `<span class="chip">${esc(text)}</span>`;
 }
 
+// شارة موجة التجمع — تقبل كائن الموجة {short, label, tone, color}
+export function waveBadge(wave, { full = false } = {}) {
+  if (!wave) return '<span class="muted" style="font-size:.72rem">قيد التجهيز</span>';
+  const c = wave.color || STATUS_COLORS[wave.tone] || STATUS_COLORS.neutral;
+  return `<span class="lvl" style="background:${c}1f;border-color:${c}55;color:${c}"><span class="dot" style="background:${c}"></span>${esc(full ? wave.label : wave.short)}</span>`;
+}
+
 // ---------- نوافذ منبثقة ----------
 export function modal(html, { wide = false } = {}) {
   const prevFocus = document.activeElement;
@@ -208,6 +215,24 @@ export function progressBar(pct) {
   return `<div class="prog"><div class="prog-bar"><div class="prog-fill" style="width:${p}%"></div></div><span class="prog-num">${p}%</span></div>`;
 }
 
+// لون النضج على تدرّج لوني مستمر من الأحمر (0٪) إلى الأخضر (100٪) — يعكس مستوى النضج
+export function maturityColor(pct) {
+  const p = Math.max(0, Math.min(100, Math.round(pct || 0)));
+  return `hsl(${Math.round(p * 1.2)}, 58%, 44%)`; // 0=أحمر · 60=أصفر · 120=أخضر
+}
+
+// شريط تقدّم النضج بلون يعكس المستوى (أحمر للمنخفض ← أخضر للمرتفع)
+export function maturityBar(pct) {
+  const p = Math.max(0, Math.min(100, Math.round(pct || 0)));
+  return `<div class="prog"><div class="prog-bar"><div class="prog-fill" style="width:${p}%;background:${maturityColor(p)}"></div></div><span class="prog-num" style="color:${maturityColor(p)};font-weight:600">${p}%</span></div>`;
+}
+
+// شارة مستوى النضج بلون متدرّج من الأحمر إلى الأخضر بحسب النسبة
+export function maturityLevelBadge(pct, label) {
+  const color = maturityColor(pct);
+  return `<span class="lvl" style="background:${color};border-color:transparent;color:#fff"><span class="dot" style="background:rgba(255,255,255,.9)"></span>${esc(label)}</span>`;
+}
+
 export function emptyMsg(msg) {
   return `<p class="muted" style="padding:14px">${esc(msg)}</p>`;
 }
@@ -231,9 +256,104 @@ export function donutStat(pct, label, sub = "") {
   </div>`;
 }
 
+// مخطط دائري (دونات) SVG ذاتي الاحتواء بألوان صريحة — يعمل داخل التطبيق وفي نافذة التقارير
+// items = [{label, count, color}] · القيم والنِّسب تظهر نصاً في وسيلة الإيضاح (اللون لا يحمل المعنى وحده)
+export function donutChart(items, { size = 150, thickness = 24, unit = "الإجمالي" } = {}) {
+  const total = items.reduce((s, i) => s + (Number(i.count) || 0), 0);
+  const r = (size - thickness) / 2, cx = size / 2, cy = size / 2, circ = 2 * Math.PI * r;
+  let off = 0;
+  const segs = (total ? items.filter((i) => i.count > 0) : []).map((i) => {
+    const len = (i.count / total) * circ;
+    const seg = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${i.color}" stroke-width="${thickness}" stroke-dasharray="${len.toFixed(2)} ${(circ - len).toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}" transform="rotate(-90 ${cx} ${cy})"><title>${esc(i.label)}: ${i.count}</title></circle>`;
+    off += len;
+    return seg;
+  }).join("");
+  const legend = items.map((i) => {
+    const pct = total ? Math.round((i.count / total) * 100) : 0;
+    return `<div style="display:flex;align-items:center;gap:7px;font-size:.8rem;margin:3px 0">
+      <span style="width:11px;height:11px;border-radius:3px;background:${i.color};flex-shrink:0"></span>
+      <span style="flex:1">${esc(i.label)}</span><strong>${i.count}</strong>
+      <span style="color:var(--muted);min-width:36px;text-align:left">${pct}%</span></div>`;
+  }).join("");
+  return `<div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap">
+    <svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" style="flex-shrink:0" role="img" aria-label="مخطط دائري: ${esc(unit)} ${total}">
+      <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="rgba(120,130,125,.15)" stroke-width="${thickness}"/>
+      ${segs}
+      <text x="${cx}" y="${cy - size * 0.02}" text-anchor="middle" style="font-size:${(size * 0.24).toFixed(0)}px;font-weight:800;fill:currentColor">${total}</text>
+      <text x="${cx}" y="${cy + size * 0.15}" text-anchor="middle" style="font-size:${(size * 0.093).toFixed(0)}px;fill:var(--muted)">${esc(unit)}</text>
+    </svg>
+    <div style="flex:1;min-width:150px">${legend}</div>
+  </div>`;
+}
+
+// معرّف فريد لعناصر SVG (لتفادي تعارض معرّفات التدرّج عند تكرار المخططات)
+let _uid = 0;
+const uid = () => `u${(++_uid).toString(36)}`;
+
+// عدّاد نصف دائري (Gauge) لنسبة واحدة — القوس ملوّن بتدرّج الأحمر→الأخضر حسب القيمة
+export function gaugeChart(pct, { label = "", sub = "", size = 200 } = {}) {
+  if (pct === null || pct === undefined || isNaN(pct)) return statTile("—", label, sub);
+  const p = Math.max(0, Math.min(100, Math.round(pct)));
+  const w = size, cy = size * 0.56, r = size * 0.4, sw = size * 0.12, cx = w / 2, h = cy + sw / 2 + 6;
+  const pol = (deg) => { const a = (deg * Math.PI) / 180; return [cx + r * Math.cos(a), cy - r * Math.sin(a)]; };
+  const arc = (a0, a1) => { const [x0, y0] = pol(a0), [x1, y1] = pol(a1); return `M ${x0.toFixed(2)} ${y0.toFixed(2)} A ${r} ${r} 0 0 1 ${x1.toFixed(2)} ${y1.toFixed(2)}`; };
+  const color = maturityColor(p);
+  return `<div style="text-align:center">
+    <svg viewBox="0 0 ${w} ${h}" width="100%" style="max-width:${w}px" role="img" aria-label="${esc(label)}: ${p}%">
+      <path d="${arc(180, 0)}" fill="none" stroke="rgba(120,130,125,.18)" stroke-width="${sw}" stroke-linecap="round"/>
+      <path d="${arc(180, 180 - p * 1.8)}" fill="none" stroke="${color}" stroke-width="${sw}" stroke-linecap="round"/>
+      <text x="${cx}" y="${cy - size * 0.02}" text-anchor="middle" style="font-size:${(size * 0.24).toFixed(0)}px;font-weight:800;fill:${color}">${p}%</text>
+      ${label ? `<text x="${cx}" y="${cy + size * 0.14}" text-anchor="middle" style="font-size:${(size * 0.078).toFixed(0)}px;fill:var(--muted)">${esc(label)}</text>` : ""}
+    </svg>${sub ? `<div class="muted" style="font-size:.78rem;margin-top:-4px">${esc(sub)}</div>` : ""}</div>`;
+}
+
+// مخطط خطي/مساحي لاتجاه زمني — points = [{label, value}]، مع قيمة كل نقطة نصاً
+export function trendChart(points, { unit = "", color = "#22d6a6", height = 170 } = {}) {
+  if (!points.length) return '<p class="muted" style="padding:12px">لا توجد بيانات كافية للاتجاه</p>';
+  const n = points.length, w = Math.max(300, n * 78), h = height;
+  const padL = 10, padR = 10, padT = 22, padB = 28, plotW = w - padL - padR, plotH = h - padT - padB;
+  const max = Math.max(...points.map((p) => Number(p.value) || 0), 1);
+  const x = (i) => padL + (n === 1 ? plotW / 2 : (i / (n - 1)) * plotW);
+  const y = (v) => padT + plotH - ((Number(v) || 0) / max) * plotH;
+  const line = points.map((p, i) => `${x(i).toFixed(1)},${y(p.value).toFixed(1)}`).join(" ");
+  const area = `${padL},${(padT + plotH).toFixed(1)} ${line} ${(padL + plotW).toFixed(1)},${(padT + plotH).toFixed(1)}`;
+  const gid = uid();
+  const dots = points.map((p, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(p.value).toFixed(1)}" r="4" fill="#fff" stroke="${color}" stroke-width="2"><title>${esc(p.label)}: ${p.value}${esc(unit)}</title></circle>
+    <text x="${x(i).toFixed(1)}" y="${(y(p.value) - 9).toFixed(1)}" text-anchor="middle" style="font-size:11px;font-weight:700;fill:${color}">${esc(String(p.value))}</text>`).join("");
+  const labels = points.map((p, i) => `<text x="${x(i).toFixed(1)}" y="${h - 9}" text-anchor="middle" style="font-size:10px;fill:var(--muted)">${esc(p.label)}</text>`).join("");
+  return `<div style="overflow-x:auto"><svg viewBox="0 0 ${w} ${h}" width="100%" ${w > 560 ? `style="min-width:${w}px"` : ""} preserveAspectRatio="xMidYMid meet" role="img">
+    <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${color}" stop-opacity="0.3"/><stop offset="1" stop-color="${color}" stop-opacity="0.02"/></linearGradient></defs>
+    <polygon points="${area}" fill="url(#${gid})"/>
+    <polyline points="${line}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round"/>
+    ${dots}${labels}
+  </svg></div>`;
+}
+
+// أعمدة مجمّعة للمقارنة بين سلسلتين لكل فئة — cats=[..], a/b={name,color,values:[]}
+export function groupedBarChart(cats, a, b) {
+  if (!cats.length) return '<p class="muted" style="padding:12px">لا توجد بيانات للمقارنة</p>';
+  const max = Math.max(...a.values, ...b.values, 1);
+  const rows = cats.map((c, i) => {
+    const av = Number(a.values[i]) || 0, bv = Number(b.values[i]) || 0;
+    return `<div style="margin:8px 0">
+      <div style="font-size:.8rem;margin-bottom:3px">${esc(c)}</div>
+      <div style="display:flex;align-items:center;gap:6px;margin:2px 0"><span style="width:9px;height:9px;border-radius:2px;background:${a.color};flex-shrink:0"></span>
+        <span style="flex:1;height:12px;background:rgba(120,130,125,.12);border-radius:6px;overflow:hidden"><span style="display:block;height:100%;width:${Math.max(2, Math.round(av / max * 100))}%;background:${a.color}"></span></span>
+        <strong style="min-width:40px;text-align:left;font-size:.8rem">${av}</strong></div>
+      <div style="display:flex;align-items:center;gap:6px;margin:2px 0"><span style="width:9px;height:9px;border-radius:2px;background:${b.color};flex-shrink:0"></span>
+        <span style="flex:1;height:12px;background:rgba(120,130,125,.12);border-radius:6px;overflow:hidden"><span style="display:block;height:100%;width:${Math.max(2, Math.round(bv / max * 100))}%;background:${b.color}"></span></span>
+        <strong style="min-width:40px;text-align:left;font-size:.8rem">${bv}</strong></div>
+    </div>`;
+  }).join("");
+  return `<div><div class="row" style="gap:14px;margin-bottom:6px;font-size:.78rem">
+    <span style="display:flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:${a.color}"></span>${esc(a.name)}</span>
+    <span style="display:flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:${b.color}"></span>${esc(b.name)}</span>
+  </div>${rows}</div>`;
+}
+
 // خط بياني مصغّر (Sparkline) لسلسلة زمنية — SVG داخلي، بلا مكتبات خارجية
 // points = [{date, value}] (قيم null تُتجاهل)، role يحدّد اللون الدلالي
-export function sparkline(points, { role = "good", target = null, width = 220, height = 48 } = {}) {
+export function kpiSpark(points, { role = "good", target = null, width = 220, height = 48 } = {}) {
   const pts = points.filter((p) => p.value !== null && p.value !== undefined && !isNaN(p.value));
   if (pts.length < 2) return '<div class="spark-empty muted">يتراكم السجل يومياً…</div>';
   const vals = pts.map((p) => p.value);
@@ -270,6 +390,56 @@ export function hBars(items) {
       </div>`
     )
     .join("")}</div>`;
+}
+
+// ---------- أيقونات خطّية موحّدة (SVG) ----------
+export const LINE_ICONS = {
+  grid: '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
+  book: '<path d="M5 4h11a2 2 0 0 1 2 2v14H7a2 2 0 0 1-2-2V4z"/><line x1="9" y1="8" x2="14" y2="8"/>',
+  alert: '<path d="M12 4l9 15H3l9-15z"/><line x1="12" y1="10" x2="12" y2="14"/><circle cx="12" cy="17" r=".7" fill="currentColor" stroke="none"/>',
+  mail: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/>',
+  folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/>',
+  search: '<circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/>',
+  clipboard: '<rect x="5" y="4" width="14" height="17" rx="2"/><rect x="9" y="2.5" width="6" height="3.5" rx="1"/><line x1="8.5" y1="11" x2="15.5" y2="11"/><line x1="8.5" y1="15" x2="13.5" y2="15"/>',
+  tool: '<path d="M14.5 6.5a3.5 3.5 0 0 0-4.7 4.3L4 16.6 7.4 20l5.8-5.8a3.5 3.5 0 0 0 4.3-4.7l-2.2 2.2-1.9-.4-.4-1.9 2.2-2.2z"/>',
+  calendar: '<rect x="4" y="5" width="16" height="16" rx="2"/><line x1="4" y1="9" x2="20" y2="9"/><line x1="9" y1="3" x2="9" y2="6"/><line x1="15" y1="3" x2="15" y2="6"/>',
+  calcheck: '<rect x="4" y="5" width="16" height="16" rx="2"/><line x1="4" y1="9" x2="20" y2="9"/><path d="M9 14l2 2 4-4"/>',
+  cap: '<path d="M2 9l10-4 10 4-10 4L2 9z"/><path d="M6 11v4c0 1.6 2.7 3 6 3s6-1.4 6-3v-4"/>',
+  bars: '<line x1="6" y1="20" x2="6" y2="12"/><line x1="12" y1="20" x2="12" y2="6"/><line x1="18" y1="20" x2="18" y2="9"/>',
+  users: '<circle cx="9" cy="8" r="3"/><path d="M3.5 20a5.5 6 0 0 1 11 0"/><path d="M16 5.5a3 3 0 0 1 0 6"/><path d="M17 20a5.5 6 0 0 0-3-5.3"/>',
+  checksq: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 12l3 3 5-6"/>',
+  contact: '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2.2"/><path d="M6 16.5a3.2 3.2 0 0 1 6 0"/><line x1="15" y1="10" x2="18.5" y2="10"/><line x1="15" y1="13.5" x2="18.5" y2="13.5"/>',
+  pie: '<path d="M12 3a9 9 0 1 0 9 9h-9V3z"/><path d="M14 3.2A9 9 0 0 1 20.8 10H14V3.2z"/>',
+  gear: '<circle cx="12" cy="12" r="3.2"/><path d="M12 2.5l1.3 2.4 2.7-.5.5 2.7 2.4 1.3-1.2 2.5 1.2 2.5-2.4 1.3-.5 2.7-2.7-.5L12 21.5l-1.3-2.4-2.7.5-.5-2.7L5.1 15.5l1.2-2.5-1.2-2.5 2.4-1.3.5-2.7 2.7.5L12 2.5z"/>',
+  shield: '<path d="M12 3l7 3v5c0 4.5-3 7.6-7 9-4-1.4-7-4.5-7-9V6l7-3z"/><path d="M9 12l2 2 4-4"/>',
+  chat: '<path d="M4 5h16v10H9l-4 4V5z"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="12" x2="13" y2="12"/>',
+  doc: '<path d="M7 3h7l4 4v14H7V3z"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="15" y2="16"/>',
+  plus: '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
+  target: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.5"/>',
+  trend: '<polyline points="4,15 9,10 13,13 20,6"/><polyline points="20,10 20,6 16,6"/>',
+  scale: '<line x1="12" y1="4" x2="12" y2="20"/><line x1="6" y1="8" x2="18" y2="8"/><path d="M6 8l-2.5 5.5a3 3 0 0 0 5 0L6 8z"/><path d="M18 8l-2.5 5.5a3 3 0 0 0 5 0L18 8z"/>',
+  bell: '<path d="M6 9a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6z"/><path d="M10 19a2 2 0 0 0 4 0"/>',
+  radar: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><line x1="12" y1="12" x2="18.2" y2="6.6"/><circle cx="16.5" cy="8.5" r=".9" fill="currentColor" stroke="none"/>',
+};
+export function lineIcon(name, size = 20) {
+  return `<svg class="ic" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${LINE_ICONS[name] || ""}</svg>`;
+}
+
+// خط مؤشر مصغّر (Sparkline) — مساحة + خط بلا محاور، لبطاقات المؤشرات
+export function sparkline(values, { color = "#22d6a6", w = 140, h = 40 } = {}) {
+  const vals = (values || []).map((v) => Number(v) || 0);
+  if (vals.length < 2) return `<div style="height:${h}px"></div>`;
+  const max = Math.max(...vals), min = Math.min(...vals), n = vals.length, pad = 3;
+  const x = (i) => pad + (i / (n - 1)) * (w - 2 * pad);
+  const y = (v) => (h - pad) - ((v - min) / ((max - min) || 1)) * (h - 2 * pad);
+  const line = vals.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+  const area = `${x(0).toFixed(1)},${h} ${line} ${x(n - 1).toFixed(1)},${h}`;
+  const gid = uid();
+  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="display:block;width:100%;height:${h}px" aria-hidden="true">
+    <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${color}" stop-opacity="0.3"/><stop offset="1" stop-color="${color}" stop-opacity="0"/></linearGradient></defs>
+    <polygon points="${area}" fill="url(#${gid})"/>
+    <polyline points="${line}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+  </svg>`;
 }
 
 // خريطة حرارية 5×5 للمخاطر: صفوف الأثر (5→1) × أعمدة الاحتمالية (1→5)

@@ -78,6 +78,47 @@ export const HEALTH_CLUSTERS = [
   "تجمع الحدود الشمالية الصحي", "تجمع بيشة الصحي",
 ];
 
+// ---------- موجات التجمعات (تصنيف موجة الانتقال للشركة) ----------
+// الموجات تابعة للشركة (منتقلة) ويُميَّز بينها باللون؛ وما لم يُصنَّف يُعدّ «قيد التجهيز»
+export const CLUSTER_WAVES = {
+  ONE: { label: "الموجة الأولى — تابعة للشركة", short: "الموجة الأولى", color: "#0ca30c", desc: "تجمعات الموجة الأولى المنتقلة للشركة" },
+  TWO: { label: "الموجة الثانية — تابعة للشركة", short: "الموجة الثانية", color: "#2a78d6", desc: "تجمعات الموجة الثانية المنتقلة للشركة" },
+  THREE: { label: "الموجة الثالثة — تابعة للشركة", short: "الموجة الثالثة", color: "#7a5cff", desc: "تجمعات الموجة الثالثة المنتقلة للشركة" },
+  PREP: { label: "قيد التجهيز", short: "قيد التجهيز", color: "#e6a100", desc: "تجمعات لم تنتقل للشركة بعد" },
+};
+// ترتيب عرض الموجات
+export const CLUSTER_WAVE_ORDER = ["ONE", "TWO", "THREE", "PREP"];
+// خيارات اختيار الموجة في شاشة الإدارات (فارغ = تلقائي حسب الاسم)
+export const CLUSTER_WAVE_SELECT = {
+  "": "تلقائي (حسب اسم التجمع)",
+  ONE: "الموجة الأولى", TWO: "الموجة الثانية", THREE: "الموجة الثالثة", PREP: "قيد التجهيز",
+};
+
+// مطابقات إسناد الموجة حسب اسم التجمع (تعمل حتى لو اختلفت صياغة الاسم)
+const WAVE_ONE_MATCH = [
+  (n) => n.includes("الرياض") && n.includes("الثاني"),
+  (n) => n.includes("الشرقية"),
+  (n) => n.includes("القصيم"),
+];
+const WAVE_TWO_MATCH = [
+  (n) => n.includes("حائل"),
+  (n) => n.includes("تبوك"),
+  (n) => n.includes("الحدود"),
+  (n) => n.includes("حفر") && n.includes("الباطن"),
+  (n) => n.includes("الأحساء") || n.includes("الاحساء"),
+  (n) => n.includes("نجران"),
+  (n) => n.includes("الطائف"),
+];
+
+// مفتاح موجة التجمع: الحقل الصريح wave له الأولوية، وإلا يُشتق من الاسم، وإلا «قيد التجهيز»
+export function clusterWaveKey(name, explicit) {
+  if (CLUSTER_WAVES[explicit]) return explicit; // ONE | TWO | THREE | PREP
+  const n = String(name || "");
+  if (WAVE_ONE_MATCH.some((f) => f(n))) return "ONE";
+  if (WAVE_TWO_MATCH.some((f) => f(n))) return "TWO";
+  return "PREP";
+}
+
 // ---------- الأدوار ----------
 export const ROLES = {
   ADMIN: "مدير النظام",
@@ -148,6 +189,7 @@ export const RISK_SOURCES = {
   AUTO_REGULATION: "أُنشئ آلياً من التحليل الذكي وفق الغرامات والعقوبات المذكورة في النظام",
   AUTO_LIBRARY: "أُنشئ آلياً عند إضافة المتطلب إلى مكتبة الالتزام",
   AI_SUGGESTED: "اقتراح المساعد الذكي",
+  REG_INTEL: "أُنشئ آلياً عند اعتماد مستجد تنظيمي مرصود في وحدة الرصد التنظيمي",
 };
 
 // تقييم 5×5: الدرجة = الاحتمالية × الأثر
@@ -618,3 +660,86 @@ export const MATURITY_MODEL = [
   },
 ];
 
+
+// ---------- الرصد التنظيمي وإدارة التغيير (Regulatory Intelligence) ----------
+// نوع المصدر المرصود — يحدد كيفية قراءة المستجدات منه
+export const REG_SOURCE_TYPES = {
+  RSS: "تغذية RSS / Atom",
+  JSON: "واجهة JSON",
+  HTML: "صفحة ويب (استخراج الروابط)",
+  MANUAL: "إدخال يدوي فقط",
+};
+
+export const REG_SOURCE_STATUS = {
+  NEVER: "لم يُفحص بعد",
+  OK: "آخر فحص ناجح",
+  EMPTY: "فُحص بلا نتائج",
+  ERROR: "فشل الفحص",
+};
+export const REG_SOURCE_STATUS_ROLE = { NEVER: "neutral", OK: "good", EMPTY: "warning", ERROR: "critical" };
+
+// دورة حياة المستجد التنظيمي: رصد ← تحليل ← مراجعة الالتزام ← اعتماد ودمج
+export const REG_UPDATE_STATUS = {
+  DETECTED: "مرصود — بانتظار التحليل",
+  ANALYZED: "حُلِّل — بانتظار مراجعة الالتزام",
+  APPROVED: "معتمد ومُدمج في وحدات الالتزام",
+  REJECTED: "غير منطبق / مستبعد",
+  ARCHIVED: "مؤرشف",
+};
+export const REG_UPDATE_ROLE = {
+  DETECTED: "warning", ANALYZED: "serious", APPROVED: "good", REJECTED: "neutral", ARCHIVED: "neutral",
+};
+
+export const REG_APPLICABILITY = {
+  APPLICABLE: "تنطبق على المنشأة",
+  PARTIAL: "تنطبق جزئياً",
+  NOT_APPLICABLE: "لا تنطبق",
+  UNKNOWN: "غير محددة",
+};
+export const REG_APPLICABILITY_ROLE = {
+  APPLICABLE: "critical", PARTIAL: "warning", NOT_APPLICABLE: "neutral", UNKNOWN: "neutral",
+};
+
+export const REG_IMPACT = { HIGH: "أثر عالٍ", MEDIUM: "أثر متوسط", LOW: "أثر منخفض" };
+export const REG_IMPACT_ROLE = { HIGH: "critical", MEDIUM: "warning", LOW: "good" };
+
+export const REG_SCAN_STATUS = {
+  RUNNING: "قيد التشغيل",
+  COMPLETED: "اكتمل",
+  PARTIAL: "اكتمل بأخطاء",
+  FAILED: "فشل",
+};
+export const REG_SCAN_STATUS_ROLE = { RUNNING: "warning", COMPLETED: "good", PARTIAL: "serious", FAILED: "critical" };
+
+export const REG_SCAN_TRIGGER = { SCHEDULE: "الجدولة الأسبوعية", MANUAL: "تشغيل يدوي", API: "واجهة برمجية" };
+
+export const REG_ANALYSIS_METHOD = {
+  ai: "تحليل بالذكاء الاصطناعي (Claude)",
+  heuristic: "تحليل نصي مبدئي",
+  manual: "تحليل يدوي",
+};
+
+// نوع الموعد التنظيمي المستخرج
+export const REG_DEADLINE_KINDS = {
+  EFFECTIVE: "تاريخ النفاذ",
+  COMPLIANCE: "موعد استكمال الامتثال",
+  EXPLICIT: "تاريخ صريح في النص",
+  RELATIVE: "مهلة محسوبة من تاريخ النشر",
+  REVIEW: "موعد مراجعة متطلب",
+  ACTION: "موعد إجراء تصحيحي",
+};
+
+// مصادر رصد افتراضية للجهات السعودية — تُضاف معطّلة ويفعّلها مدير الالتزام
+// بعد التحقق من صيغة كل مصدر (تُخزَّن كإعداد فقط، ولا تُنشئ أي بيانات تنظيمية)
+export const REG_SOURCE_SEED = [
+  { name: "المركز الوطني للتنافسية — استطلاع الأنظمة", url: "https://istitlaa.ncc.gov.sa", type: "HTML", sector: "عام / متعدد القطاعات" },
+  { name: "وزارة الصحة — الأنظمة واللوائح", url: "https://www.moh.gov.sa", type: "HTML", sector: "الصحة" },
+  { name: "الهيئة العامة للغذاء والدواء", url: "https://www.sfda.gov.sa", type: "HTML", sector: "الصحة" },
+  { name: "المجلس الصحي السعودي", url: "https://shc.gov.sa", type: "HTML", sector: "الصحة" },
+  { name: "الهيئة السعودية للتخصصات الصحية", url: "https://www.scfhs.org.sa", type: "HTML", sector: "الصحة" },
+  { name: "الهيئة الوطنية للأمن السيبراني", url: "https://nca.gov.sa", type: "HTML", sector: "الأمن السيبراني" },
+  { name: "الهيئة السعودية للبيانات والذكاء الاصطناعي", url: "https://sdaia.gov.sa", type: "HTML", sector: "التقنية والاتصالات" },
+  { name: "هيئة الزكاة والضريبة والجمارك", url: "https://zatca.gov.sa", type: "HTML", sector: "المالية" },
+  { name: "مجلس الضمان الصحي", url: "https://www.chi.gov.sa", type: "HTML", sector: "الصحة" },
+  { name: "أم القرى — الجريدة الرسمية", url: "https://www.uqn.gov.sa", type: "HTML", sector: "عام / متعدد القطاعات" },
+];

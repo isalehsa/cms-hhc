@@ -4,9 +4,13 @@
 //  2) escalateWorkflows — تصعيد مسارات الاعتماد المتجاوزة لـ SLA حتى دون دخول أحد
 //  3) ingestAuthorityFeed — سحب مستجدات الجهات الرقابية من نقطة خارجية وإنشاء تغييرات تنظيمية
 //  4) api               — واجهة REST آمنة بمفتاح للأنظمة المؤسسية (مؤشرات/التزامات/دفع تغيّر تنظيمي)
+//  5) weeklyRegulatoryScan   — الفحص التنظيمي الأسبوعي المجدول (وحدة الرصد التنظيمي)
+//  6) weeklyRegulatoryReport — التقرير الأسبوعي للرصد التنظيمي + إرساله بالبريد
+//     ويضيف إلى api مسارَي /regintel/scan و/regintel/report بمصادقة رمز هوية Firebase ودور المستخدم
 const { onRequest } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { setGlobalOptions } = require("firebase-functions/v2");
+const { defineSecret } = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
 const express = require("express");
@@ -19,6 +23,17 @@ const nowISO = () => new Date().toISOString();
 const todayISO = () => nowISO().slice(0, 10);
 const daysUntil = (iso) => (iso ? Math.ceil((new Date(iso) - Date.now()) / 86400000) : null);
 const APPROVER_ROLES = ["ADMIN", "COMPLIANCE_MANAGER"];
+
+// مفتاح Claude الخادمي — سرّ مُدار في Firebase/Secret Manager، لا يصل المتصفح إطلاقاً.
+// عند غيابه يعمل الفحص بالتحليل النصي المبدئي بدل التحليل بالذكاء الاصطناعي.
+const ANTHROPIC_API_KEY = defineSecret("ANTHROPIC_API_KEY");
+// السر قد يكون غير مضبوط بعد (قيمة نائبة عند النشر الأول) — عندها يعمل التحليل
+// النصي المبدئي بدل الذكاء الاصطناعي، ولا يتعطّل الفحص المجدول
+function anthropicKey() {
+  const v = (ANTHROPIC_API_KEY.value() || "").trim();
+  return v.startsWith("sk-") ? v : null;
+}
+const regintel = require("./regintel");
 
 const DUE_SOON = { requirement: 30, monitoring: 14, risk: 14, finding: 14, assessment: 7, correspondence: 7, training: 14, meeting: 3 };
 
@@ -42,7 +57,7 @@ async function collectDeadlines(thresholds = DUE_SOON) {
   for (const a of assess) if (["SENT", "SUBMITTED"].includes(a.status)) add("assessment", a.code, `فحص ذاتي: ${a.title}`, a.dueDate);
   for (const c of corr) if (c.status === "OPEN") add("correspondence", c.code, `رد مراسلة: ${c.subject}`, c.dueDate);
   for (const t of trains) if (["PLANNED", "IN_PROGRESS"].includes(t.status)) add("training", t.code, `تدريب: ${t.title}`, t.dueDate || t.date);
-  for (const mt of meets) if (mt.status === "SCHEDULED") add("meeting", mt.code, `اجتماع: ${mt.title}`, mt.startAt);
+  for (const mt of meets) if ((mt.type || "") === "DEPT" && mt.date && String(mt.date).slice(0, 10) >= todayISO()) add("meeting", mt.code, `اجتماع الالتزام: ${mt.party || mt.title || ""}`, mt.date);
 
   const overdue = [], soon = [];
   for (const it of items) {
@@ -184,4 +199,78 @@ app.post("/regulatory-change", requireApiKey, async (req, res) => {
   res.status(201).json({ id: ref.id });
 });
 
-exports.api = onRequest(app);
+// ---------- مسارات الرصد التنظيمي: مصادقة برمز هوية Firebase ودور المستخدم ----------
+// لا مفتاح ثابت هنا: المستخدم نفسه هو من يستدعي الخدمة بهويته، والدور يُقرأ من users/{uid}
+async function requireApprover(req, res, next) {
+  try {
+    const header = req.get("authorization") || "";
+    const token = header.startsWith("Bearer ") ? header.slice(7) : null;
+    if (!token) return res.status(401).json({ error: "يلزم تسجيل الدخول" });
+    const decoded = await admin.auth().verifyIdToken(token);
+    const snap = await db.doc(`users/${decoded.uid}`).get();
+    const data = snap.exists ? snap.data() : {};
+    const role = String(data.role || "AUDITOR").toUpperCase();
+    if (data.active === false) return res.status(403).json({ error: "الحساب معطَّل" });
+    if (!APPROVER_ROLES.includes(role)) return res.status(403).json({ error: "هذا الإجراء مقصور على مدير الالتزام" });
+    req.cmsUser = { uid: decoded.uid, role, name: data.name || decoded.email || decoded.uid };
+    next();
+  } catch (e) {
+    logger.warn("regintel auth failed", e);
+    res.status(401).json({ error: "رمز هوية غير صالح" });
+  }
+}
+
+// تشغيل فحص تنظيمي فوري (زر «تشغيل الفحص الآن» في الواجهة)
+app.post("/regintel/scan", requireApprover, async (req, res) => {
+  try {
+    const summary = await regintel.runScan({
+      trigger: "MANUAL",
+      triggeredBy: req.cmsUser.uid,
+      triggeredByName: req.cmsUser.name,
+      sourceId: req.body?.sourceId || null,
+      apiKey: anthropicKey(),
+    });
+    res.json(summary);
+  } catch (e) {
+    if (e.code === "LOCKED") return res.status(409).json({ error: e.message });
+    logger.error("regintel scan failed", e);
+    res.status(500).json({ error: String(e.message).slice(0, 300) });
+  }
+});
+
+// توليد التقرير الأسبوعي عند الطلب
+app.post("/regintel/report", requireApprover, async (req, res) => {
+  try {
+    const report = await regintel.generateWeeklyReport({ trigger: "MANUAL", email: req.body?.email !== false });
+    res.json(report);
+  } catch (e) {
+    logger.error("regintel report failed", e);
+    res.status(500).json({ error: String(e.message).slice(0, 300) });
+  }
+});
+
+exports.api = onRequest({ secrets: [ANTHROPIC_API_KEY] }, app);
+
+// ---------- 5) الفحص التنظيمي الأسبوعي (الأحد 05:00 بتوقيت الرياض) ----------
+// مرة واحدة أسبوعياً، ومحمي بقفل يمنع تداخله مع أي فحص يدوي قيد التشغيل
+exports.weeklyRegulatoryScan = onSchedule(
+  { schedule: "0 5 * * 0", timeZone: "Asia/Riyadh", timeoutSeconds: 540, memory: "512MiB", secrets: [ANTHROPIC_API_KEY] },
+  async () => {
+    try {
+      const summary = await regintel.runScan({ trigger: "SCHEDULE", apiKey: anthropicKey() });
+      logger.info(`weekly regulatory scan: ${summary.created} new updates from ${summary.sourcesScanned} sources`);
+    } catch (e) {
+      if (e.code === "LOCKED") { logger.warn("weekly scan skipped — another scan is running"); return; }
+      throw e;
+    }
+  }
+);
+
+// ---------- 6) التقرير الأسبوعي للرصد التنظيمي (الأحد 07:30 بتوقيت الرياض) ----------
+exports.weeklyRegulatoryReport = onSchedule(
+  { schedule: "30 7 * * 0", timeZone: "Asia/Riyadh", timeoutSeconds: 300 },
+  async () => {
+    const report = await regintel.generateWeeklyReport({ trigger: "SCHEDULE" });
+    logger.info(`weekly regulatory report ${report.id}: ${report.total} updates`);
+  }
+);

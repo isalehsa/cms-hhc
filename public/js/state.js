@@ -1,5 +1,6 @@
 // مخزن مركزي: يحمّل مجموعات النظام مرة واحدة ويوفر أدوات بحث مشتركة للوحدات
 import { listCol } from "./db.js";
+import { CLUSTER_WAVES, clusterWaveKey } from "./meta.js";
 
 export const store = {
   user: null,
@@ -14,7 +15,13 @@ export const store = {
   trainings: [],
   maturity: [],
   meetings: [],
+  tasks: [],
+  cmeetings: [],
   regChanges: [],
+  regSources: [],
+  regUpdates: [],
+  regScans: [],
+  regReports: [],
   workflows: [],
   audits: [],
   directory: [],
@@ -28,7 +35,7 @@ export const store = {
 
 export async function loadAll(force = false) {
   if (store.loaded && !force) return store;
-  const [requirements, risks, monitoring, planItems, assessments, findings, correspondence, disclosures, trainings, maturity, meetings, regChanges, workflows, audits, directory, departments, authorities, users, notifications] =
+  const [requirements, risks, monitoring, planItems, assessments, findings, correspondence, disclosures, trainings, maturity, meetings, tasks, cmeetings, regChanges, regSources, regUpdates, regScans, regReports, workflows, audits, directory, departments, authorities, users, notifications] =
     await Promise.all([
       listCol("requirements", "code").catch(() => []),
       listCol("risks", "code").catch(() => []),
@@ -40,8 +47,14 @@ export async function loadAll(force = false) {
       listCol("disclosures", "code").catch(() => []),
       listCol("trainings", "code").catch(() => []),
       listCol("maturity", "code").catch(() => []),
-      listCol("meetings", "code").catch(() => []),
+      listCol("meetings").catch(() => []),
+      listCol("tasks", "code").catch(() => []),
+      listCol("cmeetings", "code").catch(() => []),
       listCol("regChanges", "code").catch(() => []),
+      listCol("regSources", "name").catch(() => []),
+      listCol("regUpdates", "code").catch(() => []),
+      listCol("regScans").catch(() => []),
+      listCol("regReports").catch(() => []),
       listCol("workflows", "code").catch(() => []),
       listCol("audits", "code").catch(() => []),
       listCol("directory").catch(() => []),
@@ -51,7 +64,8 @@ export async function loadAll(force = false) {
       listCol("notifications").catch(() => []),
     ]);
   Object.assign(store, {
-    requirements, risks, monitoring, planItems, assessments, findings, correspondence, disclosures, trainings, maturity, meetings, regChanges, workflows, audits, directory,
+    requirements, risks, monitoring, planItems, assessments, findings, correspondence, disclosures, trainings, maturity, meetings, tasks, cmeetings, regChanges,
+    regSources, regUpdates, regScans, regReports, workflows, audits, directory,
     departments, authorities, users, notifications, loaded: true,
   });
   return store;
@@ -59,7 +73,7 @@ export async function loadAll(force = false) {
 
 // إعادة تحميل مجموعة واحدة بعد التعديل
 export async function reload(...cols) {
-  const orderFields = { requirements: "code", risks: "code", monitoring: "code", findings: "code", correspondence: "code", disclosures: "code", trainings: "code", maturity: "code", meetings: "code", regChanges: "code", workflows: "code", audits: "code", departments: "name", authorities: "name" };
+  const orderFields = { requirements: "code", risks: "code", monitoring: "code", findings: "code", correspondence: "code", disclosures: "code", trainings: "code", maturity: "code", tasks: "code", cmeetings: "code", regChanges: "code", regSources: "name", regUpdates: "code", workflows: "code", audits: "code", departments: "name", authorities: "name" };
   await Promise.all(
     cols.map(async (c) => {
       store[c] = await listCol(c, orderFields[c] || null).catch(() => []);
@@ -97,4 +111,11 @@ export const authOptions = () => store.authorities.map((a) => ({ id: a.id, name:
 // التجمعات الصحية = الإدارات من نوع CLUSTER
 export const clusterOptions = () =>
   store.departments.filter((d) => d.type === "CLUSTER" && d.active !== false).map((d) => ({ id: d.id, name: d.name }));
+
+// موجة التجمع: تعيد { key, label, short, tone, desc } أو null إن لم يُصنَّف
+export function clusterWave(clusterId) {
+  const d = store.departments.find((x) => x.id === clusterId);
+  const key = clusterWaveKey(d?.name, d?.wave);
+  return key ? { key, ...CLUSTER_WAVES[key] } : null;
+}
 export const userOptions = () => store.users.filter((u) => u.active !== false).map((u) => ({ id: u.id, name: u.name || u.email }));

@@ -94,6 +94,24 @@ service cloud.firestore {
       allow write: if isEditor();
     }
 
+    // محاضر الاجتماعات (الأسبوعي + اجتماعات الإدارة مع الأقسام)
+    match /meetings/{id} {
+      allow read: if signedIn();
+      allow write: if isEditor();
+    }
+
+    // مهام الاجتماعات: بند/إجراء له مسؤول وحالة — مصدر واحد للحقيقة عبر كل الاجتماعات
+    match /tasks/{id} {
+      allow read: if signedIn();
+      allow create, delete: if isEditor();
+      // المحرّر يحدّث كل شيء؛ وأي مسؤول عن المهمة (فردي أو ضمن قائمة المسؤولين) يحدّث حالتها فقط
+      allow update: if isEditor()
+        || (signedIn()
+            && (resource.data.assigneeId == request.auth.uid
+                || (resource.data.assigneeIds is list && request.auth.uid in resource.data.assigneeIds))
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'closedAt', 'closedById', 'updatedAt']));
+    }
+
     match /directory/{id} {
       allow read: if signedIn();
       allow write: if isEditor();
@@ -106,7 +124,8 @@ service cloud.firestore {
       allow delete: if isEditor();
     }
 
-    match /meetings/{id} {
+    // اجتماعات الالتزام (مزامنة التقويم والمحاضر الموقّعة) — منفصلة عن اجتماعات الأقسام
+    match /cmeetings/{id} {
       allow read: if signedIn();
       allow write: if isEditor();
     }
@@ -114,6 +133,39 @@ service cloud.firestore {
     match /regChanges/{id} {
       allow read: if signedIn();
       allow write: if isEditor();
+    }
+
+    // ---------- الرصد التنظيمي وإدارة التغيير ----------
+    // مصادر الرصد: يقرأها كل مسجَّل، ويحرّرها المحرر فقط
+    match /regSources/{id} {
+      allow read: if signedIn();
+      allow write: if isEditor();
+    }
+
+    // المستجدات التنظيمية المرصودة: التحرير للمحرر، أما الاعتماد (الانتقال إلى APPROVED)
+    // فمقصور على المعتمِد — بحيث لا يستطيع أخصائي الالتزام دمج مستجد في وحدات النظام
+    match /regUpdates/{id} {
+      allow read: if signedIn();
+      allow create: if isEditor();
+      allow update: if isEditor() &&
+        (request.resource.data.status != 'APPROVED'
+          || resource.data.status == 'APPROVED'
+          || isApprover());
+      allow delete: if isApprover();
+    }
+
+    // سجل عمليات الفحص: تكتبه دوال الخادم (تتجاوز القواعد)، ويُنشئه المعتمِد يدوياً
+    match /regScans/{id} {
+      allow read: if signedIn();
+      allow create, update: if isApprover();
+      allow delete: if false;
+    }
+
+    // التقارير الأسبوعية للرصد التنظيمي
+    match /regReports/{id} {
+      allow read: if signedIn();
+      allow create, update: if isEditor();
+      allow delete: if isApprover();
     }
 
     // مسارات الاعتماد وسير العمل — الأدوار مفروضة في الواجهة، والكتابة للمحرر

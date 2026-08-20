@@ -301,6 +301,7 @@ export function openDetail(id, nav, done) {
     ${r.penalty ? `<p><strong>الغرامة / العقوبة النظامية:</strong><br/><span class="penalty-chip">⚖ ${esc(r.penalty)}</span></p>` : ""}
     ${r.fineAmount ? `<p><strong>الغرامة المتوقعة:</strong> ${esc(fmtSAR(r.fineAmount))}</p>` : ""}
     ${r.source ? `<p class="muted">🤖 ${esc(RISK_SOURCES[r.source] || "أُنشئ آلياً")}${r.regulationId ? ` — من تحليل: ${esc(store.regulations.find((x) => x.id === r.regulationId)?.name || "نظام محذوف")}` : ""}</p>` : ""}
+    ${r.regUpdateId ? `<p class="muted">🛰 المستجد التنظيمي المصدر: <span class="link-item" data-nav="regintel" style="display:inline-block;padding:2px 8px;cursor:pointer"><strong>${esc(store.regUpdates.find((x) => x.id === r.regUpdateId)?.code || r.regUpdateId)}</strong> — ${esc(String(store.regUpdates.find((x) => x.id === r.regUpdateId)?.title || "").slice(0, 80))}</span></p>` : ""}
     <div class="card sub">
       <h3>الضوابط الحالية (${(r.controls || []).length})</h3>
       ${(r.controls || []).map((c) => `<div class="row" style="margin:4px 0"><span class="grow">${esc(c.name)}</span>${c.type ? `<span class="chip">${esc(c.type)}</span>` : ""}<span class="chip">${esc(c.effectiveness || "—")}</span></div>`).join("") || '<p class="muted">لا توجد ضوابط مسجلة</p>'}

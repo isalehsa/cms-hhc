@@ -1,6 +1,6 @@
 // عامل الخدمة — دعم العمل دون اتصال (تخزين هيكل التطبيق) والإشعارات الفورية
 // الإصدار مرتبط بإصدار التطبيق؛ يُحدَّث اسم الكاش لإجبار إعادة التخزين بعد كل نشر.
-const CACHE = "cms-cache-v3.2";
+const CACHE = "cms-cache-20260820f";
 const CORE = ["./", "./index.html", "./manifest.webmanifest", "./icon.svg", "./icon-maskable.svg"];
 
 self.addEventListener("install", (e) => {

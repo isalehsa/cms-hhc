@@ -1,23 +1,44 @@
 // تقييم نضج الالتزام في التجمعات الصحية (ISO 37301)
 // التجمع يقيّم نفسه (0..3 لكل معيار مع الأدلة) ويرسل، ومدير الالتزام في الشركة يراجع
 // ربعياً ويعيد التقييم بناءً على الأدلة الداعمة. النتائج الربعية تظهر للجميع المعنيين.
-import { store, reload, deptName, clusterOptions } from "../state.js";
+import { store, reload, deptName, clusterOptions, clusterWave } from "../state.js";
 import * as db from "../db.js";
 import {
   $, esc, toast, modal, confirmBox, fld, sel, area, val,
-  fmtDate, statusBadgeFrom, levelBadge, progressBar, emptyMsg,
+  fmtDate, statusBadgeFrom, emptyMsg, statTile, donutStat,
+  maturityBar, maturityLevelBadge, maturityColor, waveBadge,
 } from "../ui.js";
+import { CLUSTER_WAVES, CLUSTER_WAVE_ORDER } from "../meta.js";
 import { MATURITY_MODEL, MATURITY_SCALE, MATURITY_STATUS, maturityLevel } from "../meta.js";
 import { canEdit, canApprove, isClusterOfficer } from "../auth.js";
+import { uploadFile, deleteFile } from "../storage.js";
+import { downloadMaturityTemplate, importMaturityExcel, importLegacyMaturityExcel } from "../maturity-xlsx.js";
+
+// فتح منتقي ملفات ويعيد الملف المختار (أو null إن أُلغي)
+function pickFile(accept = "") {
+  return new Promise((resolve) => {
+    const inp = document.createElement("input");
+    inp.type = "file";
+    if (accept) inp.accept = accept;
+    inp.style.display = "none";
+    inp.onchange = () => { const f = inp.files[0] || null; inp.remove(); resolve(f); };
+    document.body.appendChild(inp);
+    inp.click();
+  });
+}
 
 const ST_ROLE = { DRAFT: "neutral", SUBMITTED: "warning", REVIEWED: "good" };
 const tabState = { tab: "list" }; // list | results
+let resultsWave = ""; // فلتر الموجة في لوحة النتائج: "" | ONE | TWO
 
 // نسخة جديدة من النموذج القياسي (40 معياراً) بدرجات صفرية
 function blankDomains() {
   return MATURITY_MODEL.map((d) => ({
     name: d.name, ref: d.ref,
-    criteria: d.criteria.map((text) => ({ text, selfScore: 0, reviewScore: null, evidence: "", note: "" })),
+    criteria: d.criteria.map((text) => ({
+      text, selfScore: 0, reviewScore: null, evidence: "", note: "",
+      evidenceFileUrl: "", evidenceFileName: "", evidenceFilePath: "",
+    })),
   }));
 }
 
@@ -36,6 +57,29 @@ function overallPct(m, useReview) {
 }
 // النتيجة المعتمدة: بعد المراجعة إن روجِع، وإلا التقييم الذاتي
 const finalPct = (m) => overallPct(m, m.status === "REVIEWED");
+// نسبة تقييم التجمع (ذاتي) ونسبة ما بعد مراجعة إدارة الالتزام
+const selfPct = (m) => overallPct(m, false);
+const reviewedPct = (m) => overallPct(m, true);
+const isReviewed = (m) => m.status === "REVIEWED";
+
+// ---------- إعادة الترقيم التلقائي (MAT-0001 متسلسلة بلا فجوات) ----------
+const matCode = (i) => `MAT-${String(i + 1).padStart(4, "0")}`;
+// ترتيب زمني ثابت لإسناد الأرقام حسب تسلسل الإنشاء
+const byCreated = (a, b) => (a.createdAt || "").localeCompare(b.createdAt || "") || (a.code || "").localeCompare(b.code || "");
+function needsRenumber() {
+  const rows = store.maturity.slice().sort(byCreated);
+  return rows.some((m, i) => m.code !== matCode(i));
+}
+async function renumberMaturity() {
+  const rows = store.maturity.slice().sort(byCreated);
+  let changed = 0;
+  for (let i = 0; i < rows.length; i++) {
+    const code = matCode(i);
+    if (rows[i].code !== code) { await db.setFields("maturity", rows[i].id, { code }); changed++; }
+  }
+  return changed;
+}
+let renumberChecked = false;
 
 // التجمع المرتبط بالمستخدم (لمسؤول التزام التجمع)
 const myClusterId = () => store.user?.departmentId || null;
@@ -45,6 +89,12 @@ export function renderMaturity(el, nav, refresh) {
   const officer = isClusterOfficer(user);
   const manager = canApprove(user);
   const rerender = () => renderMaturity(el, nav, refresh);
+
+  // إصلاح فجوات الترقيم تلقائياً مرة واحدة (بعد الحذف) — للمحرّرين فقط
+  if (!renumberChecked && canEdit(user) && needsRenumber()) {
+    renumberChecked = true;
+    renumberMaturity().then((n) => { if (n) return reload("maturity").then(rerender); }).catch(() => {});
+  }
 
   // مسؤول التجمع يرى تقييمات تجمعه فقط
   let rows = store.maturity.slice();
@@ -71,6 +121,7 @@ export function renderMaturity(el, nav, refresh) {
   if (tabState.tab === "results") {
     el.innerHTML = head + renderResults(rows);
     bind();
+    el.querySelectorAll("[data-wave]").forEach((b) => (b.onclick = () => { resultsWave = b.dataset.wave; rerender(); }));
     return;
   }
 
@@ -79,7 +130,7 @@ export function renderMaturity(el, nav, refresh) {
       <div style="overflow-x:auto">
         <table>
           <thead><tr>
-            <th>الرقم</th><th>التجمع</th><th>الفترة</th><th>النضج المعتمد</th><th>المستوى</th><th>الحالة</th><th>آخر تحديث</th>
+            <th>الرقم</th><th>التجمع</th><th>الموجة</th><th>الفترة</th><th>النضج المعتمد</th><th>المستوى</th><th>الحالة</th><th>آخر تحديث</th>
           </tr></thead>
           <tbody>
             ${rows.map((m) => {
@@ -88,13 +139,14 @@ export function renderMaturity(el, nav, refresh) {
               return `<tr class="rowlink" data-open="${m.id}">
                 <td><strong>${esc(m.code)}</strong></td>
                 <td>${esc(deptName(m.clusterId))}</td>
+                <td>${waveBadge(clusterWave(m.clusterId))}</td>
                 <td>الربع ${m.quarter} / ${m.year}</td>
-                <td style="min-width:130px">${progressBar(pct)}</td>
-                <td>${levelBadge(lvl.key, lvl.label)}</td>
+                <td style="min-width:130px">${maturityBar(pct)}</td>
+                <td>${maturityLevelBadge(pct, lvl.label)}</td>
                 <td>${statusBadgeFrom(MATURITY_STATUS, m.status, ST_ROLE)}</td>
                 <td>${fmtDate(m.updatedAt || m.createdAt)}</td>
               </tr>`;
-            }).join("") || `<tr><td colspan="7">${emptyMsg(officer ? "لا توجد تقييمات لتجمعك بعد — ابدأ بـ «تقييم جديد»" : "لا توجد تقييمات بعد")}</td></tr>`}
+            }).join("") || `<tr><td colspan="8">${emptyMsg(officer ? "لا توجد تقييمات لتجمعك بعد — ابدأ بـ «تقييم جديد»" : "لا توجد تقييمات بعد")}</td></tr>`}
           </tbody>
         </table>
       </div>
@@ -105,40 +157,139 @@ export function renderMaturity(el, nav, refresh) {
   );
 }
 
-// نتائج ربعية: مصفوفة المحاور × التجمعات لأحدث تقييم معتمد لكل تجمع
+// خلية نسبة ملوّنة بتدرّج النضج
+const pctCell = (p) => `<span class="lvl" style="background:${maturityColor(p)};border-color:transparent;color:#fff;font-weight:700">${p}%</span>`;
+
+// لوحة النتائج الربعية (داش بورد): مؤشرات + توزيع المستويات + مصفوفة المحاور
+// مع نسبة تقييم التجمع (ذاتي) ونسبة ما بعد مراجعة إدارة الالتزام
 function renderResults(rows) {
-  const reviewed = rows.filter((m) => m.status === "REVIEWED" || m.status === "SUBMITTED");
-  // أحدث تقييم لكل تجمع
+  const considered = rows.filter((m) => m.status === "REVIEWED" || m.status === "SUBMITTED");
   const latest = {};
-  for (const m of reviewed) {
+  for (const m of considered) {
     const k = m.clusterId;
     if (!latest[k] || (m.year * 4 + m.quarter) > (latest[k].year * 4 + latest[k].quarter)) latest[k] = m;
   }
-  const items = Object.values(latest);
-  if (!items.length) return `<section class="card">${emptyMsg("لا توجد نتائج معتمدة بعد")}</section>`;
+  const allItems = Object.values(latest);
+  if (!allItems.length) return `<section class="card">${emptyMsg("لا توجد نتائج بعد — تظهر هنا التقييمات المُرسلة أو المعتمدة")}</section>`;
+
+  const avg = (arr) => (arr.length ? Math.round(arr.reduce((s, x) => s + x, 0) / arr.length) : 0);
+
+  // تجميع حسب الموجة (للملخّص المقارن بين الموجات)
+  const groups = {};
+  CLUSTER_WAVE_ORDER.forEach((k) => (groups[k] = []));
+  for (const m of allItems) (groups[clusterWave(m.clusterId)?.key || "PREP"]).push(m);
+  const presentWaves = CLUSTER_WAVE_ORDER.filter((k) => groups[k].length);
+  const waveCard = (key) => {
+    const g = groups[key], rev = g.filter(isReviewed), meta = CLUSTER_WAVES[key];
+    return `<div class="card sub" style="flex:1;min-width:230px;margin:0;border-top:3px solid ${meta.color}">
+      <div class="row" style="justify-content:space-between;align-items:center">
+        <strong style="color:${meta.color}">${esc(meta.label)}</strong><span class="chip">${g.length} تجمع</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px">
+        ${donutStat(g.length ? avg(g.map(selfPct)) : null, "متوسط الذاتي")}
+        ${donutStat(rev.length ? avg(rev.map(reviewedPct)) : null, "بعد المراجعة", rev.length ? `${rev.length} معتمد` : "لا يوجد")}
+      </div></div>`;
+  };
+  const waveSummary = presentWaves.length
+    ? `<div class="row" style="gap:12px;flex-wrap:wrap;margin-bottom:14px">${presentWaves.map(waveCard).join("")}</div>` : "";
+
+  // فلتر الموجة
+  const btn = (v, label) => `<button class="subtab ${resultsWave === v ? "active" : ""}" data-wave="${v}">${label}</button>`;
+  const waveFilter = `<div class="subtabs" style="margin-bottom:12px">
+    ${btn("", "كل التجمعات")}${presentWaves.map((k) => btn(k, CLUSTER_WAVES[k].short)).join("")}
+  </div>`;
+
+  const items = resultsWave ? allItems.filter((m) => (clusterWave(m.clusterId)?.key || "PREP") === resultsWave) : allItems;
+  const reviewedItems = items.filter(isReviewed);
+  const avgSelf = avg(items.map(selfPct));
+  const avgRev = avg(reviewedItems.map(reviewedPct));
+
+  const lc = { good: 0, warning: 0, serious: 0, critical: 0 };
+  for (const m of items) lc[maturityLevel(finalPct(m)).key]++;
+  const dist = [
+    { label: "رائد", count: lc.good, color: maturityColor(90) },
+    { label: "متقدم", count: lc.warning, color: maturityColor(63) },
+    { label: "نامٍ", count: lc.serious, color: maturityColor(38) },
+    { label: "مبتدئ", count: lc.critical, color: maturityColor(12) },
+  ];
+  const distSeg = dist.filter((d) => d.count > 0)
+    .map((d) => `<div style="flex:${d.count};background:${d.color}" title="${d.label}: ${d.count}"></div>`).join("")
+    || '<div style="flex:1;background:rgba(120,130,125,.15)"></div>';
+  const distLegend = dist.map((d) => `<span class="lvl" style="background:${d.color}1f;border-color:transparent;color:${d.color}"><span class="dot" style="background:${d.color}"></span>${d.label} <strong>${d.count}</strong></span>`).join(" ");
+
+  const tiles = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:14px">
+    ${statTile(items.length, "تجمعات في العرض")}
+    ${donutStat(avgSelf, "متوسط تقييم التجمعات", "التقييم الذاتي")}
+    ${donutStat(reviewedItems.length ? avgRev : null, "متوسط بعد المراجعة", reviewedItems.length ? `${reviewedItems.length} تقييم معتمد` : "لا يوجد معتمد بعد")}
+    ${statTile(reviewedItems.length, "تقييمات معتمدة", `${items.length - reviewedItems.length} بانتظار المراجعة`)}
+  </div>`;
 
   const domNames = MATURITY_MODEL.map((d) => d.name);
+
+  // فجوات النضج حسب المحاور: متوسط كل محور عبر التجمعات، الأضعف أولاً
+  const domGaps = domNames.map((dn) => {
+    const scores = items.map((m) => {
+      const dom = (m.domains || []).find((d) => d.name === dn);
+      return dom ? domainPct(dom, isReviewed(m)) : null;
+    }).filter((x) => x != null);
+    const av = scores.length ? Math.round(scores.reduce((s, x) => s + x, 0) / scores.length) : 0;
+    return { name: dn, avg: av, gap: 100 - av, n: scores.length };
+  }).sort((a, b) => a.avg - b.avg);
+  const weakest = domGaps.filter((d) => d.n).slice(0, 3);
+  const gapBars = domGaps.map((d) => {
+    const c = maturityColor(d.avg);
+    return `<div class="hbar-row" data-tip="${esc(d.name)} — متوسط النضج ${d.avg}٪ · الفجوة ${d.gap}٪ (${d.n} تجمع)">
+      <span class="hbar-lbl" style="min-width:170px">${esc(d.name)}</span>
+      <span class="hbar-track"><span class="hbar-fill" style="width:${Math.max(3, d.avg)}%;background:${c}"></span></span>
+      <span class="hbar-num" style="color:${c}">${d.avg}٪</span>
+    </div>`;
+  }).join("");
+  const gapsCard = items.length ? `
+    <section class="card">
+      <h2>🔎 فجوات النضج حسب المحاور</h2>
+      <p class="muted" style="margin-top:0">متوسط نضج كل محور عبر التجمعات المعروضة — الأضعف أولاً (الأقل نضجاً = الأكبر فجوةً)</p>
+      ${weakest.length ? `<div class="scale-note">أبرز فجوات النضج في: ${weakest.map((d) => `<strong style="color:${maturityColor(d.avg)}">«${esc(d.name)}» (${d.avg}٪)</strong>`).join(" · ")} — تستحق أولوية التطوير</div>` : ""}
+      <div class="hbars">${gapBars}</div>
+    </section>` : "";
+
   const rowsHtml = items
     .sort((a, b) => finalPct(b) - finalPct(a))
     .map((m) => {
       const cells = domNames.map((dn) => {
         const dom = (m.domains || []).find((d) => d.name === dn);
         if (!dom) return `<td class="muted">—</td>`;
-        const p = domainPct(dom, m.status === "REVIEWED");
-        const lvl = maturityLevel(p);
-        return `<td class="hm-cell hm-${lvl.key}" data-tip="${esc(dn)}: ${p}%">${p}%</td>`;
+        const p = domainPct(dom, isReviewed(m));
+        const c = maturityColor(p);
+        return `<td class="hm-cell" style="background:${c}22;color:${c};font-weight:700" data-tip="${esc(dn)}: ${p}%">${p}%</td>`;
       }).join("");
-      const tot = finalPct(m);
-      return `<tr><td><strong>${esc(deptName(m.clusterId))}</strong><div class="muted">ر${m.quarter}/${m.year}</div></td>${cells}
-        <td>${levelBadge(maturityLevel(tot).key, `${tot}%`)}</td></tr>`;
+      const sp = selfPct(m);
+      const revCell = isReviewed(m)
+        ? `<td>${pctCell(reviewedPct(m))}</td>`
+        : `<td class="muted" data-tip="لم تُراجع من إدارة الالتزام بعد">— بانتظار</td>`;
+      return `<tr>
+        <td><strong>${esc(deptName(m.clusterId))}</strong><div class="muted" style="font-size:.72rem">ر${m.quarter}/${m.year} · ${esc(MATURITY_STATUS[m.status] || m.status)}</div></td>
+        <td>${waveBadge(clusterWave(m.clusterId))}</td>
+        ${cells}<td>${pctCell(sp)}</td>${revCell}</tr>`;
     }).join("");
 
   return `
     <section class="card">
+      <h2>لوحة نتائج النضج الربعية</h2>
+      <h3 style="margin:4px 0 8px">مقارنة الموجتين</h3>
+      ${waveSummary || '<p class="muted">لم تُصنَّف التجمعات إلى موجات بعد</p>'}
+      ${waveFilter}
+      ${tiles}
+      <h3 style="margin:6px 0">توزيع التجمعات حسب مستوى النضج</h3>
+      <div style="display:flex;height:16px;border-radius:8px;overflow:hidden;margin:6px 0">${distSeg}</div>
+      <div class="row" style="gap:8px;flex-wrap:wrap;margin-bottom:6px">${distLegend}</div>
+    </section>
+    ${gapsCard}
+    <section class="card">
       <h2>مصفوفة النضج حسب المحاور (أحدث تقييم لكل تجمع)</h2>
+      <p class="muted" style="margin-top:0">«تقييم التجمع» = التقييم الذاتي · «بعد المراجعة» = النتيجة المعتمدة من إدارة الالتزام</p>
       <div style="overflow-x:auto">
         <table class="mat-matrix">
-          <thead><tr><th>التجمع</th>${domNames.map((n) => `<th style="font-size:.72rem">${esc(n)}</th>`).join("")}<th>الإجمالي</th></tr></thead>
+          <thead><tr><th>التجمع</th><th>الموجة</th>${domNames.map((n) => `<th style="font-size:.72rem">${esc(n)}</th>`).join("")}<th>تقييم التجمع</th><th>بعد المراجعة</th></tr></thead>
           <tbody>${rowsHtml}</tbody>
         </table>
       </div>
@@ -172,8 +323,9 @@ function openCreate(done, officer) {
       return toast("يوجد تقييم لهذا التجمع في نفس الربع — افتحه وعدّله", true);
     }
     try {
-      const code = await db.nextCode("MAT");
-      const row = await db.setRow("maturity", code, {
+      // ترقيم متسلسل بلا فجوات؛ معرّف الوثيقة مستقل عن الرمز حتى تصح إعادة الترقيم لاحقاً
+      const code = matCode(store.maturity.length);
+      const row = await db.setRow("maturity", db.newId("MAT"), {
         code, clusterId, year, quarter, status: "DRAFT",
         domains: blankDomains(), reviewNotes: null, reviewedById: null,
         createdById: store.user.uid, createdAt: db.now(), updatedAt: db.now(),
@@ -196,6 +348,12 @@ export function openDetail(id, done) {
   const canSelfEdit = officer && m.status === "DRAFT";
   const canReview = manager && (m.status === "SUBMITTED" || m.status === "REVIEWED");
   const useReview = m.status === "REVIEWED";
+  // مدير/فريق الالتزام يمكنه استيراد التقييم الذاتي من Excel نيابةً عن التجمع
+  const canSelfImport = canSelfEdit || canEdit(user);
+  // مدير الالتزام يمكنه اعتماد التقييم الذاتي مباشرةً حتى وهو مسودة (دون انتظار إرسال التجمع)
+  const canAdoptDraft = manager && m.status === "DRAFT";
+  // مدير الالتزام يمكنه التراجع عن اعتماد تقييم معتمد وإعادته إلى «بانتظار المراجعة»
+  const canUndoReview = manager && m.status === "REVIEWED";
 
   const domHtml = (m.domains || []).map((dom, di) => {
     const p = domainPct(dom, useReview);
@@ -206,20 +364,34 @@ export function openDetail(id, done) {
       const reviewCell = canReview
         ? `<select class="mt-review" data-d="${di}" data-c="${ci}"><option value="">— كالذاتي —</option>${[0, 1, 2, 3].map((n) => `<option value="${n}" ${c.reviewScore === n ? "selected" : ""}>${n}</option>`).join("")}</select>`
         : (c.reviewScore != null ? `<span class="chip chip-auto">مراجعة: ${c.reviewScore}</span>` : "");
-      const evCell = canSelfEdit
-        ? `<input type="text" class="mt-ev" data-d="${di}" data-c="${ci}" placeholder="رابط الدليل الداعم" value="${esc(c.evidence || "")}" />`
-        : (c.evidence ? `<a href="${esc(c.evidence)}" target="_blank" rel="noopener">📎 دليل</a>` : '<span class="muted">لا دليل</span>');
+      const fileLink = c.evidenceFileUrl
+        ? `<a href="${esc(c.evidenceFileUrl)}" target="_blank" rel="noopener">📎 ${esc(c.evidenceFileName || "ملف الدليل")}</a>`
+        : "";
+      let evCell;
+      if (canSelfEdit) {
+        evCell = `<input type="text" class="mt-ev" data-d="${di}" data-c="${ci}" placeholder="رابط الدليل الداعم" value="${esc(c.evidence || "")}" />
+          <div class="row" style="margin-top:5px;gap:6px;align-items:center;flex-wrap:wrap">
+            <button type="button" class="secondary mt-upload" data-d="${di}" data-c="${ci}" title="رفع ملف الدليل الداعم لهذا البند">📤 رفع ملف</button>
+            ${fileLink}
+            ${c.evidenceFileUrl ? `<button type="button" class="danger mt-delfile" data-d="${di}" data-c="${ci}" title="إزالة الملف المرفوع">✕</button>` : ""}
+          </div>`;
+      } else {
+        const parts = [];
+        if (c.evidence) parts.push(`<a href="${esc(c.evidence)}" target="_blank" rel="noopener">📎 رابط</a>`);
+        if (fileLink) parts.push(fileLink);
+        evCell = parts.join(" · ") || '<span class="muted">لا دليل</span>';
+      }
       return `<tr>
         <td>${esc(c.text)}</td>
         <td>${scoreCell}</td>
         <td>${reviewCell}</td>
-        <td style="min-width:160px">${evCell}</td>
+        <td style="min-width:180px">${evCell}</td>
       </tr>`;
     }).join("");
     return `<div class="card sub">
       <div class="row" style="justify-content:space-between">
         <h3>${di + 1}. ${esc(dom.name)} <span class="muted" style="font-weight:normal">(${esc(dom.ref)})</span></h3>
-        <span>${levelBadge(maturityLevel(p).key, `${p}%`)}</span>
+        <span>${maturityLevelBadge(p, `${p}% — ${maturityLevel(p).label}`)}</span>
       </div>
       <div style="overflow-x:auto"><table>
         <thead><tr><th>المعيار</th><th>التقييم الذاتي (0-3)</th><th>مراجعة الشركة</th><th>الدليل الداعم</th></tr></thead>
@@ -229,19 +401,50 @@ export function openDetail(id, done) {
   }).join("");
 
   const pct = finalPct(m);
+  // يمكن إضافة/تعديل رابط مجلد الأدلة في أي حالة قبل الاعتماد وبعده:
+  // مسؤول التجمع أثناء المسودة، وفريق الالتزام (المحررون) في جميع الحالات
+  const repoEditable = canSelfEdit || canReview || canEdit(user);
+  const repoBlock = `
+    <div class="card sub">
+      <div class="row" style="justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap">
+        <div style="flex:1;min-width:240px">
+          ${fld("🔗 مجلد الأدلة (رابط واحد)", repoEditable
+            ? `<input type="url" id="mt-repo" placeholder="https://…" value="${esc(m.evidenceRepo || "")}" />`
+            : (m.evidenceRepo
+              ? `<a href="${esc(m.evidenceRepo)}" target="_blank" rel="noopener">${esc(m.evidenceRepo)}</a>`
+              : '<span class="muted">لم يُحدَّد رابط المجلد بعد</span>'))}
+        </div>
+        <div class="row" style="gap:6px;flex-wrap:wrap">
+          ${repoEditable ? '<button class="secondary" id="mt-saverepo" title="حفظ رابط مجلد الأدلة">💾 حفظ الرابط</button>' : ""}
+          ${canEdit(user) ? '<button class="secondary" id="mt-email" title="إرسال بريد إلكتروني يحتوي رسالة ورابط المجلد">✉ إرسال بريد</button>' : ""}
+        </div>
+      </div>
+      <div class="row" style="margin-top:10px;gap:6px;flex-wrap:wrap">
+        <button class="secondary" id="mt-xls-tpl" title="تنزيل نموذج Excel معبّأ بالقيم الحالية لتعبئته">⬇ تنزيل نموذج Excel</button>
+        ${canSelfImport ? `<button class="secondary" id="mt-xls-imp" title="رفع ملف Excel معبّأ وعكس التقييم الذاتي والأدلة على النظام${canSelfEdit ? "" : " (نيابةً عن التجمع)"}">⬆ استيراد التقييم من Excel</button>` : ""}
+        ${canReview ? '<button class="secondary" id="mt-xls-impr" title="رفع ملف Excel وعكس درجات مراجعة الشركة على النظام">⬆ استيراد المراجعة من Excel</button>' : ""}
+        ${canEdit(user) ? '<button class="secondary" id="mt-xls-legacy" title="استيراد قيم التقييم من ملف النموذج القديم (ورقة نموذج التقييم) وعكسها على التقييم الذاتي">⬆ استيراد من النموذج القديم</button>' : ""}
+      </div>
+    </div>`;
+
   const ov = modal(`
     <div class="row" style="justify-content:space-between">
       <h2>${esc(m.code)} — ${esc(deptName(m.clusterId))}</h2>
       <span>${statusBadgeFrom(MATURITY_STATUS, m.status, ST_ROLE)}</span>
     </div>
-    <p class="muted">الربع ${m.quarter} / ${m.year} · النضج المعتمد: ${levelBadge(maturityLevel(pct).key, `${pct}٪ — ${maturityLevel(pct).label}`)}</p>
+    <p class="muted">الربع ${m.quarter} / ${m.year} · النضج المعتمد: ${maturityLevelBadge(pct, `${pct}٪ — ${maturityLevel(pct).label}`)}</p>
+    <div style="max-width:320px;margin:6px 0 4px">${maturityBar(pct)}</div>
     <div class="scale-note muted">مقياس التقييم: ${Object.entries(MATURITY_SCALE).map(([k, v]) => `<strong>${k}</strong>=${esc(v)}`).join(" · ")}</div>
+    ${repoBlock}
     ${domHtml}
     ${canReview ? fld("ملاحظات المراجعة الربعية", area("mt-rnotes", m.reviewNotes, "قرار المراجعة والملاحظات على الأدلة", 2)) : m.reviewNotes ? `<p><strong>ملاحظات المراجعة:</strong> ${esc(m.reviewNotes)}</p>` : ""}
     <div class="row" style="margin-top:14px">
       ${canSelfEdit ? '<button id="mt-savedraft" class="secondary">حفظ مؤقت</button><button id="mt-submit">📤 إرسال للمراجعة</button>' : ""}
+      ${canAdoptDraft ? '<button class="secondary" id="mt-approvedraft" title="اعتماد المسودة ونقلها إلى «بانتظار المراجعة» — دون اعتماد مراجعة نهائية">✔ اعتماد المسودة</button>' : ""}
+      ${canAdoptDraft ? '<button id="mt-adopt" title="اعتماد التقييم الذاتي الحالي كنتيجة معتمدة نهائية دون انتظار إرسال التجمع">✔ اعتماد التقييم الذاتي</button>' : ""}
       ${canReview ? '<button id="mt-review">✔ اعتماد المراجعة الربعية</button>' : ""}
-      ${(canEdit(user) || officer) && m.status !== "REVIEWED" ? '<button class="danger" id="mt-del">حذف</button>' : ""}
+      ${canUndoReview ? '<button class="secondary" id="mt-undo" title="التراجع عن اعتماد التقييم وإعادته إلى بانتظار المراجعة">↩ تراجع عن الاعتماد</button>' : ""}
+      ${(canEdit(user) || (officer && m.status !== "REVIEWED")) ? '<button class="danger" id="mt-del">حذف</button>' : ""}
       <button class="secondary" id="mt-close">إغلاق</button>
     </div>`, { wide: true });
 
@@ -258,6 +461,101 @@ export function openDetail(id, done) {
     ov.querySelectorAll(".mt-review").forEach((s) => { doms[s.dataset.d].criteria[s.dataset.c].reviewScore = s.value === "" ? null : Number(s.value); });
     return doms;
   };
+  // إعادة فتح النافذة بعد تعديل يُخزَّن مباشرة (رفع ملف / استيراد Excel)
+  const reopen = async () => { await reload("maturity"); ov.remove(); openDetail(m.id, done); };
+
+  // ---- مجلد الأدلة: حفظ الرابط الواحد ----
+  $("#mt-saverepo", ov)?.addEventListener("click", async () => {
+    const url = val("mt-repo", ov);
+    if (url && !/^https?:\/\//i.test(url)) return toast("أدخل رابطاً صحيحاً يبدأ بـ http أو https", true);
+    await db.updateRow("maturity", m.id, { evidenceRepo: url || null });
+    await db.audit("UPDATE", "Maturity", m.code, `تحديث رابط مجلد الأدلة — ${deptName(m.clusterId)}`);
+    m.evidenceRepo = url || null;
+    toast("حُفظ رابط المجلد");
+  });
+
+  // ---- إرسال بريد إلكتروني بمجلد الأدلة ----
+  $("#mt-email", ov)?.addEventListener("click", () => {
+    const repo = (ov.querySelector("#mt-repo")?.value?.trim()) || m.evidenceRepo || "";
+    openEmailModal(m, repo);
+  });
+
+  // ---- تنزيل نموذج Excel ----
+  $("#mt-xls-tpl", ov)?.addEventListener("click", async () => {
+    try { await downloadMaturityTemplate(m, deptName(m.clusterId)); toast("جارٍ تنزيل النموذج"); }
+    catch (err) { toast(err.message, true); }
+  });
+
+  // ---- استيراد التقييم/المراجعة من Excel ----
+  const doImport = async (mode) => {
+    const file = await pickFile(".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    if (!file) return;
+    toast("جارٍ قراءة الملف…");
+    try {
+      const { domains, applied, total } = await importMaturityExcel(file, m, mode);
+      await db.updateRow("maturity", m.id, { domains });
+      await db.audit("UPDATE", "Maturity", m.code, `عكس ${mode === "review" ? "مراجعة" : "تقييم"} من Excel — ${deptName(m.clusterId)}`);
+      toast(`تم عكس ${applied} من ${total} معياراً من الملف`);
+      await reopen();
+    } catch (err) { toast(err.message, true); }
+  };
+  $("#mt-xls-imp", ov)?.addEventListener("click", () => doImport("self"));
+  $("#mt-xls-impr", ov)?.addEventListener("click", () => doImport("review"));
+
+  // ---- استيراد قيم التقييم من النموذج القديم ----
+  $("#mt-xls-legacy", ov)?.addEventListener("click", async () => {
+    const file = await pickFile(".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    if (!file) return;
+    toast("جارٍ قراءة الملف…");
+    try {
+      const { domains, applied, total } = await importLegacyMaturityExcel(file, m);
+      await db.updateRow("maturity", m.id, { domains });
+      await db.audit("UPDATE", "Maturity", m.code, `عكس التقييم من النموذج القديم — ${deptName(m.clusterId)}`);
+      toast(`تم عكس ${applied} من ${total} معياراً من النموذج القديم`);
+      await reopen();
+    } catch (err) { toast(err.message, true); }
+  });
+
+  // ---- رفع ملف دليل داعم لكل بند على حدة ----
+  ov.querySelectorAll(".mt-upload").forEach((btn) => btn.addEventListener("click", async () => {
+    const di = Number(btn.dataset.d), ci = Number(btn.dataset.c);
+    const file = await pickFile();
+    if (!file) return;
+    btn.disabled = true;
+    const original = btn.textContent;
+    btn.textContent = "⏳ جارٍ الرفع…";
+    try {
+      const path = `maturity/${m.id}/${di}-${ci}-${Date.now()}-${file.name}`;
+      const { url, name } = await uploadFile(path, file);
+      const doms = readSelf(); // نحفظ التعديلات الحالية غير المخزّنة قبل إعادة البناء
+      const crit = doms[di].criteria[ci];
+      const oldPath = crit.evidenceFilePath;
+      crit.evidenceFileUrl = url; crit.evidenceFileName = name; crit.evidenceFilePath = path;
+      await db.updateRow("maturity", m.id, { domains: doms });
+      if (oldPath) await deleteFile(oldPath);
+      await db.audit("UPDATE", "Maturity", m.code, `رفع ملف دليل داعم لبند — ${deptName(m.clusterId)}`);
+      toast("رُفع الملف");
+      await reopen();
+    } catch (err) {
+      btn.disabled = false; btn.textContent = original;
+      toast(err.message, true);
+    }
+  }));
+
+  // ---- إزالة ملف دليل مرفوع ----
+  ov.querySelectorAll(".mt-delfile").forEach((btn) => btn.addEventListener("click", async () => {
+    const di = Number(btn.dataset.d), ci = Number(btn.dataset.c);
+    if (!(await confirmBox("إزالة الملف المرفوع لهذا البند؟"))) return;
+    const doms = readSelf();
+    const crit = doms[di].criteria[ci];
+    const oldPath = crit.evidenceFilePath;
+    crit.evidenceFileUrl = ""; crit.evidenceFileName = ""; crit.evidenceFilePath = "";
+    await db.updateRow("maturity", m.id, { domains: doms });
+    if (oldPath) await deleteFile(oldPath);
+    await db.audit("UPDATE", "Maturity", m.code, `إزالة ملف دليل داعم لبند — ${deptName(m.clusterId)}`);
+    toast("أُزيل الملف");
+    await reopen();
+  }));
 
   $("#mt-savedraft", ov)?.addEventListener("click", async () => {
     await db.updateRow("maturity", m.id, { domains: readSelf() });
@@ -276,11 +574,128 @@ export function openDetail(id, done) {
     await db.audit("REVIEW", "Maturity", m.code, `اعتماد المراجعة الربعية وإعادة التقييم — ${deptName(m.clusterId)}`);
     await reload("maturity"); ov.remove(); toast("اعتُمدت المراجعة الربعية"); done();
   });
+  // التراجع عن الاعتماد: يعيد التقييم المعتمد إلى «بانتظار المراجعة» مع حفظ الدرجات والملاحظات
+  $("#mt-undo", ov)?.addEventListener("click", async () => {
+    if (!(await confirmBox("التراجع عن اعتماد التقييم وإعادته إلى «بانتظار المراجعة»؟"))) return;
+    await db.updateRow("maturity", m.id, { status: "SUBMITTED", reviewedById: null });
+    await db.audit("UPDATE", "Maturity", m.code, `تراجع عن اعتماد التقييم — ${deptName(m.clusterId)}`);
+    await reload("maturity"); ov.remove(); toast("تم التراجع عن الاعتماد"); done();
+  });
+  // اعتماد المسودة: نقلها إلى «بانتظار المراجعة» فقط (ليس اعتماد مراجعة نهائية)
+  $("#mt-approvedraft", ov)?.addEventListener("click", async () => {
+    if (!(await confirmBox("اعتماد المسودة ونقلها إلى «بانتظار المراجعة»؟ (دون اعتماد مراجعة نهائية)"))) return;
+    await db.updateRow("maturity", m.id, { status: "SUBMITTED", submittedAt: m.submittedAt || db.now() });
+    await db.audit("SUBMIT", "Maturity", m.code, `اعتماد المسودة (بانتظار المراجعة) — ${deptName(m.clusterId)}`);
+    await reload("maturity"); ov.remove(); toast("اعتُمدت المسودة"); done();
+  });
+  // اعتماد التقييم الذاتي مباشرةً من المسودة: تُعتمد درجات التجمع كما هي نتيجةً معتمدة
+  $("#mt-adopt", ov)?.addEventListener("click", async () => {
+    if (!(await confirmBox("اعتماد التقييم الذاتي الحالي (مسودة) كنتيجة معتمدة، دون انتظار إرسال التجمع؟"))) return;
+    await db.updateRow("maturity", m.id, {
+      status: "REVIEWED",
+      reviewNotes: m.reviewNotes || "اعتُمد التقييم الذاتي كما هو من قبل إدارة الالتزام",
+      reviewedById: user.uid,
+      submittedAt: m.submittedAt || db.now(),
+    });
+    await db.audit("REVIEW", "Maturity", m.code, `اعتماد التقييم الذاتي من مسودة — ${deptName(m.clusterId)}`);
+    await reload("maturity"); ov.remove(); toast("اعتُمد التقييم الذاتي"); done();
+  });
   $("#mt-del", ov)?.addEventListener("click", async () => {
     ov.remove();
     if (!(await confirmBox(`حذف تقييم ${m.code}؟`))) return;
     await db.removeRow("maturity", m.id);
     await db.audit("DELETE", "Maturity", m.code, `حذف تقييم نضج ${m.code}`);
-    await reload("maturity"); toast("تم الحذف"); done();
+    await reload("maturity");
+    await renumberMaturity();      // إعادة الترقيم تلقائياً بعد الحذف
+    await reload("maturity");
+    toast("تم الحذف وإعادة الترقيم"); done();
   });
+}
+
+// نافذة إرسال بريد إلكتروني يحتوي رسالة ورابط مجلد الأدلة
+// يفتح تطبيق البريد لدى المستخدم عبر رابط mailto (النظام مستضاف كموقع ثابت بلا خادم بريد)
+function openEmailModal(m, repo = "") {
+  const cluster = deptName(m.clusterId);
+  const subject = `أدلة تقييم نضج الالتزام — ${cluster} — الربع ${m.quarter}/${m.year}`;
+  const body =
+    `الأعزاء في إدارة الالتزام في ${cluster}،\n` +
+    `تحية طيبة،،\n\n` +
+    `مرفق رابط مجلد الأدلة الداعمة لتقييم نضج الالتزام الخاص بـ«${cluster}» للربع ${m.quarter}/${m.year}:\n` +
+    `${repo || "(لم يُحدَّد رابط المجلد بعد — يُرجى تحديده ثم إعادة الإرسال)"}\n\n` +
+    `وتفضلوا بقبول فائق الاحترام والتقدير.`;
+
+  // جهات الاتصال من دليل التواصل التي لديها بريد (الرسمي أولاً ضمن التسمية)، وجهات
+  // التجمع المعنيّ بالتقييم تظهر في الأعلى لتسهيل الاختيار
+  const seen = new Set();
+  const contacts = [];
+  for (const c of store.directory) {
+    for (const [email, kind] of [[c.email, ""], [c.officialEmail, " (بريد رسمي)"]]) {
+      const addr = (email || "").trim();
+      if (!addr || seen.has(addr)) continue;
+      seen.add(addr);
+      const cl = (c.cluster || "").trim();
+      contacts.push({
+        email: addr,
+        label: `${c.name || cl || "—"}${cl ? " — " + cl : ""}${kind} · ${addr}`,
+        same: cl === cluster.trim(),
+      });
+    }
+  }
+  contacts.sort((a, b) => (b.same - a.same) || a.label.localeCompare(b.label, "ar"));
+
+  const pickerField = contacts.length
+    ? fld("اختيار من دليل التواصل", `<select id="em-pick"><option value="">— اختر جهة لإضافة بريدها —</option>${contacts.map((c) => `<option value="${esc(c.email)}">${esc(c.label)}</option>`).join("")}</select>`)
+    : `<p class="muted">لا توجد جهات ذات بريد في دليل التواصل — أدخل البريد يدوياً.</p>`;
+
+  const ov = modal(`
+    <h2>✉ إرسال بريد بمجلد الأدلة</h2>
+    ${pickerField}
+    <div class="form-grid">
+      ${fld("إلى (البريد الإلكتروني)", '<input type="email" id="em-to" placeholder="name@example.com — يمكن إضافة أكثر من بريد بفاصلة" />')}
+      ${fld("الموضوع", `<input type="text" id="em-subject" value="${esc(subject)}" />`)}
+    </div>
+    ${fld("رابط المجلد", `<input type="url" id="em-repo" value="${esc(repo)}" placeholder="https://…" />`)}
+    ${fld("نص الرسالة", area("em-body", body, "", 7))}
+    <p class="muted">سيُفتح تطبيق البريد لديك برسالة جاهزة تتضمّن الرابط — راجعها ثم أرسلها.</p>
+    <div class="row" style="margin-top:12px;gap:6px;flex-wrap:wrap">
+      <button id="em-send">📧 فتح تطبيق البريد</button>
+      <button class="secondary" id="em-copy">نسخ نص الرسالة</button>
+      <button class="secondary" id="em-cancel">إغلاق</button>
+    </div>`);
+
+  $("#em-cancel", ov).onclick = () => ov.remove();
+
+  // اختيار جهة من دليل التواصل يضيف بريدها إلى حقل «إلى» (دون تكرار) ويدعم عدة مستلمين
+  $("#em-pick", ov)?.addEventListener("change", (e) => {
+    const addr = e.target.value;
+    e.target.value = "";
+    if (!addr) return;
+    const to = $("#em-to", ov);
+    const list = to.value.split(",").map((s) => s.trim()).filter(Boolean);
+    if (!list.includes(addr)) list.push(addr);
+    to.value = list.join(", ");
+  });
+
+  // يضمّن رابط المجلد في نص الرسالة إن غيّره المستخدم ولم يعد مذكوراً
+  const composed = () => {
+    let text = $("#em-body", ov).value;
+    const url = val("em-repo", ov);
+    if (url && !text.includes(url)) text += `\n\nرابط المجلد: ${url}`;
+    return text;
+  };
+
+  $("#em-copy", ov).onclick = async () => {
+    try { await navigator.clipboard.writeText(composed()); toast("نُسخت الرسالة"); }
+    catch { toast("تعذّر النسخ — انسخ النص يدوياً", true); }
+  };
+
+  $("#em-send", ov).onclick = () => {
+    const recipients = val("em-to", ov).split(",").map((s) => s.trim()).filter(Boolean);
+    if (recipients.some((p) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(p))) return toast("صيغة البريد الإلكتروني غير صحيحة", true);
+    const subj = val("em-subject", ov);
+    const href = `mailto:${encodeURIComponent(recipients.join(","))}?subject=${encodeURIComponent(subj)}&body=${encodeURIComponent(composed())}`;
+    window.location.href = href;
+    toast("فُتح تطبيق البريد");
+    ov.remove();
+  };
 }
