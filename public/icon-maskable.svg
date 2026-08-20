@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="نظام إدارة الالتزام">
+  <defs>
+    <linearGradient id="gm" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1a8a70"/>
+      <stop offset="1" stop-color="#0d5243"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#gm)"/>
+  <!-- المحتوى ضمن المنطقة الآمنة (80%) للأيقونات القابلة للقصّ -->
+  <g transform="translate(256 256) scale(0.72) translate(-256 -256)"
+     fill="none" stroke="#ffffff" stroke-width="16" stroke-linecap="round" stroke-linejoin="round">
+    <line x1="256" y1="96" x2="256" y2="392"/>
+    <line x1="150" y1="150" x2="362" y2="150"/>
+    <circle cx="256" cy="96" r="16" fill="#ffffff" stroke="none"/>
+    <path d="M150 150 L110 250 L190 250 Z"/>
+    <path d="M362 150 L322 250 L402 250 Z"/>
+    <path d="M110 250 q40 46 80 0"/>
+    <path d="M322 250 q40 46 80 0"/>
+    <line x1="196" y1="392" x2="316" y2="392"/>
+    <line x1="230" y1="392" x2="230" y2="360"/>
+    <line x1="282" y1="392" x2="282" y2="360"/>
+  </g>
+</svg>

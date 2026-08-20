@@ -147,6 +147,7 @@ export const CONTROL_TYPES = ["وقائي", "كشفي", "تصحيحي", "توج�
 export const RISK_SOURCES = {
   AUTO_REGULATION: "أُنشئ آلياً من التحليل الذكي وفق الغرامات والعقوبات المذكورة في النظام",
   AUTO_LIBRARY: "أُنشئ آلياً عند إضافة المتطلب إلى مكتبة الالتزام",
+  AI_SUGGESTED: "اقتراح المساعد الذكي",
 };
 
 // تقييم 5×5: الدرجة = الاحتمالية × الأثر
@@ -371,7 +372,125 @@ export const ACTION_STATUS = {
 export const FND_SOURCES = {
   MONITORING: "برنامج المراقبة",
   ASSESSMENT: "الفحص الذاتي",
+  AUDIT: "التدقيق الداخلي",
   MANUAL: "يدوي",
+};
+
+// ---------- التدقيق الداخلي والأدلة ----------
+export const AUDIT_TYPES = {
+  COMPLIANCE: "تدقيق التزام",
+  INTERNAL: "تدقيق داخلي",
+  PROCESS: "تدقيق إجراءات",
+  FOLLOWUP: "تدقيق متابعة",
+  SPECIAL: "مهمة خاصة",
+};
+
+export const AUDIT_STATUS = {
+  PLANNED: "مخطط",
+  FIELDWORK: "قيد التنفيذ الميداني",
+  REPORTING: "إعداد التقرير",
+  COMPLETED: "مكتمل ومعتمد",
+  CANCELLED: "ملغى",
+};
+
+export const AUDIT_STATUS_ROLE = { PLANNED: "neutral", FIELDWORK: "warning", REPORTING: "serious", COMPLETED: "good", CANCELLED: "neutral" };
+
+// رأي/تصنيف التدقيق النهائي
+export const AUDIT_OPINION = {
+  SATISFACTORY: "مُرضٍ",
+  PARTIAL: "مُرضٍ جزئياً / يحتاج تحسين",
+  UNSATISFACTORY: "غير مُرضٍ",
+};
+export const AUDIT_OPINION_ROLE = { SATISFACTORY: "good", PARTIAL: "warning", UNSATISFACTORY: "critical" };
+
+// نتيجة ورقة العمل (إجراء التدقيق)
+export const WP_RESULT = {
+  EFFECTIVE: "فعّال / ملتزم",
+  EXCEPTION: "ملاحظة / استثناء",
+  NA: "لا ينطبق",
+};
+export const WP_RESULT_ROLE = { EFFECTIVE: "good", EXCEPTION: "critical", NA: "neutral" };
+
+// حالة تقرير التدقيق
+export const AUDIT_REPORT_STATUS = { NONE: "بلا تقرير", DRAFT: "مسودة", APPROVED: "معتمد" };
+
+// ---------- محرك سير العمل والاعتماد ----------
+// المسار الثابت: مسودة → مراجعة → اعتماد → مغلق (مع مسار الإعادة/الرفض)
+export const WF_PIPELINE = ["DRAFT", "REVIEW", "APPROVE", "CLOSED"];
+export const WF_STAGES = {
+  DRAFT: "مسودة",
+  REVIEW: "مراجعة",
+  APPROVE: "اعتماد",
+  CLOSED: "مغلق / معتمد",
+  REJECTED: "مُعاد / مرفوض",
+};
+export const WF_STAGE_ROLE = { DRAFT: "neutral", REVIEW: "warning", APPROVE: "serious", CLOSED: "good", REJECTED: "critical" };
+export const WF_PRIORITY = { NORMAL: "عادية", HIGH: "عالية", URGENT: "عاجلة" };
+
+// أنواع الكيانات القابلة للربط بمسار اعتماد (على نموذج المهام القائم)
+export const WF_LINK_TYPES = {
+  none: "بلا ربط",
+  requirement: "متطلب",
+  finding: "ملاحظة / خطة تصحيح",
+  regChange: "تغيّر تنظيمي",
+  planItem: "مبادرة خطة",
+  meeting: "اجتماع",
+};
+
+// قوالب المسار الافتراضية — SLA بالأيام لكل مرحلة (قابلة للتهيئة في الإعدادات)
+export const DEFAULT_WORKFLOW_TEMPLATES = [
+  { id: "policy", name: "اعتماد سياسة / إجراء", slaDays: { DRAFT: 5, REVIEW: 5, APPROVE: 3 } },
+  { id: "report", name: "اعتماد تقرير التزام", slaDays: { DRAFT: 3, REVIEW: 3, APPROVE: 2 } },
+  { id: "capa", name: "اعتماد خطة تصحيحية", slaDays: { DRAFT: 2, REVIEW: 3, APPROVE: 2 } },
+  { id: "generic", name: "مسار اعتماد عام", slaDays: { DRAFT: 5, REVIEW: 5, APPROVE: 5 } },
+];
+
+// ---------- سجل التغيّر التنظيمي ----------
+export const REGCHANGE_TYPES = {
+  NEW: "نظام / لائحة جديدة",
+  AMENDMENT: "تعديل على نظام قائم",
+  REPEAL: "إلغاء",
+  CIRCULAR: "تعميم / قرار",
+  REQUIREMENT: "متطلب رقابي جديد",
+};
+
+export const REGCHANGE_STATUS = {
+  NEW: "جديد — بانتظار التقييم",
+  UNDER_REVIEW: "قيد تقييم الأثر",
+  IMPACTED: "حُدّد الأثر وأُنشئت المراجعة",
+  CLOSED: "مغلق",
+};
+
+export const REGCHANGE_ROLE = { NEW: "warning", UNDER_REVIEW: "serious", IMPACTED: "good", CLOSED: "neutral" };
+
+// ---------- الاجتماعات ----------
+export const MEETING_TYPES = {
+  WEEKLY: "اجتماع أسبوعي",
+  DEPARTMENT: "اجتماع إدارة",
+  COMMITTEE: "لجنة",
+  REVIEW: "اجتماع مراجعة",
+  OTHER: "أخرى",
+};
+
+export const MEETING_STATUS = {
+  SCHEDULED: "مجدول",
+  HELD: "انعقد",
+  CANCELLED: "ملغى",
+};
+
+// تكرار الاجتماع الدوري — يُترجَم إلى قاعدة RRULE في ملف iCalendar
+export const MEETING_RECURRENCE = {
+  NONE: "بلا تكرار",
+  WEEKLY: "أسبوعي",
+  BIWEEKLY: "كل أسبوعين",
+  MONTHLY: "شهري",
+};
+
+// حالة محضر الاجتماع (التوقيع الإلكتروني)
+export const MINUTES_STATUS = {
+  NONE: "بلا محضر",
+  DRAFT: "مسودة محضر",
+  APPROVED: "محضر معتمد وموقّع",
 };
 
 // ---------- ألوان الحالات (لوحة حالات معتمدة — تُرافق دوماً بنص، لا لون وحده) ----------

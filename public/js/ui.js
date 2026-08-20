@@ -58,6 +58,23 @@ export const todayISO = () => new Date().toISOString().slice(0, 10);
 export const isoFromInput = (v) => (v ? new Date(v + "T12:00:00Z").toISOString() : null);
 export const inputFromISO = (iso) => (iso ? String(iso).slice(0, 10) : "");
 
+// ---------- التاريخ مع الوقت (للاجتماعات) ----------
+const pad2 = (n) => String(n).padStart(2, "0");
+export const inputFromISODateTime = (iso) => {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d)) return "";
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+};
+export const isoFromDateTime = (v) => (v ? new Date(v).toISOString() : null); // القيمة محلية → ISO عالمي
+export const dateTimeInp = (id, iso = "") => `<input type="datetime-local" id="${id}" value="${inputFromISODateTime(iso)}" />`;
+export function fmtDateTime(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d)) return "—";
+  return d.toLocaleString("ar-SA-u-ca-gregory-nu-latn", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
 // ---------- شارات ----------
 // شارة حالة بلون دلالي + نص دائماً (اللون لا يحمل المعنى وحده)
 export function levelBadge(levelKey, label) {
@@ -77,12 +94,29 @@ export function chip(text) {
 
 // ---------- نوافذ منبثقة ----------
 export function modal(html, { wide = false } = {}) {
+  const prevFocus = document.activeElement;
   const overlay = document.createElement("div");
   overlay.className = "modal-overlay";
-  overlay.innerHTML = `<div class="modal card ${wide ? "modal-wide" : ""}">${html}</div>`;
+  overlay.innerHTML = `<div class="modal card ${wide ? "modal-wide" : ""}" role="dialog" aria-modal="true">${html}</div>`;
   document.body.appendChild(overlay);
-  overlay.addEventListener("click", (e) => e.target === overlay && overlay.remove());
-  overlay.close = () => overlay.remove();
+  const card = overlay.firstElementChild;
+
+  const onKey = (e) => {
+    if (e.key !== "Escape") return;
+    const all = document.querySelectorAll(".modal-overlay");
+    if (all[all.length - 1] === overlay) close();
+  };
+  const close = () => {
+    document.removeEventListener("keydown", onKey);
+    Element.prototype.remove.call(overlay);
+    try { prevFocus?.focus?.(); } catch { /* العنصر السابق لم يعد موجوداً */ }
+  };
+  document.addEventListener("keydown", onKey);
+  overlay.addEventListener("click", (e) => e.target === overlay && close());
+  overlay.remove = close;
+  overlay.close = close;
+  // نقل التركيز إلى النافذة لقارئات الشاشة والتنقّل بلوحة المفاتيح
+  setTimeout(() => { (card.querySelector("input, select, textarea, button, [href]") || card).focus?.(); }, 0);
   return overlay;
 }
 
@@ -195,6 +229,33 @@ export function donutStat(pct, label, sub = "") {
     </svg>
     <div><div class="lbl">${esc(label)}</div>${sub ? `<div class="sub muted">${esc(sub)}</div>` : ""}</div>
   </div>`;
+}
+
+// خط بياني مصغّر (Sparkline) لسلسلة زمنية — SVG داخلي، بلا مكتبات خارجية
+// points = [{date, value}] (قيم null تُتجاهل)، role يحدّد اللون الدلالي
+export function sparkline(points, { role = "good", target = null, width = 220, height = 48 } = {}) {
+  const pts = points.filter((p) => p.value !== null && p.value !== undefined && !isNaN(p.value));
+  if (pts.length < 2) return '<div class="spark-empty muted">يتراكم السجل يومياً…</div>';
+  const vals = pts.map((p) => p.value);
+  let min = Math.min(...vals, target ?? Infinity);
+  let max = Math.max(...vals, target ?? -Infinity);
+  if (min === max) { min -= 1; max += 1; }
+  const pad = 4;
+  const x = (i) => pad + (i / (pts.length - 1)) * (width - 2 * pad);
+  const y = (v) => height - pad - ((v - min) / (max - min)) * (height - 2 * pad);
+  const line = pts.map((p, i) => `${x(i).toFixed(1)},${y(p.value).toFixed(1)}`).join(" ");
+  const area = `${pad},${height - pad} ${line} ${(width - pad).toFixed(1)},${height - pad}`;
+  const color = STATUS_COLORS[role] || STATUS_COLORS.neutral;
+  const last = pts[pts.length - 1];
+  const targetLine = target !== null && target >= min && target <= max
+    ? `<line x1="${pad}" x2="${width - pad}" y1="${y(target).toFixed(1)}" y2="${y(target).toFixed(1)}" stroke="var(--muted)" stroke-dasharray="3 3" stroke-width="1" opacity="0.6"></line>`
+    : "";
+  return `<svg class="spark" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="سلسلة زمنية (${pts.length} نقطة)">
+    <polygon points="${area}" fill="${color}" opacity="0.12"></polygon>
+    ${targetLine}
+    <polyline points="${line}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></polyline>
+    <circle cx="${x(pts.length - 1).toFixed(1)}" cy="${y(last.value).toFixed(1)}" r="3" fill="${color}"></circle>
+  </svg>`;
 }
 
 // أعمدة أفقية بلون واحد مع التسمية والقيمة نصاً: items = [{label, count, tip?}]
