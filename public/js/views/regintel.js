@@ -145,7 +145,10 @@ function viewDashboard() {
             ? '<span class="lvl lvl-good"><span class="dot"></span>مفعّل في المتصفح</span>'
             : '<span class="lvl lvl-warning"><span class="dot"></span>غير مفعّل — أضف مفتاح Claude من ⚙</span>'}</div>
         </div>
-        <p class="muted" style="margin-top:8px">يعمل الفحص المجدول أسبوعياً في الخادم، ويمكن لمدير الالتزام تشغيله يدوياً من أعلى الصفحة.</p>
+        <p class="muted" style="margin-top:8px">الفحص المجدول أسبوعياً وزر «تشغيل الفحص الآن» يعملان عبر دوال Firebase في الخادم
+          (لأن جلب المصادر الخارجية من المتصفح تمنعه سياسة CORS، ولأن حماية SSRF تتطلب تحليل DNS في الخادم).</p>
+        ${!store.regScans.length ? `<p class="lvl lvl-warning"><span class="dot"></span>لم يُسجَّل أي فحص بعد — إن لم تكن دوال Firebase منشورة على المشروع
+          (تتطلب خطة Blaze) فلن يعمل الفحص التلقائي. وتظل الوحدة كاملة الوظيفة عبر «＋ مستجد يدوي»: تسجيل المستجد وتحليله واعتماده ودمجه في كل الوحدات.</p>` : ""}
         ${lastScan ? `<p class="muted">آخر فحص: ${lastScan.sourcesScanned || 0} مصدر · ${lastScan.itemsFound || 0} عنصر · ${lastScan.created || 0} مستجد جديد${lastScan.errors?.length ? ` · ${lastScan.errors.length} خطأ` : ""}</p>` : ""}
       </section>
 
