@@ -1,0 +1,61 @@
+# الفحص التنظيمي الأسبوعي — يعمل بلا خطة Blaze
+#
+# يشغّل محرك الرصد (functions/regintel.js) كعملية Node عادية تكتب في Firestore
+# بحساب الخدمة نفسه المستخدَم في النشر، ثم يولّد التقرير الأسبوعي ويضعه في طابور البريد.
+#
+# الأسرار المطلوبة في: Settings → Secrets and variables → Actions
+#   FIREBASE_SERVICE_ACCOUNT  (إلزامي — نفس السر المستخدم في النشر)
+#   ANTHROPIC_API_KEY         (اختياري — بدونه يعمل التحليل النصي المبدئي)
+name: Regulatory Scan
+
+on:
+  schedule:
+    # الأحد 05:00 بتوقيت الرياض = 02:00 UTC (جدولة GitHub بتوقيت UTC)
+    - cron: "0 2 * * 0"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "ما الذي يُشغَّل"
+        required: true
+        default: both
+        type: choice
+        options: [both, scan, report]
+
+# تشغيل واحد في كل وقت — طبقة ثانية فوق القفل الذرّي داخل المحرك
+concurrency:
+  group: regulatory-scan
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install functions dependencies
+        run: npm install --prefix functions --no-audit --no-fund
+
+      - name: Run regulatory scan
+        env:
+          FIREBASE_SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SCAN_TRIGGER: ${{ github.event_name == 'schedule' && 'SCHEDULE' || 'MANUAL' }}
+          SCAN_ACTOR: ${{ github.event_name == 'schedule' && 'الجدولة الأسبوعية (GitHub Actions)' || format('تشغيل يدوي — {0}', github.actor) }}
+        run: |
+          if [ -z "$FIREBASE_SA" ]; then
+            echo "::error::السر FIREBASE_SERVICE_ACCOUNT غير مضبوط — لا يمكن الوصول إلى Firestore"
+            exit 1
+          fi
+          printf '%s' "$FIREBASE_SA" > "$RUNNER_TEMP/firebase-sa.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-sa.json"
+          export GCLOUD_PROJECT=cms-hhc
+          # الجدولة الأسبوعية تفحص وتولّد التقرير، والتشغيل اليدوي يختار وضعه
+          MODE="${{ github.event.inputs.mode }}"
+          [ -z "$MODE" ] && MODE=both
+          echo "الوضع: $MODE (الحدث: ${{ github.event_name }})"
+          node functions/scan-runner.js "$MODE"

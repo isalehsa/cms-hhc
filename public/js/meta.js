@@ -189,6 +189,7 @@ export const RISK_SOURCES = {
   AUTO_REGULATION: "أُنشئ آلياً من التحليل الذكي وفق الغرامات والعقوبات المذكورة في النظام",
   AUTO_LIBRARY: "أُنشئ آلياً عند إضافة المتطلب إلى مكتبة الالتزام",
   AI_SUGGESTED: "اقتراح المساعد الذكي",
+  REG_INTEL: "أُنشئ آلياً عند اعتماد مستجد تنظيمي مرصود في وحدة الرصد التنظيمي",
 };
 
 // تقييم 5×5: الدرجة = الاحتمالية × الأثر
@@ -659,3 +660,86 @@ export const MATURITY_MODEL = [
   },
 ];
 
+
+// ---------- الرصد التنظيمي وإدارة التغيير (Regulatory Intelligence) ----------
+// نوع المصدر المرصود — يحدد كيفية قراءة المستجدات منه
+export const REG_SOURCE_TYPES = {
+  RSS: "تغذية RSS / Atom",
+  JSON: "واجهة JSON",
+  HTML: "صفحة ويب (استخراج الروابط)",
+  MANUAL: "إدخال يدوي فقط",
+};
+
+export const REG_SOURCE_STATUS = {
+  NEVER: "لم يُفحص بعد",
+  OK: "آخر فحص ناجح",
+  EMPTY: "فُحص بلا نتائج",
+  ERROR: "فشل الفحص",
+};
+export const REG_SOURCE_STATUS_ROLE = { NEVER: "neutral", OK: "good", EMPTY: "warning", ERROR: "critical" };
+
+// دورة حياة المستجد التنظيمي: رصد ← تحليل ← مراجعة الالتزام ← اعتماد ودمج
+export const REG_UPDATE_STATUS = {
+  DETECTED: "مرصود — بانتظار التحليل",
+  ANALYZED: "حُلِّل — بانتظار مراجعة الالتزام",
+  APPROVED: "معتمد ومُدمج في وحدات الالتزام",
+  REJECTED: "غير منطبق / مستبعد",
+  ARCHIVED: "مؤرشف",
+};
+export const REG_UPDATE_ROLE = {
+  DETECTED: "warning", ANALYZED: "serious", APPROVED: "good", REJECTED: "neutral", ARCHIVED: "neutral",
+};
+
+export const REG_APPLICABILITY = {
+  APPLICABLE: "تنطبق على المنشأة",
+  PARTIAL: "تنطبق جزئياً",
+  NOT_APPLICABLE: "لا تنطبق",
+  UNKNOWN: "غير محددة",
+};
+export const REG_APPLICABILITY_ROLE = {
+  APPLICABLE: "critical", PARTIAL: "warning", NOT_APPLICABLE: "neutral", UNKNOWN: "neutral",
+};
+
+export const REG_IMPACT = { HIGH: "أثر عالٍ", MEDIUM: "أثر متوسط", LOW: "أثر منخفض" };
+export const REG_IMPACT_ROLE = { HIGH: "critical", MEDIUM: "warning", LOW: "good" };
+
+export const REG_SCAN_STATUS = {
+  RUNNING: "قيد التشغيل",
+  COMPLETED: "اكتمل",
+  PARTIAL: "اكتمل بأخطاء",
+  FAILED: "فشل",
+};
+export const REG_SCAN_STATUS_ROLE = { RUNNING: "warning", COMPLETED: "good", PARTIAL: "serious", FAILED: "critical" };
+
+export const REG_SCAN_TRIGGER = { SCHEDULE: "الجدولة الأسبوعية", MANUAL: "تشغيل يدوي", API: "واجهة برمجية" };
+
+export const REG_ANALYSIS_METHOD = {
+  ai: "تحليل بالذكاء الاصطناعي (Claude)",
+  heuristic: "تحليل نصي مبدئي",
+  manual: "تحليل يدوي",
+};
+
+// نوع الموعد التنظيمي المستخرج
+export const REG_DEADLINE_KINDS = {
+  EFFECTIVE: "تاريخ النفاذ",
+  COMPLIANCE: "موعد استكمال الامتثال",
+  EXPLICIT: "تاريخ صريح في النص",
+  RELATIVE: "مهلة محسوبة من تاريخ النشر",
+  REVIEW: "موعد مراجعة متطلب",
+  ACTION: "موعد إجراء تصحيحي",
+};
+
+// مصادر رصد افتراضية للجهات السعودية — تُضاف معطّلة ويفعّلها مدير الالتزام
+// بعد التحقق من صيغة كل مصدر (تُخزَّن كإعداد فقط، ولا تُنشئ أي بيانات تنظيمية)
+export const REG_SOURCE_SEED = [
+  { name: "المركز الوطني للتنافسية — استطلاع الأنظمة", url: "https://istitlaa.ncc.gov.sa", type: "HTML", sector: "عام / متعدد القطاعات" },
+  { name: "وزارة الصحة — الأنظمة واللوائح", url: "https://www.moh.gov.sa", type: "HTML", sector: "الصحة" },
+  { name: "الهيئة العامة للغذاء والدواء", url: "https://www.sfda.gov.sa", type: "HTML", sector: "الصحة" },
+  { name: "المجلس الصحي السعودي", url: "https://shc.gov.sa", type: "HTML", sector: "الصحة" },
+  { name: "الهيئة السعودية للتخصصات الصحية", url: "https://www.scfhs.org.sa", type: "HTML", sector: "الصحة" },
+  { name: "الهيئة الوطنية للأمن السيبراني", url: "https://nca.gov.sa", type: "HTML", sector: "الأمن السيبراني" },
+  { name: "الهيئة السعودية للبيانات والذكاء الاصطناعي", url: "https://sdaia.gov.sa", type: "HTML", sector: "التقنية والاتصالات" },
+  { name: "هيئة الزكاة والضريبة والجمارك", url: "https://zatca.gov.sa", type: "HTML", sector: "المالية" },
+  { name: "مجلس الضمان الصحي", url: "https://www.chi.gov.sa", type: "HTML", sector: "الصحة" },
+  { name: "أم القرى — الجريدة الرسمية", url: "https://www.uqn.gov.sa", type: "HTML", sector: "عام / متعدد القطاعات" },
+];

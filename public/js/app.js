@@ -24,6 +24,7 @@ import { renderTraining } from "./views/training.js";
 import { renderMaturity } from "./views/maturity.js";
 import { renderWeekly, renderDeptMeetings, renderMyTasks } from "./views/weekly.js";
 import { renderRegChange } from "./views/regchange.js";
+import { renderRegIntel } from "./views/regintel.js";
 import { renderWorkflow } from "./views/workflow.js";
 import { renderAudit } from "./views/audit.js";
 import { scanWorkflowEscalations } from "./workflow.js";
@@ -48,6 +49,7 @@ const VIEWS = {
   library: { ic: "book", label: "مكتبة الالتزام", render: renderLibrary, group: "records" },
   risks: { ic: "alert", label: "سجل المخاطر", render: renderRisks, group: "records" },
   riskmap: { ic: "scale", label: "خريطة المخاطر", render: renderRiskMap, group: "records" },
+  regintel: { ic: "radar", label: "الرصد التنظيمي", render: renderRegIntel, group: "records" },
   regchange: { ic: "bell", label: "التغيّر التنظيمي", render: renderRegChange, group: "records" },
   correspondence: { ic: "mail", label: "سجل المراسلات", render: renderCorrespondence, group: "records" },
   disclosures: { ic: "folder", label: "سجل الإفصاحات", render: renderDisclosures, group: "records" },

@@ -419,6 +419,7 @@ export const LINE_ICONS = {
   trend: '<polyline points="4,15 9,10 13,13 20,6"/><polyline points="20,10 20,6 16,6"/>',
   scale: '<line x1="12" y1="4" x2="12" y2="20"/><line x1="6" y1="8" x2="18" y2="8"/><path d="M6 8l-2.5 5.5a3 3 0 0 0 5 0L6 8z"/><path d="M18 8l-2.5 5.5a3 3 0 0 0 5 0L18 8z"/>',
   bell: '<path d="M6 9a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6z"/><path d="M10 19a2 2 0 0 0 4 0"/>',
+  radar: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><line x1="12" y1="12" x2="18.2" y2="6.6"/><circle cx="16.5" cy="8.5" r=".9" fill="currentColor" stroke="none"/>',
 };
 export function lineIcon(name, size = 20) {
   return `<svg class="ic" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${LINE_ICONS[name] || ""}</svg>`;

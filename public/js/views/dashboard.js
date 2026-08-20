@@ -261,6 +261,29 @@ export function renderDashboard(el, nav) {
     const d = daysUntil(c.dueDate);
     if (d !== null && d <= 7) alerts.push({ ic: "doc", text: `${c.code} — ${c.subject}: ${d < 0 ? `الرد متأخر ${-d} يوماً` : `الرد مستحق خلال ${d} يوماً`}`, view: "correspondence", overdue: d < 0 });
   }
+  // مستجدات تنظيمية مرصودة تنتظر قرار الالتزام + مواعيد تنظيمية متأخرة/قريبة
+  // (المستجدات على مستوى المنشأة لا الإدارة، فتُقرأ من المخزن مباشرة لا من الفلتر)
+  for (const u of store.regUpdates.filter((x) => ["DETECTED", "ANALYZED"].includes(x.status))) {
+    alerts.push({
+      ic: "radar",
+      text: `${u.code} — ${u.title}: مستجد تنظيمي ${u.status === "DETECTED" ? "بانتظار التحليل" : "بانتظار مراجعة الالتزام"}`,
+      view: "regintel",
+      overdue: u.impact === "HIGH",
+    });
+  }
+  for (const u of store.regUpdates) {
+    if (["REJECTED", "ARCHIVED"].includes(u.status)) continue;
+    for (const dl of u.deadlines || []) {
+      const d = daysUntil(dl.date);
+      if (d === null || d > 30) continue;
+      alerts.push({
+        ic: "bell",
+        text: `${u.code} — ${dl.label || "موعد تنظيمي"}: ${d < 0 ? `تجاوز الاستحقاق ${-d} يوماً` : `يستحق خلال ${d} يوماً`}`,
+        view: "regintel",
+        overdue: d < 0,
+      });
+    }
+  }
   alerts.sort((a, b) => (b.overdue ? 1 : 0) - (a.overdue ? 1 : 0));
 
   // المهام القادمة (استحقاقات مرتّبة زمنياً)
