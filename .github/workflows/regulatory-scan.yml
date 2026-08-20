@@ -12,15 +12,6 @@ on:
   schedule:
     # الأحد 05:00 بتوقيت الرياض = 02:00 UTC (جدولة GitHub بتوقيت UTC)
     - cron: "0 2 * * 0"
-  # مُشغِّل مؤقت للتجربة قبل الدمج: الجدولة والتشغيل اليدوي لا يعملان في GitHub
-  # إلا من الفرع الافتراضي، أما حدث push فيعمل من أي فرع. يُزال بعد الدمج.
-  push:
-    branches: [claude/regulatory-intelligence-integration-g2btgh]
-    paths:
-      - ".github/workflows/regulatory-scan.yml"
-      - "functions/scan-runner.js"
-      - "functions/regintel.js"
-      - "functions/safe-fetch.js"
   workflow_dispatch:
     inputs:
       mode:
@@ -63,11 +54,8 @@ jobs:
           printf '%s' "$FIREBASE_SA" > "$RUNNER_TEMP/firebase-sa.json"
           export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-sa.json"
           export GCLOUD_PROJECT=cms-hhc
-          # الجدولة تفحص وتولّد التقرير، أما تشغيل push (التجربة) فيفحص فقط
-          # حتى لا يُرسل تقرير أسبوعي بريدياً في كل تجربة
+          # الجدولة الأسبوعية تفحص وتولّد التقرير، والتشغيل اليدوي يختار وضعه
           MODE="${{ github.event.inputs.mode }}"
-          if [ -z "$MODE" ]; then
-            if [ "${{ github.event_name }}" = "push" ]; then MODE=scan; else MODE=both; fi
-          fi
+          [ -z "$MODE" ] && MODE=both
           echo "الوضع: $MODE (الحدث: ${{ github.event_name }})"
           node functions/scan-runner.js "$MODE"
