@@ -145,10 +145,13 @@ function viewDashboard() {
             ? '<span class="lvl lvl-good"><span class="dot"></span>مفعّل في المتصفح</span>'
             : '<span class="lvl lvl-warning"><span class="dot"></span>غير مفعّل — أضف مفتاح Claude من ⚙</span>'}</div>
         </div>
-        <p class="muted" style="margin-top:8px">الفحص المجدول أسبوعياً وزر «تشغيل الفحص الآن» يعملان عبر دوال Firebase في الخادم
-          (لأن جلب المصادر الخارجية من المتصفح تمنعه سياسة CORS، ولأن حماية SSRF تتطلب تحليل DNS في الخادم).</p>
-        ${!store.regScans.length ? `<p class="lvl lvl-warning"><span class="dot"></span>لم يُسجَّل أي فحص بعد — إن لم تكن دوال Firebase منشورة على المشروع
-          (تتطلب خطة Blaze) فلن يعمل الفحص التلقائي. وتظل الوحدة كاملة الوظيفة عبر «＋ مستجد يدوي»: تسجيل المستجد وتحليله واعتماده ودمجه في كل الوحدات.</p>` : ""}
+        <p class="muted" style="margin-top:8px">الفحص يجري في الخادم (لأن جلب المصادر الخارجية من المتصفح تمنعه سياسة CORS،
+          ولأن حماية SSRF تتطلب تحليل DNS في الخادم). <strong>الفحص الأسبوعي المجدول</strong> يعمل عبر مهمة
+          <strong>GitHub Actions</strong> كل أحد 05:00 بتوقيت الرياض، ويمكن تشغيله يدوياً من صفحة Actions في المستودع.
+          أما زر «⟳ تشغيل الفحص الآن» داخل التطبيق فيحتاج دوال Firebase منشورة (خطة Blaze).</p>
+        ${!store.regScans.length ? `<p class="lvl lvl-warning"><span class="dot"></span>لم يُسجَّل أي فحص بعد — تأكد من إضافة مصادر مفعّلة
+          ومن ضبط السر FIREBASE_SERVICE_ACCOUNT في المستودع. وتظل الوحدة كاملة الوظيفة عبر «＋ مستجد يدوي»:
+          تسجيل المستجد وتحليله واعتماده ودمجه في كل الوحدات.</p>` : ""}
         ${lastScan ? `<p class="muted">آخر فحص: ${lastScan.sourcesScanned || 0} مصدر · ${lastScan.itemsFound || 0} عنصر · ${lastScan.created || 0} مستجد جديد${lastScan.errors?.length ? ` · ${lastScan.errors.length} خطأ` : ""}</p>` : ""}
       </section>
 
@@ -528,7 +531,8 @@ async function runScan(rerender, sourceId = null) {
   } catch (e) {
     $("#scan-log", ov).innerHTML = `
       <p class="lvl lvl-critical"><span class="dot"></span>${esc(e.message)}</p>
-      <p class="muted">يمكنك دائماً تسجيل المستجدات يدوياً عبر «＋ مستجد يدوي» وتحليلها واعتمادها من المتصفح.</p>
+      <p class="muted">الفحص الأسبوعي المجدول يعمل عبر مهمة GitHub Actions ولا يتأثر بهذا،
+        كما يمكنك تسجيل المستجدات يدوياً عبر «＋ مستجد يدوي» وتحليلها واعتمادها من المتصفح.</p>
       <div class="row" style="margin-top:12px"><button class="secondary" id="scan-close">إغلاق</button></div>`;
     $("#scan-close", ov).onclick = () => ov.remove();
   }

@@ -614,8 +614,17 @@ export async function archiveUpdate(update) {
 
 // ---------- تشغيل الفحص ----------
 
-// الفحص الفعلي يجري في الخادم (Cloud Function) لأن جلب مصادر خارجية من المتصفح
-// تمنعه سياسة CORS، ولأن حماية SSRF وتحليل DNS لا يمكن فرضهما في المتصفح.
+// الفحص الفعلي يجري في الخادم لأن جلب مصادر خارجية من المتصفح تمنعه سياسة CORS،
+// ولأن حماية SSRF وتحليل DNS لا يمكن فرضهما في المتصفح.
+//
+// للفحص مساران خادميان، كلاهما يستدعي المحرك نفسه في functions/regintel.js:
+//   1) دالة Firebase مجدولة + مسار /api/regintel/scan (يشغّله هذا الزر) — تتطلب خطة Blaze
+//   2) مهمة GitHub Actions أسبوعية عبر functions/scan-runner.js — تعمل على الخطة المجانية
+// فإن لم تكن الدوال منشورة، يبقى الفحص الأسبوعي عاملاً عبر المسار الثاني.
+const SCAN_SERVICE_HINT =
+  "خدمة الفحص الفوري غير منشورة على هذا المشروع (تتطلب دوال Firebase على خطة Blaze). " +
+  "الفحص الأسبوعي يعمل عبر مهمة GitHub Actions المجدولة، ويمكن تشغيله يدوياً من صفحة Actions في المستودع " +
+  "(سير العمل: Regulatory Scan ← Run workflow).";
 export async function requestScan({ sourceId = null } = {}) {
   const token = await idToken();
   let res;
@@ -626,12 +635,10 @@ export async function requestScan({ sourceId = null } = {}) {
       body: JSON.stringify({ sourceId }),
     });
   } catch {
-    throw new Error("تعذّر الوصول إلى خدمة الفحص — تأكد من نشر دوال Firebase (firebase deploy --only functions)");
+    throw new Error(SCAN_SERVICE_HINT);
   }
   const body = await res.json().catch(() => ({}));
-  if (res.status === 404) {
-    throw new Error("خدمة الفحص غير منشورة على هذا المشروع — انشر دوال Firebase ثم أعد المحاولة");
-  }
+  if (res.status === 404) throw new Error(SCAN_SERVICE_HINT);
   if (res.status === 409) throw new Error(body.error || "هناك فحص قيد التشغيل حالياً — انتظر انتهاءه");
   if (!res.ok) throw new Error(body.error || `تعذّر تشغيل الفحص (HTTP ${res.status})`);
   await reload("regUpdates", "regSources", "regScans", "notifications");
