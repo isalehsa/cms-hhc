@@ -23,7 +23,6 @@ import { renderDisclosures } from "./views/disclosures.js";
 import { renderTraining } from "./views/training.js";
 import { renderMaturity } from "./views/maturity.js";
 import { renderWeekly, renderDeptMeetings, renderMyTasks } from "./views/weekly.js";
-import { renderMeetings } from "./views/meetings.js";
 import { renderRegChange } from "./views/regchange.js";
 import { renderWorkflow } from "./views/workflow.js";
 import { renderAudit } from "./views/audit.js";
@@ -69,9 +68,8 @@ const VIEWS = {
 
   // الاجتماعات
   weekly: { ic: "calcheck", label: "الاجتماع الأسبوعي", render: renderWeekly, group: "meetings" },
-  deptmeetings: { ic: "users", label: "اجتماعات الأقسام", render: renderDeptMeetings, group: "meetings" },
+  deptmeetings: { ic: "calendar", label: "اجتماعات الالتزام", render: renderDeptMeetings, group: "meetings" },
   mytasks: { ic: "checksq", label: "مهامي", render: renderMyTasks, group: "meetings" },
-  cmeetings: { ic: "calendar", label: "اجتماعات الالتزام", render: renderMeetings, group: "meetings" },
 
   // عام
   directory: { ic: "contact", label: "دليل التواصل", render: renderDirectory, group: "general" },

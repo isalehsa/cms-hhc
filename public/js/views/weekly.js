@@ -8,6 +8,7 @@ import {
   emptyMsg, fmtDate, todayISO, inputFromISO, statusBadgeFrom,
 } from "../ui.js";
 import { canEdit } from "../auth.js";
+import { calendarButtonsHtml, bindCalendarButtons, signaturesHtml, openSignPad, revokeSignatures, printSignBlocks } from "../meeting-extras.js";
 
 const WM_STATUS = { OPEN: "مفتوحة", DONE: "منجزة" };
 const WM_ROLE = { OPEN: "warning", DONE: "good" };
@@ -282,11 +283,11 @@ function renderMeetings(el, nav, refresh, type) {
 
   const meta = type === "WEEKLY"
     ? { icon: "🗓", title: "الاجتماع الأسبوعي", desc: "محاضر اجتماعات إدارة الالتزام الأسبوعية ومتابعة المهام" }
-    : { icon: "🤝", title: "اجتماعات الأقسام", desc: "محاضر اجتماعات الإدارة مع الأقسام والجهات الأخرى ومتابعة مهامها" };
+    : { icon: "🤝", title: "اجتماعات الالتزام", desc: "محاضر اجتماعات الالتزام مع الأقسام واللجان والجهات ومتابعة مهامها، مع مزامنة التقويم وتوقيع المحاضر إلكترونياً" };
 
   const indicators = `
     <section class="card">
-      <h2>📊 مؤشرات ${type === "WEEKLY" ? "الاجتماعات الأسبوعية" : "اجتماعات الأقسام"}</h2>
+      <h2>📊 مؤشرات ${type === "WEEKLY" ? "الاجتماعات الأسبوعية" : "اجتماعات الالتزام"}</h2>
       <div class="stats">
         ${statTile(meetings.length, "عدد المحاضر")}
         ${statTile(typeTasks.length, "إجمالي المهام")}
@@ -351,7 +352,7 @@ function renderMeetings(el, nav, refresh, type) {
   // ---------- قائمة المحاضر ----------
   const list = `
     <section class="card">
-      <h2>🗂 محاضر ${type === "WEEKLY" ? "الاجتماعات الأسبوعية" : "اجتماعات الأقسام"} (${meetings.length})</h2>
+      <h2>🗂 محاضر ${type === "WEEKLY" ? "الاجتماعات الأسبوعية" : "اجتماعات الالتزام"} (${meetings.length})</h2>
       <div style="overflow-x:auto"><table>
         <thead><tr><th>الرقم</th><th>التاريخ</th>${type === "DEPT" ? "<th>القسم / الجهة</th>" : ""}<th>المهام</th><th>منجزة / مفتوحة</th><th>آخر تحديث</th></tr></thead>
         <tbody>
@@ -525,11 +526,11 @@ function printMinutes(m) {
       <thead><tr><th style="width:34px">م</th><th>المحور / الموضوع</th><th>التوصية</th><th style="width:130px">المسؤول</th><th style="width:110px">موعد التسليم</th><th style="width:80px">الحالة</th><th style="width:90px">المصدر</th></tr></thead>
       <tbody>${taskRowsHtml(carried, true)}</tbody>
     </table>` : ""}
-    <div class="signs">
+    ${printSignBlocks(m) || `<div class="signs">
       <div class="box"><div class="line">مُعِدّ المحضر (السكرتارية)</div></div>
       <div class="box"><div class="line">مدقّق المحضر</div></div>
       <div class="box"><div class="line">رئيس الاجتماع / المعتمِد</div></div>
-    </div>
+    </div>`}
     <div class="foot">أُنشئ هذا المحضر آلياً من نظام إدارة الالتزام — ${fmtDate(todayISO())} · جميع الحقوق محفوظة لصالح الميموني</div>
     <script>window.onload=function(){setTimeout(function(){window.print();},350);};<\/script>
   </body></html>`;
@@ -558,6 +559,18 @@ function openMeetingModal(m, type, done) {
   const attendeesFields = `
     ${fld("أسماء الحضور", `<textarea id="mm-attendees" rows="2" placeholder="أسماء الحاضرين، تُفصل بفاصلة">${esc(m?.attendees || "")}</textarea>`)}
     ${mType === "DEPT" ? fld("الحضور الخارجي / جهات خارجية", `<textarea id="mm-external" rows="2" placeholder="أسماء الحضور من خارج الإدارة أو جهات خارجية، تُفصل بفاصلة">${esc(m?.externalAttendees || "")}</textarea>`) : ""}`;
+  // حقول الجدولة (لاجتماعات الالتزام) — تُستخدم في مزامنة التقويم
+  const schedFields = mType === "DEPT" ? `<div class="form-grid">
+      ${fld("الوقت", `<input type="time" id="mm-time" value="${esc(m?.time || "")}" style="max-width:150px" />`)}
+      ${fld("المدة (دقائق)", `<input type="number" id="mm-dur" min="15" max="480" step="15" value="${esc(m?.durationMin ?? 60)}" style="max-width:130px" />`)}
+      ${fld("المكان / رابط الاجتماع", `<input type="text" id="mm-loc" value="${esc(m?.location || "")}" placeholder="قاعة الاجتماعات أو رابط Teams/Zoom" />`)}
+    </div>` : "";
+  // عنوان الاجتماع لبطاقة التقويم
+  const calTitle = `${MEETING_TYPES[mType] || "اجتماع"}${m?.party ? " — " + m.party : ""}`;
+  // قسم مزامنة التقويم والتوقيع (للمحاضر المحفوظة فقط)
+  const extrasSection = m ? `
+    ${schedFields && (m.date) ? `<div class="card" style="background:rgba(20,112,92,0.05);margin-top:12px"><h3 style="margin:0 0 8px">📆 مزامنة التقويم</h3><div class="row">${calendarButtonsHtml(m, calTitle)}</div></div>` : ""}
+    ${signaturesHtml(m)}` : "";
 
   const ov = modal(`
     <div class="row" style="justify-content:space-between">
@@ -566,6 +579,7 @@ function openMeetingModal(m, type, done) {
     </div>
     ${editable
       ? `${fld("تاريخ الاجتماع", `<input type="date" id="mm-date" value="${inputFromISO(m?.date || todayISO())}" style="max-width:200px" />`)}
+         ${schedFields}
          ${partyField}
          ${attendeesFields}
          <h3 style="margin:6px 0">بنود المحضر ومهامه</h3>
@@ -582,6 +596,7 @@ function openMeetingModal(m, type, done) {
          ${m?.externalAttendees ? `<p class="muted">الحضور الخارجي: ${esc(m.externalAttendees)}</p>` : ""}
          <div style="overflow-x:auto"><table>${editorHead(false)}<tbody>${(m ? tasksOf(m.id) : []).map((it) => taskRow(it, false)).join("")}</tbody></table></div>
          <div class="row" style="margin-top:12px;gap:8px">${m ? '<button class="secondary" id="mm-print">🖨 طباعة المحضر</button>' : ""}<button class="secondary" id="mm-close">إغلاق</button></div>`}
+    ${extrasSection}
     ${carried.length ? `<h3 style="margin:14px 0 6px">↪️ مهام مُرحّلة مفتوحة (${carried.length})</h3>
       <p class="muted" style="margin-top:-4px">من محاضر سابقة — تُتابَع حتى تُغلق.</p>${carriedTable(carried, editable)}` : ""}`,
     { wide: true });
@@ -602,11 +617,20 @@ function openMeetingModal(m, type, done) {
     if (mType === "DEPT") {
       metaObj.party = ($("#mm-party", ov)?.value || "").trim();
       metaObj.externalAttendees = ($("#mm-external", ov)?.value || "").trim();
+      metaObj.time = ($("#mm-time", ov)?.value || "").trim() || null;
+      metaObj.durationMin = Number($("#mm-dur", ov)?.value) || 60;
+      metaObj.location = ($("#mm-loc", ov)?.value || "").trim() || null;
     }
     try { await saveMeeting(m, metaObj, rowsData); ov.remove(); toast("حُفظ"); done(); }
     catch (err) { toast(err.message, true); }
   });
   $("#mm-print", ov)?.addEventListener("click", () => printMinutes(m));
+  if (m) {
+    bindCalendarButtons(ov, m, calTitle);
+    const reopen = () => { ov.remove(); openMeetingModal(m, type, done); done(); };
+    ov.querySelector("[data-mx-sign]")?.addEventListener("click", () => openSignPad(m, reopen));
+    ov.querySelector("[data-mx-unsign]")?.addEventListener("click", () => revokeSignatures(m, reopen));
+  }
   $("#mm-del", ov)?.addEventListener("click", async () => {
     ov.remove();
     if (!(await confirmBox(`حذف محضر ${m.code} وكل مهامه؟`))) return;
